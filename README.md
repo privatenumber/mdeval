@@ -81,9 +81,13 @@ The file is updated in-place. You can pass multiple files at once: `mdeval READM
 ```markdown
 <!--mdeval
 import { table, bold, link } from 'md-pen';
-const deps = [['cleye', '^2.3.0'], ['md-pen', '^0.0.2']];
-const depsTable = table(deps.map(([name, v]) => [
-  link(`https://npm.im/${name}`, bold(name)), v
+const deps = [
+  ['cleye', '^2.3.0'],
+  ['md-pen', '^0.0.2'],
+];
+const depsTable = table(deps.map(([name, version]) => [
+  link(`https://npm.im/${name}`, bold(name)),
+  version,
 ]));
 -->
 
