@@ -102,3 +102,7 @@ const depsTable = table(deps.map(([name, version]) => [
 ## Agent Skills
 
 This package ships with a built-in [agent skill](./skills/mdeval/SKILL.md) for AI coding assistants. Set up [`skills-npm`](https://github.com/antfu/skills-npm) to automatically discover it.
+
+## Related
+
+- [comment-mark](https://github.com/privatenumber/comment-mark) — Same idea of using HTML comment placeholders, but you write the script externally and pass values in via a JavaScript API. Useful when you want to keep the logic separate from the Markdown.
