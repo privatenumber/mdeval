@@ -17,29 +17,24 @@ export const processSource = async (
 	const rawValues = await import(pathToFileURL(filePath).href);
 	const expressionMap = buildExpressionMap(markers);
 
-	const valueCache = new Map<number, string>();
-	const resolveValue = (exportIndex: number, expression: string): string => {
-		const cached = valueCache.get(exportIndex);
-		if (cached !== undefined) {
-			return cached;
-		}
-		const value = coerceValue(rawValues[`${EXPORT_PREFIX}${exportIndex}`]);
-		if (value.includes(MARKER_OPEN) || value.includes(`${COMMENT_TAG}\n`) || value.includes(MARKER_CLOSE)) {
-			throw new Error(
-				`Expression "${expression}" produced a value containing mdeval comment syntax, which would corrupt the document on re-parse`,
-			);
-		}
-		valueCache.set(exportIndex, value);
-		return value;
-	};
+	const resolvedValues = await Promise.all(
+		Array.from(expressionMap).map(async ([expression, index]) => {
+			const value = coerceValue(await rawValues[`${EXPORT_PREFIX}${index}`]);
+			if (value.includes(MARKER_OPEN) || value.includes(`${COMMENT_TAG}\n`) || value.includes(MARKER_CLOSE)) {
+				throw new Error(
+					`Expression "${expression}" produced a value containing mdeval comment syntax, which would corrupt the document on re-parse`,
+				);
+			}
+			return value;
+		}),
+	);
 
 	const parts: string[] = [];
 	let cursor = 0;
 
 	for (const marker of markers) {
 		const exportIndex = expressionMap.get(marker.expression)!;
-		const value = resolveValue(exportIndex, marker.expression);
-		parts.push(source.slice(cursor, marker.contentStart), value);
+		parts.push(source.slice(cursor, marker.contentStart), resolvedValues[exportIndex]);
 		cursor = marker.contentEnd;
 	}
 

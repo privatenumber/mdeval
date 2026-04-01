@@ -313,6 +313,18 @@ describe('processSource', () => {
 		expect(output).toBe(source.replace('old', 'hello'));
 	});
 
+	test('resolves promise expressions', async () => {
+		const source = '<!--mdeval\n-->\n\n<!--mdeval Promise.resolve("async value")-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', 'async value'));
+	});
+
+	test('resolves promise from script variable', async () => {
+		const source = '<!--mdeval\nconst x = Promise.resolve(42);\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', '42'));
+	});
+
 	test('updates marker immediately after inline code', async () => {
 		const source = [
 			'<!--mdeval',
