@@ -8,6 +8,9 @@ export const coerceValue = (value: unknown): string => {
 	}
 
 	if (typeof value === 'object') {
+		if (Symbol.toPrimitive in value) {
+			return String(value);
+		}
 		return JSON.stringify(value);
 	}
 

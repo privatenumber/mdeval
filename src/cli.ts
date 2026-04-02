@@ -3,16 +3,20 @@ import { register } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cli } from 'cleye';
+import { type $ as Shell, $ } from 'zx';
 import { processSource } from './process-source.ts';
 
 declare global {
 	// eslint-disable-next-line vars-on-top
 	var block: (value: unknown) => string;
+	// eslint-disable-next-line vars-on-top
+	var $: Shell;
 }
 
 register('#md-loader', import.meta.url);
 
 globalThis.block = (value: unknown) => `\n${String(value)}\n`;
+globalThis.$ = $;
 
 const argv = cli({
 	name: 'mdeval',

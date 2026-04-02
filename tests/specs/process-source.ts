@@ -313,6 +313,24 @@ describe('processSource', () => {
 		expect(output).toBe(source.replace('old', 'hello'));
 	});
 
+	test('$ runs shell command and interpolates stdout', async () => {
+		const source = '<!--mdeval $`echo hello`-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', 'hello'));
+	});
+
+	test('$ works with script variable', async () => {
+		const source = '<!--mdeval\nconst result = $`echo world`;\n-->\n\n<!--mdeval result-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', 'world'));
+	});
+
+	test('$ with multiline output', async () => {
+		const source = '<!--mdeval $`printf "a\\nb\\nc"`-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', 'a\nb\nc'));
+	});
+
 	test('resolves promise expressions', async () => {
 		const source = '<!--mdeval\n-->\n\n<!--mdeval Promise.resolve("async value")-->old<!--/mdeval-->';
 		const output = await processMarkdown(source);
