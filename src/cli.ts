@@ -9,6 +9,8 @@ import { processSource } from './process-source.ts';
 declare global {
 	// eslint-disable-next-line vars-on-top
 	var block: (value: unknown) => string;
+	// eslint-disable-next-line vars-on-top
+	var $: typeof import('zx').$;
 }
 
 register('#md-loader', import.meta.url);
