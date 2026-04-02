@@ -314,7 +314,7 @@ describe('processSource', () => {
 	});
 
 	test('$ runs shell command and interpolates stdout', async () => {
-		const source = '<!--mdeval\n-->\n\n<!--mdeval $`echo hello`-->old<!--/mdeval-->';
+		const source = '<!--mdeval $`echo hello`-->old<!--/mdeval-->';
 		const output = await processMarkdown(source);
 		expect(output).toBe(source.replace('old', 'hello'));
 	});
@@ -326,7 +326,7 @@ describe('processSource', () => {
 	});
 
 	test('$ with multiline output', async () => {
-		const source = '<!--mdeval\n-->\n\n<!--mdeval $`printf "a\\nb\\nc"`-->old<!--/mdeval-->';
+		const source = '<!--mdeval $`printf "a\\nb\\nc"`-->old<!--/mdeval-->';
 		const output = await processMarkdown(source);
 		expect(output).toBe(source.replace('old', 'a\nb\nc'));
 	});
