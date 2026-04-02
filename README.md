@@ -26,7 +26,7 @@ const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));
 -->
 ```
 
-Full Node.js, ESM imports, and top-level `await` are supported.
+Full Node.js, ESM imports, top-level `await`, and shell commands via [`$`](https://google.github.io/zx/) are supported.
 
 A **value marker** is where the result appears. It starts with `<!--mdeval ` (with a space) followed by a JavaScript expression:
 
@@ -55,6 +55,12 @@ The file is updated in-place. You can pass multiple files at once: `mdeval READM
   In large documents, this IIFE pattern lets you keep logic next to the marker it serves instead of in a distant script block.
 
 - Marker expressions are **auto-awaited** — promises resolve automatically, so you can use `fetch()` or any async API directly in a marker without wrapping it in a script block.
+
+- **`$`** from [zx](https://google.github.io/zx/) is available as a global — run shell commands directly in markers:
+
+  ```markdown
+  <!--mdeval $`git branch --show-current`-->main<!--/mdeval-->
+  ```
 
 - If your value starts with a heading, list, or other block element, wrap it with **`block()`** so it renders on its own line. `block()` is a global helper that adds newlines before and after the value.
 

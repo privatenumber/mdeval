@@ -3,6 +3,7 @@ import { register } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cli } from 'cleye';
+import { $ } from 'zx';
 import { processSource } from './process-source.ts';
 
 declare global {
@@ -13,6 +14,7 @@ declare global {
 register('#md-loader', import.meta.url);
 
 globalThis.block = (value: unknown) => `\n${String(value)}\n`;
+globalThis.$ = $;
 
 const argv = cli({
 	name: 'mdeval',

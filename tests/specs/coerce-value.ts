@@ -26,6 +26,11 @@ describe('coerceValue', () => {
 		expect(coerceValue([1, 2, 3])).toBe('[1,2,3]');
 	});
 
+	test('coerces object with Symbol.toPrimitive to string', () => {
+		const value = { [Symbol.toPrimitive]: () => 'custom' };
+		expect(coerceValue(value)).toBe('custom');
+	});
+
 	test('throws on null', () => {
 		expect(() => coerceValue(null)).toThrow();
 	});
