@@ -13,7 +13,11 @@ const argv = cli({
 	parameters: ['<files...>'],
 });
 
-const files = await glob(argv._.files);
+const patterns = argv._.files;
+const targetsNodeModules = patterns.some(pattern => pattern.includes('node_modules'));
+const files = await glob(patterns, {
+	ignore: targetsNodeModules ? [] : ['**/node_modules/**'],
+});
 
 if (files.length === 0) {
 	console.error('No files matched the given patterns');

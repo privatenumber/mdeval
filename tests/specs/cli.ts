@@ -151,6 +151,42 @@ describe('cli', () => {
 		expect(contentC).toBe(md);
 	});
 
+	test('ignores node_modules by default', async () => {
+		const md = '<!--mdeval\nconst x = "found";\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'README.md': md,
+			'node_modules/pkg/README.md': md,
+		});
+		await mdeval(['**/*.md'], { cwd: fixture.path });
+
+		const content = await fixture.readFile('README.md', 'utf8');
+		const nmContent = await fixture.readFile('node_modules/pkg/README.md', 'utf8');
+		expect(content).toBe(md.replace('old', 'found'));
+		expect(nmContent).toBe(md);
+	});
+
+	test('explicit node_modules path opts in', async () => {
+		const md = '<!--mdeval\nconst x = "found";\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'node_modules/pkg/README.md': md,
+		});
+		await mdeval(['node_modules/pkg/README.md'], { cwd: fixture.path });
+
+		const content = await fixture.readFile('node_modules/pkg/README.md', 'utf8');
+		expect(content).toBe(md.replace('old', 'found'));
+	});
+
+	test('glob targeting node_modules opts in', async () => {
+		const md = '<!--mdeval\nconst x = "found";\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'node_modules/pkg/README.md': md,
+		});
+		await mdeval(['**/node_modules/pkg/*.md'], { cwd: fixture.path });
+
+		const content = await fixture.readFile('node_modules/pkg/README.md', 'utf8');
+		expect(content).toBe(md.replace('old', 'found'));
+	});
+
 	test('no matches exits 1', async () => {
 		const error = await mdeval(['*.nonexistent']).catch((error_: unknown) => error_);
 		expect((error as { exitCode: number }).exitCode).toBe(1);

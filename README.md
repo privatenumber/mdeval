@@ -40,7 +40,9 @@ The `1.0.0` between `-->` and `<!--/mdeval-->` is the current value — it gets 
 mdeval README.md
 ```
 
-The file is updated in-place. You can pass multiple files or glob patterns: `mdeval README.md "docs/**/*.md"`
+The file is updated in-place. You can pass multiple files or glob patterns: `mdeval README.md "docs/**/*.md"`.
+
+`node_modules` and hidden directories are automatically excluded from glob expansion.
 
 ## Notes
 
