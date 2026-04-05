@@ -39,6 +39,7 @@
 	"dependencies": {
 		"cleye": "^2.3.0",
 		"md4x": "^0.0.25",
+		"tinyglobby": "^0.2.15",
 		"zx": "8.8.5-lite"
 	},
 	"devDependencies": {
@@ -47,6 +48,7 @@
 		"fs-fixture": "^2.12.0",
 		"lintroll": "^1.30.0",
 		"manten": "^2.0.0",
+		"nano-spawn": "^2.1.0",
 		"pkgroll": "^2.27.0",
 		"skills-npm": "^1.1.1",
 		"typescript": "^6.0.2"

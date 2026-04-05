@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cli } from 'cleye';
+import { glob } from 'tinyglobby';
 import { $ } from 'zx';
 import { processSource } from './process-source.ts';
 
@@ -12,7 +13,14 @@ const argv = cli({
 	parameters: ['<files...>'],
 });
 
-await Promise.all(argv._.files.map(async (file) => {
+const files = await glob(argv._.files);
+
+if (files.length === 0) {
+	console.error('No files matched the given patterns');
+	process.exit(1);
+}
+
+await Promise.all(files.map(async (file) => {
 	try {
 		const resolvedPath = path.resolve(file);
 		const source = await fs.readFile(resolvedPath, 'utf8');
