@@ -14,7 +14,7 @@ Two types of HTML comments — invisible when rendered:
 | Script block | `<!--mdeval\n...\n-->` | Define variables, imports, logic. Starts with `<!--mdeval` + newline |
 | Value marker | `<!--mdeval EXPR-->value<!--/mdeval-->` | Interpolate expression result. Starts with `<!--mdeval ` + space |
 
-Script blocks run as ESM with full Node.js access and top-level `await`. All blocks in a file merge into one module — imports and variables are shared across blocks and markers. `import.meta` points to the markdown file.
+Script blocks run as ESM with full Node.js access and top-level `await`. All blocks in a file merge into one module — imports and variables are shared across blocks and markers. `import.meta` points to the markdown file. Marker expressions are auto-awaited, so promises resolve automatically.
 
 ## Marker Expressions
 
@@ -36,9 +36,35 @@ Duplicate expressions across markers are evaluated once and reused.
 | `string` | As-is |
 | `number`, `boolean`, `bigint` | `String(value)` |
 | `object`, `array` | `JSON.stringify(value)` |
+| object with `Symbol.toPrimitive` | `String(value)` (e.g. zx `ProcessOutput`) |
+| `Promise` | Auto-awaited, then coerced |
 | `undefined`, `null` | Error |
 
+## Globals
+
+| Global | Description |
+|--------|-------------|
+| `block(value)` | Wraps value with newlines for block-level rendering |
+| `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates: `` $`git branch` `` |
+
+## CLI
+
+```bash
+mdeval README.md                    # single file
+mdeval README.md docs/guide.md      # multiple files
+mdeval "docs/**/*.md"               # glob pattern
+mdeval "**/*.md" "!node_modules/**" # negation
+```
+
+Supports full glob syntax including `**` recursive, `{a,b}` brace expansion, and `!` negation.
+
 ## Patterns
+
+### Shell commands
+
+````markdown
+<!--mdeval $`git branch --show-current`-->main<!--/mdeval-->
+````
 
 ### Read package.json
 
