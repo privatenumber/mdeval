@@ -53,10 +53,12 @@ Duplicate expressions across markers are evaluated once and reused.
 mdeval README.md                    # single file
 mdeval README.md docs/guide.md      # multiple files
 mdeval "docs/**/*.md"               # glob pattern
-mdeval "**/*.md" "!node_modules/**" # negation
+mdeval "**/*.md"                    # recursive — node_modules and dotdirs auto-excluded
 ```
 
 Supports full glob syntax including `**` recursive, `{a,b}` brace expansion, and `!` negation.
+
+`node_modules` and hidden directories (`.git`, `.next`, etc.) are automatically excluded from glob expansion. No need to manually negate them. To explicitly include `node_modules`, reference it in the pattern: `mdeval "node_modules/pkg/*.md"`.
 
 ## Patterns
 
