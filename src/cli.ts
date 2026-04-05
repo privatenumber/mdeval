@@ -1,12 +1,8 @@
-// eslint-disable-next-line n/no-unsupported-features/node-builtins
-import { register } from 'node:module';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cli } from 'cleye';
 import { $ } from 'zx';
 import { processSource } from './process-source.ts';
-
-register('#md-loader', import.meta.url);
 
 globalThis.block = (value: unknown) => `\n${String(value)}\n`;
 globalThis.$ = $;

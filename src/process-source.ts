@@ -1,8 +1,11 @@
+import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import {
 	parseMarkdown, COMMENT_TAG, MARKER_OPEN, MARKER_CLOSE, EXPORT_PREFIX, buildExpressionMap,
 } from './parse-markdown.ts';
 import { coerceValue } from './coerce-value.ts';
+
+register('#md-loader', import.meta.url);
 
 export const processSource = async (
 	source: string,
