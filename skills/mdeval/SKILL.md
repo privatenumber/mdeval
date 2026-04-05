@@ -142,3 +142,5 @@ const x = String.fromCharCode(45, 45, 62);
 **Use IIFEs to co-locate logic.** In large docs, keep marker-specific computation inline instead of in a distant script block: `<!--mdeval (() => { ... })()-->`.
 
 **Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
+
+**Never create a .md file with only a script block and no real content.** Markdown files must contain actual prose/documentation. For shared logic or utilities, create a `.js` or `.ts` file and import it from your markdown instead.
