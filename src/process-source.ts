@@ -1,7 +1,8 @@
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import {
-	parseMarkdown, COMMENT_TAG, MARKER_OPEN, MARKER_CLOSE, EXPORT_PREFIX, buildExpressionMap,
+	parseMarkdown, COMMENT_TAG, MARKER_OPEN, MARKER_CLOSE,
+	COMMENT_CLOSE, EXPORT_PREFIX, buildExpressionMap,
 } from './parse-markdown.ts';
 import { coerceValue } from './coerce-value.ts';
 
@@ -36,9 +37,12 @@ export const processSource = async (
 	let cursor = 0;
 
 	for (const marker of markers) {
+		const openLength = MARKER_OPEN.length + marker.expression.length + COMMENT_CLOSE.length;
+		const contentStart = marker.start + openLength;
+		const contentEnd = marker.end - MARKER_CLOSE.length;
 		const exportIndex = expressionMap.get(marker.expression)!;
-		parts.push(source.slice(cursor, marker.contentStart), resolvedValues[exportIndex]);
-		cursor = marker.contentEnd;
+		parts.push(source.slice(cursor, contentStart), resolvedValues[exportIndex]);
+		cursor = contentEnd;
 	}
 
 	parts.push(source.slice(cursor));

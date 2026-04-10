@@ -4,8 +4,6 @@ export type Marker = {
 	expression: string;
 	start: number;
 	end: number;
-	contentStart: number;
-	contentEnd: number;
 };
 
 const NAME = 'mdeval';
@@ -13,7 +11,7 @@ export const COMMENT_TAG = `<!--${NAME}`;
 export const MARKER_OPEN = `${COMMENT_TAG} `;
 export const MARKER_CLOSE = `<!--/${NAME}-->`;
 export const EXPORT_PREFIX = `__${NAME}_`;
-const COMMENT_CLOSE = '-->';
+export const COMMENT_CLOSE = '-->';
 const SCRIPT_PREFIX = `${NAME}\n`;
 
 export const buildExpressionMap = (
@@ -162,8 +160,6 @@ const findMarkers = (
 				expression: source.slice(exprStart, exprEnd),
 				start,
 				end: markerEnd,
-				contentStart,
-				contentEnd: closeStart,
 			});
 		}
 

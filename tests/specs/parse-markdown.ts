@@ -1,5 +1,21 @@
 import { describe, test, expect } from 'manten';
-import { parseMarkdown } from '../../src/parse-markdown.ts';
+import {
+	parseMarkdown, MARKER_OPEN, MARKER_CLOSE, COMMENT_CLOSE,
+} from '../../src/parse-markdown.ts';
+
+const markerContent = (
+	source: string,
+	marker: {
+		expression: string;
+		start: number;
+		end: number;
+	},
+) => {
+	const openLength = MARKER_OPEN.length + marker.expression.length + COMMENT_CLOSE.length;
+	const contentStart = marker.start + openLength;
+	const contentEnd = marker.end - MARKER_CLOSE.length;
+	return source.slice(contentStart, contentEnd);
+};
 
 describe('parseMarkdown', () => {
 	test('extracts script blocks', () => {
@@ -27,10 +43,9 @@ describe('parseMarkdown', () => {
 				expression: 'x',
 				start: 13,
 				end: 44,
-				contentStart: 28,
-				contentEnd: 30,
 			},
 		]);
+		expect(markerContent(source, markers[0])).toBe('42');
 	});
 
 	test('extracts multiple markers', () => {
@@ -51,7 +66,7 @@ describe('parseMarkdown', () => {
 	test('handles marker with empty content', () => {
 		const source = '<!--mdeval x--><!--/mdeval-->';
 		const { markers } = parseMarkdown(source);
-		expect(markers[0].contentStart).toBe(markers[0].contentEnd);
+		expect(markerContent(source, markers[0])).toBe('');
 	});
 
 	test('multiple markers with same expression both appear', () => {
@@ -89,14 +104,14 @@ describe('parseMarkdown', () => {
 		].join('\n');
 		const { markers } = parseMarkdown(source);
 		expect(markers).toHaveLength(1);
-		expect(source.slice(markers[0].contentStart, markers[0].contentEnd)).toBe('old');
+		expect(markerContent(source, markers[0])).toBe('old');
 	});
 
 	test('ignores markers inside inline code when same expression exists outside', () => {
 		const source = 'Use `<!--mdeval x-->42<!--/mdeval-->` syntax.\n\n<!--mdeval x-->old<!--/mdeval-->';
 		const { markers } = parseMarkdown(source);
 		expect(markers).toHaveLength(1);
-		expect(source.slice(markers[0].contentStart, markers[0].contentEnd)).toBe('old');
+		expect(markerContent(source, markers[0])).toBe('old');
 	});
 
 	test('ignores markers inside tilde fences when same expression exists outside', () => {
@@ -109,7 +124,7 @@ describe('parseMarkdown', () => {
 		].join('\n');
 		const { markers } = parseMarkdown(source);
 		expect(markers).toHaveLength(1);
-		expect(source.slice(markers[0].contentStart, markers[0].contentEnd)).toBe('old');
+		expect(markerContent(source, markers[0])).toBe('old');
 	});
 
 	test('ignores markers inside multi-line indented code when same expression exists outside', () => {
@@ -121,7 +136,7 @@ describe('parseMarkdown', () => {
 		].join('\n');
 		const { markers } = parseMarkdown(source);
 		expect(markers).toHaveLength(1);
-		expect(source.slice(markers[0].contentStart, markers[0].contentEnd)).toBe('old');
+		expect(markerContent(source, markers[0])).toBe('old');
 	});
 
 	test('ignores markers inside indented code when first and last lines are identical', () => {
@@ -134,7 +149,7 @@ describe('parseMarkdown', () => {
 		].join('\n');
 		const { markers } = parseMarkdown(source);
 		expect(markers).toHaveLength(1);
-		expect(source.slice(markers[0].contentStart, markers[0].contentEnd)).toBe('old');
+		expect(markerContent(source, markers[0])).toBe('old');
 	});
 
 	test('returns independent results for non-mdeval inputs', () => {
@@ -145,8 +160,6 @@ describe('parseMarkdown', () => {
 			expression: 'injected',
 			start: 0,
 			end: 10,
-			contentStart: 5,
-			contentEnd: 8,
 		});
 		expect(r2.markers).toHaveLength(0);
 	});
