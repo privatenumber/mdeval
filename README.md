@@ -53,7 +53,11 @@ The file is updated in-place. You can pass multiple files or glob patterns: `mde
 - Markers can be **self-contained** — no script block needed:
 
   ```markdown
-  <!--mdeval (() => 2 + 2)()-->4<!--/mdeval-->
+  <!--mdeval (() => {
+    const n = 3;
+    if (n % 2 === 0) { return 'even' }
+    return 'odd'
+  })()-->odd<!--/mdeval-->
   ```
 
   In large documents, this IIFE pattern lets you keep logic next to the marker it serves instead of in a distant script block.
