@@ -5,7 +5,18 @@ describe('parseMarkdown', () => {
 	test('extracts script blocks', () => {
 		const source = '<!--mdeval\nconst x = 1;\n-->\n\n<!--mdeval\nconst y = 2;\n-->';
 		const { scriptBlocks } = parseMarkdown(source);
-		expect(scriptBlocks).toStrictEqual(['const x = 1;\n', 'const y = 2;\n']);
+		expect(scriptBlocks).toStrictEqual([
+			{
+				content: 'const x = 1;\n',
+				start: 0,
+				end: 27,
+			},
+			{
+				content: 'const y = 2;\n',
+				start: 29,
+				end: 56,
+			},
+		]);
 	});
 
 	test('extracts value markers', () => {
@@ -14,6 +25,8 @@ describe('parseMarkdown', () => {
 		expect(markers).toStrictEqual([
 			{
 				expression: 'x',
+				start: 13,
+				end: 44,
 				contentStart: 28,
 				contentEnd: 30,
 			},
@@ -130,6 +143,8 @@ describe('parseMarkdown', () => {
 		expect(r1.markers).toHaveLength(0);
 		r1.markers.push({
 			expression: 'injected',
+			start: 0,
+			end: 10,
 			contentStart: 5,
 			contentEnd: 8,
 		});

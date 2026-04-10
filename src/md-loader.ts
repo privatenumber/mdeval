@@ -1,13 +1,15 @@
 import type { LoadHook } from 'node:module';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { parseMarkdown, EXPORT_PREFIX, buildExpressionMap } from './parse-markdown.ts';
+import {
+	parseMarkdown, EXPORT_PREFIX, buildExpressionMap, type ScriptBlock, type Marker,
+} from './parse-markdown.ts';
 
 const generateModule = (
-	scriptBlocks: string[],
-	markers: Array<{ expression: string }>,
+	scriptBlocks: ScriptBlock[],
+	markers: Marker[],
 ): string => {
-	const scriptCode = scriptBlocks.join('\n');
+	const scriptCode = scriptBlocks.map(block => block.content).join('\n');
 	const expressionMap = buildExpressionMap(markers);
 
 	if (expressionMap.size === 0) {

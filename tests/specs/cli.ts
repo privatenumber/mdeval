@@ -198,4 +198,28 @@ describe('cli', () => {
 		});
 		await mdeval([fixture.getPath('test.md')]);
 	});
+
+	test('warns when file has only mdeval blocks and no markdown content', async () => {
+		await using fixture = await createFixture({
+			'test.md': '<!--mdeval\nconst x = 1;\n-->\n\n<!--mdeval x-->1<!--/mdeval-->',
+		});
+		const result = await mdeval([fixture.getPath('test.md')]);
+		expect(result.stderr).toContain('no markdown content');
+	});
+
+	test('no warning when file has markdown content alongside mdeval blocks', async () => {
+		await using fixture = await createFixture({
+			'test.md': '# Title\n\n<!--mdeval\nconst x = 1;\n-->\n\nSome text <!--mdeval x-->1<!--/mdeval-->',
+		});
+		const result = await mdeval([fixture.getPath('test.md')]);
+		expect(result.stderr).toBe('');
+	});
+
+	test('no warning for mdeval syntax inside code blocks', async () => {
+		await using fixture = await createFixture({
+			'test.md': '```\n<!--mdeval\nconst x = 1;\n-->\n\n<!--mdeval x-->1<!--/mdeval-->\n```',
+		});
+		const result = await mdeval([fixture.getPath('test.md')]);
+		expect(result.stderr).toBe('');
+	});
 });

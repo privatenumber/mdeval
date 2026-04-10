@@ -1,7 +1,9 @@
 import { parseAST, type ComarkNode } from 'md4x';
 
-type Marker = {
+export type Marker = {
 	expression: string;
+	start: number;
+	end: number;
 	contentStart: number;
 	contentEnd: number;
 };
@@ -15,7 +17,7 @@ const COMMENT_CLOSE = '-->';
 const SCRIPT_PREFIX = `${NAME}\n`;
 
 export const buildExpressionMap = (
-	markers: Array<{ expression: string }>,
+	markers: Marker[],
 ): Map<string, number> => {
 	const map = new Map<string, number>();
 	for (const { expression } of markers) {
@@ -26,14 +28,20 @@ export const buildExpressionMap = (
 	return map;
 };
 
+export type ScriptBlock = {
+	content: string;
+	start: number;
+	end: number;
+};
+
 const walkAst = (
 	ast: { nodes: ComarkNode[] },
 	source: string,
 ): {
-	scriptBlocks: string[];
+	scriptBlocks: ScriptBlock[];
 	codeRanges: Array<[number, number]>;
 } => {
-	const scriptBlocks: string[] = [];
+	const scriptBlocks: ScriptBlock[] = [];
 	const codeRanges: Array<[number, number]> = [];
 	let cursor = 0;
 
@@ -77,11 +85,15 @@ const walkAst = (
 
 		if (tag === null && typeof children[0] === 'string') {
 			const content = children[0];
-			if (content.startsWith(SCRIPT_PREFIX)) {
-				scriptBlocks.push(content.slice(SCRIPT_PREFIX.length));
-			}
 			const needle = `<!--${content}-->`;
 			const position = source.indexOf(needle, cursor);
+			if (content.startsWith(SCRIPT_PREFIX) && position !== -1) {
+				scriptBlocks.push({
+					content: content.slice(SCRIPT_PREFIX.length),
+					start: position,
+					end: position + needle.length,
+				});
+			}
 			if (position !== -1) {
 				cursor = position + needle.length;
 			}
@@ -148,6 +160,8 @@ const findMarkers = (
 		if (!isInCode(start)) {
 			markers.push({
 				expression: source.slice(exprStart, exprEnd),
+				start,
+				end: markerEnd,
 				contentStart,
 				contentEnd: closeStart,
 			});
@@ -159,10 +173,12 @@ const findMarkers = (
 	return markers;
 };
 
-export const parseMarkdown = (source: string): {
-	scriptBlocks: string[];
+type ParseResult = {
+	scriptBlocks: ScriptBlock[];
 	markers: Marker[];
-} => {
+};
+
+export const parseMarkdown = (source: string): ParseResult => {
 	if (!source.includes(COMMENT_TAG)) {
 		return {
 			scriptBlocks: [],
@@ -177,4 +193,27 @@ export const parseMarkdown = (source: string): {
 		scriptBlocks,
 		markers: findMarkers(source, codeRanges),
 	};
+};
+
+export const isOnlyMdeval = (
+	source: string,
+	{ scriptBlocks, markers }: ParseResult,
+): boolean => {
+	if (scriptBlocks.length === 0 && markers.length === 0) {
+		return false;
+	}
+
+	const ranges = [
+		...scriptBlocks.map((block): [number, number] => [block.start, block.end]),
+		...markers.map((marker): [number, number] => [marker.start, marker.end]),
+	].sort((a, b) => a[0] - b[0]);
+
+	let cursor = 0;
+	for (const [start, end] of ranges) {
+		if (source.slice(cursor, start).trim() !== '') {
+			return false;
+		}
+		cursor = end;
+	}
+	return source.slice(cursor).trim() === '';
 };

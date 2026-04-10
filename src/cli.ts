@@ -3,6 +3,7 @@ import path from 'node:path';
 import { cli } from 'cleye';
 import { glob } from 'tinyglobby';
 import { $ } from 'zx';
+import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 
 globalThis.block = (value: unknown) => `\n${String(value)}\n`;
@@ -28,6 +29,12 @@ await Promise.all(files.map(async (file) => {
 	try {
 		const resolvedPath = path.resolve(file);
 		const source = await fs.readFile(resolvedPath, 'utf8');
+		const parsed = parseMarkdown(source);
+
+		if (isOnlyMdeval(source, parsed)) {
+			console.warn(`Warning: ${file} has no markdown content outside of mdeval blocks`);
+		}
+
 		const output = await processSource(source, resolvedPath);
 
 		if (output !== source) {
