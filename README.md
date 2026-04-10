@@ -7,6 +7,8 @@ Ever wanted dynamic values in your Markdown — package versions, star counts, c
 
 mdeval embeds JavaScript directly in your Markdown using HTML comments. The logic lives right next to the content it produces, and the file renders normally everywhere — GitHub, editors, any Markdown viewer — because HTML comments are invisible.
 
+Any value that matters — a dependency count, a version string, a benchmark result — is computed, not typed. Whether written by a person or an AI agent, the expression shows the work and anyone can verify it. Re-run `mdeval` and every value updates.
+
 ## Install
 
 ```bash

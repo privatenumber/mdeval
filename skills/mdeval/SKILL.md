@@ -5,6 +5,13 @@ description: Evaluates JavaScript in markdown HTML comments and interpolates res
 
 # mdeval
 
+## When to use
+
+- Markdown contains values derived from code, files, APIs, or shell commands
+- README stats, version numbers, dependency counts, or computed tables
+- Any value where accuracy matters — counts, sizes, dates, calculations
+- Auditable content — the expression proves the value is correct, not just asserted
+
 ## Syntax
 
 Two types of HTML comments — invisible when rendered:
