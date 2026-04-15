@@ -1,4 +1,4 @@
-import { parseAST, type ComarkNode } from 'md4x';
+import { parse, preprocess, postprocess } from 'micromark';
 
 export type Marker = {
 	expression: string;
@@ -12,7 +12,6 @@ export const MARKER_OPEN = `${COMMENT_TAG} `;
 export const MARKER_CLOSE = `<!--/${NAME}-->`;
 export const EXPORT_PREFIX = `__${NAME}_`;
 export const COMMENT_CLOSE = '-->';
-const SCRIPT_PREFIX = `${NAME}\n`;
 
 export const buildExpressionMap = (
 	markers: Marker[],
@@ -32,141 +31,36 @@ export type ScriptBlock = {
 	end: number;
 };
 
-const walkAst = (
-	ast: { nodes: ComarkNode[] },
-	source: string,
-): {
-	scriptBlocks: ScriptBlock[];
-	codeRanges: Array<[number, number]>;
-} => {
-	const scriptBlocks: ScriptBlock[] = [];
-	const codeRanges: Array<[number, number]> = [];
-	let cursor = 0;
+type CodeRange = [number, number];
 
-	const walk = (node: ComarkNode) => {
-		if (!Array.isArray(node)) {
-			return;
-		}
-
-		const [tag, , ...children] = node;
-
-		if (tag === 'code') {
-			const text = children[0];
-			if (typeof text === 'string' && text.length > 0) {
-				const position = source.indexOf(text, cursor);
-				if (position !== -1) {
-					codeRanges.push([position, position + text.length]);
-					cursor = position + text.length;
-					return;
-				}
-
-				// Indented code blocks: md4x strips leading spaces,
-				// so the full content won't match the source verbatim.
-				const contentLines = text.split('\n').filter(line => line.length > 0);
-				if (contentLines.length > 0) {
-					const firstPosition = source.indexOf(contentLines[0], cursor);
-					if (firstPosition !== -1) {
-						let rangeEnd = firstPosition + contentLines[0].length;
-						for (let lineIndex = 1; lineIndex < contentLines.length; lineIndex += 1) {
-							const linePosition = source.indexOf(contentLines[lineIndex], rangeEnd);
-							if (linePosition !== -1) {
-								rangeEnd = linePosition + contentLines[lineIndex].length;
-							}
-						}
-						codeRanges.push([firstPosition, rangeEnd]);
-						cursor = rangeEnd;
-					}
-				}
-			}
-			return;
-		}
-
-		if (tag === null && typeof children[0] === 'string') {
-			const content = children[0];
-			const needle = `<!--${content}-->`;
-			const position = source.indexOf(needle, cursor);
-			if (content.startsWith(SCRIPT_PREFIX) && position !== -1) {
-				scriptBlocks.push({
-					content: content.slice(SCRIPT_PREFIX.length),
-					start: position,
-					end: position + needle.length,
-				});
-			}
-			if (position !== -1) {
-				cursor = position + needle.length;
-			}
-			return;
-		}
-
-		for (const child of children) {
-			if (Array.isArray(child)) {
-				walk(child);
-			}
-		}
-	};
-
-	for (const node of ast.nodes) {
-		walk(node);
-	}
-
-	return {
-		scriptBlocks,
-		codeRanges,
-	};
-};
-
-const findMarkers = (
-	source: string,
-	codeRanges: Array<[number, number]>,
-): Marker[] => {
-	let codeRangeIndex = 0;
-	const isInCode = (position: number) => {
-		while (codeRangeIndex < codeRanges.length && codeRanges[codeRangeIndex][1] <= position) {
-			codeRangeIndex += 1;
-		}
-		if (codeRangeIndex >= codeRanges.length) {
-			return false;
-		}
-		const [start, end] = codeRanges[codeRangeIndex];
-		return position >= start && position < end;
-	};
-
-	const markers: Marker[] = [];
-	let searchFrom = 0;
-
-	while (searchFrom < source.length) {
-		const start = source.indexOf(MARKER_OPEN, searchFrom);
-		if (start === -1) {
-			break;
-		}
-
-		const exprStart = start + MARKER_OPEN.length;
-		const exprEnd = source.indexOf(COMMENT_CLOSE, exprStart);
-		if (exprEnd === -1) {
-			break;
-		}
-
-		const contentStart = exprEnd + COMMENT_CLOSE.length;
-		const closeStart = source.indexOf(MARKER_CLOSE, contentStart);
-		if (closeStart === -1) {
-			searchFrom = contentStart;
+// Collect the byte ranges of all code constructs via micromark — the CommonMark
+// reference parser. Fenced code, inline code, and indented code blocks are the
+// regions where mdeval patterns are treated as literal content (part of a docs
+// example) rather than active syntax.
+//
+// micromark emits events in document order, so the ranges come out sorted.
+// micromark's preprocess() strips a leading BOM; we shift offsets back so the
+// ranges align with positions in the original source that our mdeval scanners
+// also operate on.
+const findCodeRanges = (source: string): CodeRange[] => {
+	const bomOffset = source.codePointAt(0) === 0xFE_FF ? 1 : 0;
+	const events = postprocess(
+		parse().document().write(preprocess()(source, undefined, true)),
+	);
+	const ranges: CodeRange[] = [];
+	for (const [phase, token] of events) {
+		if (phase !== 'enter') {
 			continue;
 		}
-
-		const markerEnd = closeStart + MARKER_CLOSE.length;
-
-		if (!isInCode(start)) {
-			markers.push({
-				expression: source.slice(exprStart, exprEnd),
-				start,
-				end: markerEnd,
-			});
+		if (
+			token.type === 'codeFenced'
+			|| token.type === 'codeIndented'
+			|| token.type === 'codeText'
+		) {
+			ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
 		}
-
-		searchFrom = markerEnd;
 	}
-
-	return markers;
+	return ranges;
 };
 
 type ParseResult = {
@@ -174,6 +68,29 @@ type ParseResult = {
 	markers: Marker[];
 };
 
+// Lazy, forward-only code-range membership test. We defer the micromark parse
+// until we actually find a candidate mdeval opening in source — the substring
+// check in parseMarkdown can pass on matches that only exist inside code (e.g.
+// a string literal `<!--mdeval` inside a fenced block), in which case we never
+// need the parser at all.
+const createIsInCode = (source: string) => {
+	let ranges: CodeRange[] | null = null;
+	let rangeIndex = 0;
+	return (position: number): boolean => {
+		if (ranges === null) {
+			ranges = findCodeRanges(source);
+		}
+		while (rangeIndex < ranges.length && ranges[rangeIndex][1] <= position) {
+			rangeIndex += 1;
+		}
+		return rangeIndex < ranges.length && position >= ranges[rangeIndex][0];
+	};
+};
+
+// Single-pass scan of `source` for both script blocks (`<!--mdeval\n…-->`) and
+// value markers (`<!--mdeval expr-->value<!--/mdeval-->`). Candidates whose
+// opening offset falls inside a code range are dropped — those are literal
+// syntax examples in the document, not active mdeval markers.
 export const parseMarkdown = (source: string): ParseResult => {
 	if (!source.includes(COMMENT_TAG)) {
 		return {
@@ -182,12 +99,73 @@ export const parseMarkdown = (source: string): ParseResult => {
 		};
 	}
 
-	const ast = parseAST(source);
-	const { scriptBlocks, codeRanges } = walkAst(ast, source);
+	const isInCode = createIsInCode(source);
+
+	const scriptBlocks: ScriptBlock[] = [];
+	const markers: Marker[] = [];
+	let searchFrom = 0;
+
+	while (searchFrom < source.length) {
+		const start = source.indexOf(COMMENT_TAG, searchFrom);
+		if (start === -1) {
+			break;
+		}
+
+		const afterTag = start + COMMENT_TAG.length;
+		const nextChar = source[afterTag];
+
+		// Script block: <!--mdeval followed by LF or CRLF. We accept CRLF so
+		// files saved on Windows (or via git autocrlf) still parse.
+		if (nextChar === '\n' || (nextChar === '\r' && source[afterTag + 1] === '\n')) {
+			const contentStart = nextChar === '\n' ? afterTag + 1 : afterTag + 2;
+			const closeStart = source.indexOf(COMMENT_CLOSE, contentStart);
+			if (closeStart === -1) {
+				break;
+			}
+			const end = closeStart + COMMENT_CLOSE.length;
+			if (!isInCode(start)) {
+				scriptBlocks.push({
+					content: source.slice(contentStart, closeStart),
+					start,
+					end,
+				});
+			}
+			searchFrom = end;
+			continue;
+		}
+
+		// Value marker: <!--mdeval followed by a space.
+		if (nextChar === ' ') {
+			const exprStart = afterTag + 1;
+			const exprEnd = source.indexOf(COMMENT_CLOSE, exprStart);
+			if (exprEnd === -1) {
+				break;
+			}
+			const contentStart = exprEnd + COMMENT_CLOSE.length;
+			const closeStart = source.indexOf(MARKER_CLOSE, contentStart);
+			if (closeStart === -1) {
+				searchFrom = contentStart;
+				continue;
+			}
+			const markerEnd = closeStart + MARKER_CLOSE.length;
+			if (!isInCode(start)) {
+				markers.push({
+					expression: source.slice(exprStart, exprEnd),
+					start,
+					end: markerEnd,
+				});
+			}
+			searchFrom = markerEnd;
+			continue;
+		}
+
+		// Not a script or marker — advance past the tag and keep looking.
+		searchFrom = afterTag;
+	}
 
 	return {
 		scriptBlocks,
-		markers: findMarkers(source, codeRanges),
+		markers,
 	};
 };
 

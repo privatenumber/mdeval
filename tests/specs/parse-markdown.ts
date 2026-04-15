@@ -35,6 +35,38 @@ describe('parseMarkdown', () => {
 		]);
 	});
 
+	test('preserves tab indentation in script block content', () => {
+		const source = '<!--mdeval\n\tconst x = 1;\n-->';
+		const { scriptBlocks } = parseMarkdown(source);
+		expect(scriptBlocks).toStrictEqual([
+			{
+				content: '\tconst x = 1;\n',
+				start: 0,
+				end: 28,
+			},
+		]);
+	});
+
+	test('preserves CRLF line endings in script blocks', () => {
+		const source = '<!--mdeval\r\nconst x = 1;\r\n-->';
+		const { scriptBlocks } = parseMarkdown(source);
+		expect(scriptBlocks).toStrictEqual([
+			{
+				content: 'const x = 1;\r\n',
+				start: 0,
+				end: source.length,
+			},
+		]);
+	});
+
+	test('skips <!--mdeval not followed by space or newline', () => {
+		const source = '<!--mdevalfoo--> then <!--mdeval x-->42<!--/mdeval-->';
+		const { scriptBlocks, markers } = parseMarkdown(source);
+		expect(scriptBlocks).toStrictEqual([]);
+		expect(markers).toHaveLength(1);
+		expect(markers[0].expression).toBe('x');
+	});
+
 	test('extracts value markers', () => {
 		const source = 'The value is <!--mdeval x-->42<!--/mdeval-->.';
 		const { markers } = parseMarkdown(source);
@@ -56,10 +88,76 @@ describe('parseMarkdown', () => {
 		expect(markers[1].expression).toBe('b');
 	});
 
+	test('extracts markers in rich block and inline contexts', () => {
+		const sources = [
+			'> <!--mdeval x-->42<!--/mdeval-->',
+			'- <!--mdeval x-->42<!--/mdeval-->',
+			'| a |\n|---|\n| <!--mdeval x-->42<!--/mdeval--> |',
+			'[<!--mdeval x-->42<!--/mdeval-->](https://example.com)',
+			'**<!--mdeval x-->42<!--/mdeval-->**',
+			'<div>\n<!--mdeval x-->42<!--/mdeval-->\n</div>',
+		];
+		for (const source of sources) {
+			const { markers } = parseMarkdown(source);
+			expect(markers).toHaveLength(1);
+			expect(markers[0].expression).toBe('x');
+		}
+	});
+
+	test('handles regular HTML comments interleaved with mdeval blocks', () => {
+		const source = [
+			'<!-- preamble -->',
+			'<!--mdeval',
+			'const x = 1;',
+			'-->',
+			'',
+			'<!-- between -->',
+			'',
+			'Value: <!--mdeval x-->old<!--/mdeval-->',
+			'',
+			'<!-- after -->',
+			'',
+			'<!--mdeval',
+			'const y = 2;',
+			'-->',
+		].join('\n');
+		const { scriptBlocks, markers } = parseMarkdown(source);
+		expect(scriptBlocks).toHaveLength(2);
+		expect(scriptBlocks[0].content).toBe('const x = 1;\n');
+		expect(scriptBlocks[1].content).toBe('const y = 2;\n');
+		expect(markers).toHaveLength(1);
+		expect(markers[0].expression).toBe('x');
+	});
+
+	test('preserves regular HTML comments inside marker content', () => {
+		const source = '<!--mdeval x-->42 <!-- note --> end<!--/mdeval-->';
+		const { markers } = parseMarkdown(source);
+		expect(markers).toHaveLength(1);
+		expect(markerContent(source, markers[0])).toBe('42 <!-- note --> end');
+	});
+
 	test('ignores content inside code fences', () => {
 		const source = '```\n<!--mdeval\nconst x = 1;\n-->\n<!--mdeval x-->42<!--/mdeval-->\n```';
 		const { scriptBlocks, markers } = parseMarkdown(source);
 		expect(scriptBlocks).toStrictEqual([]);
+		expect(markers).toStrictEqual([]);
+	});
+
+	test('ignores markers inside nested code fences', () => {
+		const source = [
+			'````',
+			'```',
+			'<!--mdeval x-->42<!--/mdeval-->',
+			'```',
+			'````',
+		].join('\n');
+		const { markers } = parseMarkdown(source);
+		expect(markers).toStrictEqual([]);
+	});
+
+	test('ignores unclosed marker', () => {
+		const source = 'before <!--mdeval x-->42 no closing tag';
+		const { markers } = parseMarkdown(source);
 		expect(markers).toStrictEqual([]);
 	});
 

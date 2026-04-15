@@ -11,9 +11,9 @@ importers:
       cleye:
         specifier: ^2.3.0
         version: 2.3.0
-      md4x:
-        specifier: ^0.0.25
-        version: 0.0.25
+      micromark:
+        specifier: ^4.0.2
+        version: 4.0.2
       tinyglobby:
         specifier: ^0.2.15
         version: 0.2.15
@@ -2047,10 +2047,6 @@ packages:
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
-
-  md4x@0.0.25:
-    resolution: {integrity: sha512-GrexawUhrKcwl7o2hkgs7Ut0PqI/meOCevmaRB1ueKo2y1Fh2nIl8e6KKawYGm9eXJP3u6BzVs4rzZOc2+w3hA==}
-    hasBin: true
 
   mdast-util-find-and-replace@3.0.2:
     resolution: {integrity: sha512-Tmd1Vg/m3Xz43afeNxDIhWRtFZgM2VLyaf4vSTYwudTyeuTneoL3qtWMA5jeLyz/O1vDJmmV4QuScFCA2tBPwg==}
@@ -4865,8 +4861,6 @@ snapshots:
   markdown-table@3.0.4: {}
 
   math-intrinsics@1.1.0: {}
-
-  md4x@0.0.25: {}
 
   mdast-util-find-and-replace@3.0.2:
     dependencies:
