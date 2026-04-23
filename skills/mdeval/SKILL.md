@@ -150,6 +150,37 @@ const x = String.fromCharCode(45, 45, 62);
 
 **Use IIFEs to co-locate logic.** In large docs, keep marker-specific computation inline instead of in a distant script block: `<!--mdeval (() => { ... })()-->`.
 
+**Standalone markers suppress inline markdown in the value.** When a marker opens a line — standalone paragraph, list item, or blockquote — GitHub treats the entire line as a raw HTML block. Inline markdown in the value (`` `code` ``, `**bold**`, `[link](url)`) is not processed and appears literally.
+
+````markdown
+<!-- ❌ backtick shows literally — line is an HTML block, not inline markdown -->
+<!--mdeval expr-->`value`<!--/mdeval-->
+````
+
+Use a multi-line marker so the value occupies its own lines, which are processed as normal markdown. Use [md-pen](https://github.com/privatenumber/md-pen) to generate formatted values:
+
+````markdown
+<!--mdeval
+import { code, bold, link } from 'md-pen';
+-->
+
+<!--mdeval code('asdf')-->
+`asdf`
+<!--/mdeval-->
+````
+
+Markers inside headings are always inline — markdown in the value always renders there.
+
+**Comments don't work in link URLs or image alt text.** GitHub escapes comment syntax in these positions:
+
+````markdown
+<!-- ❌ comment is URL-encoded as href -->
+[text](<!-- comment -->)
+
+<!-- ❌ comment appears as visible alt text -->
+![<!-- comment -->](image.png)
+````
+
 **Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
 
 **Never create a .md file with only a script block and no real content.** Markdown files must contain actual prose/documentation. For shared logic or utilities, create a `.js` or `.ts` file and import it from your markdown instead.
