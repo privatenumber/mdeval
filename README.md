@@ -181,6 +181,25 @@ const depsTable = table(deps.map(([name, version]) => [
 <!--/mdeval-->
 ```
 
+## Git hook
+
+Run mdeval automatically before every commit so values never go stale. [Lefthook](https://github.com/evilmartians/lefthook) makes this easy:
+
+```sh
+npm install lefthook --save-dev
+```
+
+```yaml
+# lefthook.yml
+pre-commit:
+  commands:
+    mdeval:
+      glob: "*.md"
+      run: npx mdeval "**/*.md" && git add -u ":(glob)**/*.md"
+```
+
+`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. The `git add -u` re-stages any files mdeval updated in-place so they're included in the commit.
+
 ## Agent Skills
 
 This package ships with a built-in [agent skill](./skills/mdeval/SKILL.md) for AI coding assistants. Set up [`skills-npm`](https://github.com/antfu/skills-npm) to automatically discover it.

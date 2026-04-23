@@ -181,6 +181,19 @@ Markers inside headings are always inline — markdown in the value always rende
 ![<!-- comment -->](image.png)
 ````
 
+**Set up a git hook so values never go stale.** Use [Lefthook](https://github.com/evilmartians/lefthook) with this config:
+
+```yaml
+# lefthook.yml
+pre-commit:
+  commands:
+    mdeval:
+      glob: "*.md"
+      run: npx mdeval "**/*.md" && git add -u ":(glob)**/*.md"
+```
+
+`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. The `git add -u` re-stages any files mdeval updated in-place so they're included in the commit.
+
 **Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
 
 **Never create a .md file with only a script block and no real content.** Markdown files must contain actual prose/documentation. For shared logic or utilities, create a `.js` or `.ts` file and import it from your markdown instead.
