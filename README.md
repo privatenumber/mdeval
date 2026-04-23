@@ -9,6 +9,9 @@ mdeval embeds JavaScript directly in your Markdown using HTML comments. The logi
 
 Any value that matters — a dependency count, a version string, a benchmark result — is computed, not typed. Whether written by a person or an AI agent, the expression shows the work and anyone can verify it. Re-run `mdeval` and every value updates.
 
+> [!TIP]
+> Particularly useful for **knowledge bases** — contact lists, project trackers, changelogs, or any Markdown that functions as a source of truth. Values stay accurate on every run, so nothing drifts. AI agents reading the files also benefit: pre-computed values mean they don't need to re-process raw data across multiple documents, cutting token usage significantly.
+
 ## Install
 
 ```bash
@@ -45,6 +48,69 @@ mdeval README.md
 The file is updated in-place. You can pass multiple files or glob patterns: `mdeval README.md "docs/**/*.md"`.
 
 `node_modules` and hidden directories are automatically excluded from glob expansion.
+
+## Example
+
+**`CONTACTS.md`** — a contact list stored as data, rendered as a table when viewed:
+
+````markdown
+<!--mdeval
+import { table, link } from 'md-pen';
+
+export const contacts = [
+  {
+    name: 'Alice Martin',
+    linkedin: 'https://linkedin.com/in/alice-martin',
+    notes: 'Met at JSConf 2023',
+  },
+  {
+    name: 'Bob Tanaka',
+    linkedin: 'https://linkedin.com/in/bob-tanaka',
+    notes: 'Former colleague at Acme Co.',
+  },
+];
+
+export const findContact = name => contacts.find(c => c.name === name);
+
+const contactsTable = table(
+  contacts.map(({ name, linkedin, notes }) => ({ Name: link(linkedin, name), Notes: notes })),
+);
+-->
+
+<!--mdeval block(contactsTable)-->
+| Name | Notes |
+| - | - |
+| [Alice Martin](https://linkedin.com/in/alice-martin) | Met at JSConf 2023 |
+| [Bob Tanaka](https://linkedin.com/in/bob-tanaka) | Former colleague at Acme Co. |
+<!--/mdeval-->
+````
+
+**`TIMELINE.md`** — imports contacts and links them by LinkedIn:
+
+````markdown
+<!--mdeval
+import { link, ul, bold } from 'md-pen';
+
+// Imports from the mdeval block!
+import { findContact } from './CONTACTS.md';
+
+const events = [
+  { date: '2023-10-15', description: 'Attended JSConf 2023' },
+  { date: '2024-03-01', description: `Coffee with ${link(findContact('Alice Martin').linkedin, 'Alice Martin')}` },
+  { date: '2024-11-08', description: 'Started new open-source project' },
+];
+
+const list = ul(events.map(({ date, description }) => `${bold(date)} — ${description}`));
+-->
+
+<!--mdeval block(list)-->
+- __2023-10-15__ — Attended JSConf 2023
+- __2024-03-01__ — Coffee with [Alice Martin](https://linkedin.com/in/alice-martin)
+- __2024-11-08__ — Started new open-source project
+<!--/mdeval-->
+````
+
+The source of truth for contacts live in `CONTACTS.md`. If contact info changes, run `mdeval **/*.md` and all files get re-rendered with the latest data.
 
 ## Notes
 
