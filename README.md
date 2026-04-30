@@ -159,6 +159,14 @@ The source of truth for contacts live in `CONTACTS.md`. If contact info changes,
 
 - When processing multiple files (`mdeval a.md b.md`), all files **share the same Node.js runtime** — including the module cache, `globalThis`, and `process.env`. This is the same behavior as any Node.js program using `import()`.
 
+- The marker helpers are also available as named exports from `mdeval/runtime` — useful when you want to use them in your own scripts, or when loading `.md` files from a Node script outside the CLI:
+
+  ```js
+  import { block, $ } from 'mdeval/runtime'
+  ```
+
+  Importing the runtime also seeds `block` and `$` on `globalThis` so any `.md` file loaded afterward (via `import()` with the loader registered) finds them.
+
 ## Caveats
 
 - Script code **cannot contain `-->`** — it closes the HTML comment. Rewrite `x-- > y` as `x -= 1; x > y`.

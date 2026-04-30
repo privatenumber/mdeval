@@ -54,6 +54,8 @@ Duplicate expressions across markers are evaluated once and reused.
 | `block(value)` | Wraps value with newlines for block-level rendering |
 | `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates: `` $`git branch` `` |
 
+Both helpers are also exported from `mdeval/runtime` for use in regular scripts: `import { block, $ } from 'mdeval/runtime'`. Importing the runtime also seeds them on `globalThis`, which is what makes them available to `.md` files loaded outside the CLI.
+
 ## CLI
 
 ```bash
