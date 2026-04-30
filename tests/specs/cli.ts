@@ -61,9 +61,12 @@ describe('cli', () => {
 		expect(contentB).toBe(bMd.replace('old', 'world'));
 
 		expect(result.stdout).not.toContain('Updated:');
-		const lines = result.stdout.split('\n').filter(Boolean).map(line => path.resolve(line)).slice()
+		const lines = result.stdout
+			.split('\n')
+			.filter(Boolean)
+			.map(line => path.resolve(line))
 			.sort();
-		expect(lines).toStrictEqual([pathA, pathB].slice().sort());
+		expect(lines).toStrictEqual([pathA, pathB].sort());
 	});
 
 	test('imported .md script only executes once across files', async () => {
