@@ -148,6 +148,15 @@ The source of truth for contacts live in `CONTACTS.md`. If contact info changes,
 
   This lets you share constants and logic across multiple markdown files.
 
+  If the imported file might not yet have mdeval content (e.g. a stub being filled in over time), use a **namespace import** so missing exports resolve to `undefined` instead of crashing Node's ESM linker:
+
+  ```markdown
+  <!--mdeval
+  import * as data from './stub.md';
+  const version = data.version ?? 'tbd';
+  -->
+  ```
+
 - When processing multiple files (`mdeval a.md b.md`), all files **share the same Node.js runtime** — including the module cache, `globalThis`, and `process.env`. This is the same behavior as any Node.js program using `import()`.
 
 ## Caveats

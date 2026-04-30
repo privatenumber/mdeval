@@ -32,7 +32,11 @@ export const load: LoadHook = async (url, context, nextLoad) => {
 	const { scriptBlocks, markers } = parseMarkdown(source);
 
 	if (scriptBlocks.length === 0 && markers.length === 0) {
-		return nextLoad(url, context);
+		return {
+			format: 'module',
+			source: '',
+			shortCircuit: true,
+		};
 	}
 
 	return {

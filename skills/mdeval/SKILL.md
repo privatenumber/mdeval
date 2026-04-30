@@ -98,6 +98,15 @@ import { version } from './data.md';
 <!--mdeval version-->1.0.0<!--/mdeval-->
 ````
 
+If the imported `.md` may not yet have mdeval content (stubs filled in over time), use a **namespace import** — named imports against an empty module are rejected by Node's ESM linker, but missing properties on a namespace resolve to `undefined`:
+
+````markdown
+<!--mdeval
+import * as data from './stub.md';
+const version = data.version ?? 'tbd';
+-->
+````
+
 ### Generate Markdown with md-pen
 
 Use [md-pen](https://github.com/privatenumber/md-pen) for formatted output (tables, lists, headings):

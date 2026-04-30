@@ -162,19 +162,18 @@ describe('processSource', () => {
 		expect(output).toBe(md.replace('?', 'hello'));
 	});
 
-	test('errors when importing .md file without mdeval content', async () => {
-		const plainMd = '# Just a README\n\nNo mdeval here.';
-		const consumerMd = '<!--mdeval\nimport \'./plain.md\';\nconst x = 1;\n-->\n\n<!--mdeval x-->?<!--/mdeval-->';
+	test('importing .md file without mdeval content resolves to empty namespace', async () => {
+		const plainMd = '# Just markdown\n\nHello.';
+		const consumerMd = '<!--mdeval\nimport * as plain from \'./plain.md\';\nconst label = plain.person ?? \'fallback\';\n-->\n\n<!--mdeval label-->old<!--/mdeval-->';
 		await using fixture = await createFixture({
 			'plain.md': plainMd,
 			'consumer.md': consumerMd,
 		});
-		await expect(
-			processSource(
-				await fixture.readFile('consumer.md', 'utf8'),
-				fixture.getPath('consumer.md'),
-			),
-		).rejects.toThrow();
+		const output = await processSource(
+			await fixture.readFile('consumer.md', 'utf8'),
+			fixture.getPath('consumer.md'),
+		);
+		expect(output).toBe(consumerMd.replace('old', 'fallback'));
 	});
 
 	test('imports from other .md files', async () => {
