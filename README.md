@@ -195,10 +195,12 @@ pre-commit:
   commands:
     mdeval:
       glob: "*.md"
-      run: npx mdeval "**/*.md" && git add -u ":(glob)**/*.md"
+      run: |
+        files=$(npx mdeval "**/*.md")
+        [ -n "$files" ] && git add $files
 ```
 
-`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. The `git add -u` re-stages any files mdeval updated in-place so they're included in the commit.
+`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. mdeval prints the path of each file it rewrites to stdout, so `git add $files` re-stages only the files it actually updated.
 
 ## Agent Skills
 
