@@ -10,12 +10,4 @@ describe('runtime', () => {
 	test('exports $ as zx tagged template', () => {
 		expect(typeof $).toBe('function');
 	});
-
-	test('seeds globalThis.block on import (side effect)', () => {
-		expect((globalThis as Record<string, unknown>).block).toBe(block);
-	});
-
-	test('seeds globalThis.$ on import (side effect)', () => {
-		expect((globalThis as Record<string, unknown>).$).toBe($);
-	});
 });
