@@ -148,21 +148,18 @@ export const parseMarkdown = (source: string): ParseResult => {
 				&& (closeStart === -1 || nextOpening < closeStart)
 			);
 			if (closeStart === -1 || interveningOpen) {
-				if (isInCode(start)) {
-					if (closeStart === -1) {
-						break;
-					}
-					searchFrom = contentStart;
-					continue;
-				}
-				if (interveningOpen) {
+				if (!isInCode(start)) {
 					throw new Error(
-						`mdeval: unclosed script block at offset ${start} (another mdeval opening found before \`-->\`)`,
+						interveningOpen
+							? `mdeval: unclosed script block at offset ${start} (another mdeval opening found before \`-->\`)`
+							: `mdeval: unclosed script block at offset ${start} (missing \`-->\`)`,
 					);
 				}
-				throw new Error(
-					`mdeval: unclosed script block at offset ${start} (missing \`-->\`)`,
-				);
+				if (closeStart === -1) {
+					break;
+				}
+				searchFrom = contentStart;
+				continue;
 			}
 			const end = closeStart + COMMENT_CLOSE.length;
 			if (!isInCode(start)) {
