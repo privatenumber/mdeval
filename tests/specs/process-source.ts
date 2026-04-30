@@ -176,6 +176,21 @@ describe('processSource', () => {
 		expect(output).toBe(consumerMd.replace('old', 'fallback'));
 	});
 
+	test('named imports against .md without exports surface a clear linker error', async () => {
+		const plainMd = '# Just markdown\n\nHello.';
+		const consumerMd = '<!--mdeval\nimport { person } from \'./plain.md\';\nconst x = person;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'plain.md': plainMd,
+			'consumer.md': consumerMd,
+		});
+		await expect(
+			processSource(
+				await fixture.readFile('consumer.md', 'utf8'),
+				fixture.getPath('consumer.md'),
+			),
+		).rejects.toThrow(/does not provide an export named ['"]person['"]/);
+	});
+
 	test('imports from other .md files', async () => {
 		const dataMd = '<!--mdeval\nexport const version = "1.0.0";\nexport const name = "test";\n-->\n\nVersion: <!--mdeval version-->?<!--/mdeval-->';
 		const consumerMd = '<!--mdeval\nimport { version, name } from \'./data.md\';\nconst label = name + "@" + version;\n-->\n\n<!--mdeval label-->?<!--/mdeval-->';
