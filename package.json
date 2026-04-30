@@ -21,6 +21,9 @@
 	],
 	"type": "module",
 	"bin": "./dist/cli.mjs",
+	"exports": {
+		"./runtime": "./dist/runtime.mjs"
+	},
 	"imports": {
 		"#md-loader": "./dist/md-loader.mjs"
 	},

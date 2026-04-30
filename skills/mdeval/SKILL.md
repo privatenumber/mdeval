@@ -47,9 +47,9 @@ Duplicate expressions across markers are evaluated once and reused.
 | `Promise` | Auto-awaited, then coerced |
 | `undefined`, `null` | Error |
 
-## Globals
+## Available in markers
 
-| Global | Description |
+| Helper | Description |
 |--------|-------------|
 | `block(value)` | Wraps value with newlines for block-level rendering |
 | `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates: `` $`git branch` `` |

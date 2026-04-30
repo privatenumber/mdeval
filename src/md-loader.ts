@@ -5,6 +5,9 @@ import {
 	parseMarkdown, EXPORT_PREFIX, buildExpressionMap, type ScriptBlock, type Marker,
 } from './parse-markdown.ts';
 
+const runtimeUrl = new URL('runtime.mjs', import.meta.url).href;
+const runtimeImport = `import { block, $ } from '${runtimeUrl}';\n`;
+
 const generateModule = (
 	scriptBlocks: ScriptBlock[],
 	markers: Marker[],
@@ -13,14 +16,14 @@ const generateModule = (
 	const expressionMap = buildExpressionMap(markers);
 
 	if (expressionMap.size === 0) {
-		return scriptCode;
+		return `${runtimeImport}${scriptCode}`;
 	}
 
 	const exports = [...expressionMap].map(
 		([expression, index]) => `export const ${EXPORT_PREFIX}${index} = ${expression};`,
 	);
 
-	return `${scriptCode}\n${exports.join('\n')}`;
+	return `${runtimeImport}${scriptCode}\n${exports.join('\n')}`;
 };
 
 export const load: LoadHook = async (url, context, nextLoad) => {

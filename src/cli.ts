@@ -2,12 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cli } from 'cleye';
 import { glob } from 'tinyglobby';
-import { $ } from 'zx';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
-
-globalThis.block = (value: unknown) => `\n${String(value)}\n`;
-globalThis.$ = $;
 
 const argv = cli({
 	name: 'mdeval',

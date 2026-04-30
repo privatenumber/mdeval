@@ -130,13 +130,13 @@ The source of truth for contacts live in `CONTACTS.md`. If contact info changes,
 
 - Marker expressions are **auto-awaited** — promises resolve automatically, so you can use `fetch()` or any async API directly in a marker without wrapping it in a script block.
 
-- **`$`** from [zx](https://google.github.io/zx/) is available as a global — run shell commands directly in markers:
+- **`$`** from [zx](https://google.github.io/zx/) is available in markers — run shell commands directly:
 
   ```markdown
   <!--mdeval $`git branch --show-current`-->main<!--/mdeval-->
   ```
 
-- If your value starts with a heading, list, or other block element, wrap it with **`block()`** so it renders on its own line. `block()` is a global helper that adds newlines before and after the value.
+- If your value starts with a heading, list, or other block element, wrap it with **`block()`**, an mdeval helper that adds newlines before and after the value so it renders on its own line.
 
 - You can **import from other `.md` files**. Only the script blocks are executed — no markers are processed:
 
