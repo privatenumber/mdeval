@@ -75,6 +75,18 @@ describe('processSource', () => {
 		)).rejects.toThrow('async fail');
 	});
 
+	test('user-declared `block` shadows the global helper', async () => {
+		const source = '<!--mdeval\nconst block = (x) => `<<${x}>>`;\nconst value = "test";\n-->\n\n<!--mdeval block(value)-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', '<<test>>'));
+	});
+
+	test('user-declared `$` shadows the global helper', async () => {
+		const source = '<!--mdeval\nconst $ = "jQuery";\n-->\n\n<!--mdeval $-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', 'jQuery'));
+	});
+
 	test('block() wraps value with newlines', async () => {
 		const source = '<!--mdeval\nconst x = "# Title";\n-->\n\n<!--mdeval block(x)-->old<!--/mdeval-->';
 		const output = await processMarkdown(source);
