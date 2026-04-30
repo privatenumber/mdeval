@@ -186,15 +186,15 @@ Markers inside headings are always inline — markdown in the value always rende
 ```yaml
 # lefthook.yml
 pre-commit:
-  commands:
-    mdeval:
-      glob: "*.md"
+  jobs:
+    - name: mdeval
+      glob: ["*.md", "**/*.md"]
       run: |
         files=$(npx mdeval "**/*.md")
         [ -n "$files" ] && git add $files
 ```
 
-`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. mdeval prints the path of each file it rewrites to stdout, so `git add $files` re-stages only the files it actually updated.
+Both `*.md` and `**/*.md` are needed — lefthook's default matcher (`gobwas`) doesn't cross slashes with a single `*`. `git add $files` re-stages only the files mdeval actually rewrote. Assumes `.md` paths without spaces.
 
 **Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
 
