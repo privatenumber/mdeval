@@ -188,13 +188,15 @@ Markers inside headings are always inline — markdown in the value always rende
 pre-commit:
   jobs:
     - name: mdeval
+      # lefthook's default `gobwas` matcher requires `**` to span 1+ dirs,
+      # so `**/*.md` alone misses root-level files like README.md
       glob: ["*.md", "**/*.md"]
       run: |
         files=$(npx mdeval "**/*.md")
         [ -n "$files" ] && git add $files
 ```
 
-Both `*.md` and `**/*.md` are needed — lefthook's default matcher (`gobwas`) doesn't cross slashes with a single `*`. `git add $files` re-stages only the files mdeval actually rewrote. Assumes `.md` paths without spaces.
+`git add $files` re-stages only the files mdeval actually rewrote. Assumes `.md` paths without spaces.
 
 **Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
 
