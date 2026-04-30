@@ -31,8 +31,14 @@ export const load: LoadHook = async (url, context, nextLoad) => {
 	const source = await fs.readFile(fileURLToPath(url), 'utf8');
 	const { scriptBlocks, markers } = parseMarkdown(source);
 
+	// Stub `.md` files (no mdeval content yet) must stay importable so consumers
+	// don't break the load graph while stubs are filled in incrementally.
 	if (scriptBlocks.length === 0 && markers.length === 0) {
-		return nextLoad(url, context);
+		return {
+			format: 'module',
+			source: '',
+			shortCircuit: true,
+		};
 	}
 
 	return {

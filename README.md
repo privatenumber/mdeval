@@ -148,6 +148,15 @@ The source of truth for contacts live in `CONTACTS.md`. If contact info changes,
 
   This lets you share constants and logic across multiple markdown files.
 
+  If the imported file might not yet have mdeval content (e.g. a stub being filled in over time), use a **namespace import** so missing exports resolve to `undefined` instead of crashing Node's ESM linker:
+
+  ```markdown
+  <!--mdeval
+  import * as data from './stub.md';
+  const version = data.version ?? 'tbd';
+  -->
+  ```
+
 - When processing multiple files (`mdeval a.md b.md`), all files **share the same Node.js runtime** — including the module cache, `globalThis`, and `process.env`. This is the same behavior as any Node.js program using `import()`.
 
 ## Caveats
@@ -192,13 +201,17 @@ npm install lefthook --save-dev
 ```yaml
 # lefthook.yml
 pre-commit:
-  commands:
-    mdeval:
-      glob: "*.md"
-      run: npx mdeval "**/*.md" && git add -u ":(glob)**/*.md"
+  jobs:
+    - name: mdeval
+      # lefthook's default `gobwas` matcher requires `**` to span 1+ dirs,
+      # so `**/*.md` alone misses root-level files like README.md
+      glob: ["*.md", "**/*.md"]
+      run: |
+        files=$(npx mdeval "**/*.md")
+        [ -n "$files" ] && git add $files
 ```
 
-`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. The `git add -u` re-stages any files mdeval updated in-place so they're included in the commit.
+`glob` makes the hook a no-op when no Markdown files are staged. mdeval prints the path of each file it rewrites to stdout, so `git add $files` re-stages only the files it actually updated. Note: `$files` relies on shell word-splitting, so this assumes `.md` paths without spaces.
 
 ## Agent Skills
 

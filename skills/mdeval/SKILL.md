@@ -98,6 +98,15 @@ import { version } from './data.md';
 <!--mdeval version-->1.0.0<!--/mdeval-->
 ````
 
+If the imported `.md` may not yet have mdeval content (stubs filled in over time), use a **namespace import** — named imports against an empty module are rejected by Node's ESM linker, but missing properties on a namespace resolve to `undefined`:
+
+````markdown
+<!--mdeval
+import * as data from './stub.md';
+const version = data.version ?? 'tbd';
+-->
+````
+
 ### Generate Markdown with md-pen
 
 Use [md-pen](https://github.com/privatenumber/md-pen) for formatted output (tables, lists, headings):
@@ -186,13 +195,17 @@ Markers inside headings are always inline — markdown in the value always rende
 ```yaml
 # lefthook.yml
 pre-commit:
-  commands:
-    mdeval:
-      glob: "*.md"
-      run: npx mdeval "**/*.md" && git add -u ":(glob)**/*.md"
+  jobs:
+    - name: mdeval
+      # lefthook's default `gobwas` matcher requires `**` to span 1+ dirs,
+      # so `**/*.md` alone misses root-level files like README.md
+      glob: ["*.md", "**/*.md"]
+      run: |
+        files=$(npx mdeval "**/*.md")
+        [ -n "$files" ] && git add $files
 ```
 
-`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. The `git add -u` re-stages any files mdeval updated in-place so they're included in the commit.
+`git add $files` re-stages only the files mdeval actually rewrote. Assumes `.md` paths without spaces.
 
 **Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
 

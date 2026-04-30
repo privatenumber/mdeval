@@ -17,10 +17,13 @@ describe('cli', () => {
 		await using fixture = await createFixture({
 			'test.md': '<!--mdeval\nconst x = 1 + 1;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->',
 		});
-		await mdeval([fixture.getPath('test.md')]);
+		const filePath = fixture.getPath('test.md');
+		const result = await mdeval([filePath]);
 
 		const content = await fixture.readFile('test.md', 'utf8');
 		expect(content).toBe('<!--mdeval\nconst x = 1 + 1;\n-->\n\n<!--mdeval x-->2<!--/mdeval-->');
+		expect(result.stdout).not.toContain('Updated:');
+		expect(path.resolve(result.stdout.trim())).toBe(filePath);
 	});
 
 	test('--help shows usage', async () => {
@@ -48,12 +51,22 @@ describe('cli', () => {
 			'a.md': aMd,
 			'b.md': bMd,
 		});
-		await mdeval([fixture.getPath('a.md'), fixture.getPath('b.md')]);
+		const pathA = fixture.getPath('a.md');
+		const pathB = fixture.getPath('b.md');
+		const result = await mdeval([pathA, pathB]);
 
 		const contentA = await fixture.readFile('a.md', 'utf8');
 		const contentB = await fixture.readFile('b.md', 'utf8');
 		expect(contentA).toBe(aMd.replace('old', 'hello'));
 		expect(contentB).toBe(bMd.replace('old', 'world'));
+
+		expect(result.stdout).not.toContain('Updated:');
+		const lines = result.stdout
+			.split('\n')
+			.filter(Boolean)
+			.map(line => path.resolve(line))
+			.sort();
+		expect(lines).toStrictEqual([pathA, pathB].sort());
 	});
 
 	test('imported .md script only executes once across files', async () => {
@@ -81,9 +94,27 @@ describe('cli', () => {
 		const filePath = fixture.getPath('test.md');
 		const statBefore = await fs.stat(filePath);
 		await setTimeout(100);
-		await mdeval([filePath]);
+		const result = await mdeval([filePath]);
 		const statAfter = await fs.stat(filePath);
 		expect(statAfter.mtimeMs).toBe(statBefore.mtimeMs);
+		expect(result.stdout).toBe('');
+	});
+
+	test('mix of changed and unchanged files only prints changed paths', async () => {
+		const changedMd = '<!--mdeval\nconst x = 1 + 1;\n-->\n\nResult: <!--mdeval x-->old<!--/mdeval-->';
+		const unchangedMd = '<!--mdeval\nconst x = 1 + 1;\n-->\n\nResult: <!--mdeval x-->2<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'changed.md': changedMd,
+			'unchanged.md': unchangedMd,
+		});
+		const changedPath = fixture.getPath('changed.md');
+		const unchangedPath = fixture.getPath('unchanged.md');
+		const result = await mdeval([changedPath, unchangedPath]);
+
+		expect(result.stdout).not.toContain('Updated:');
+		expect(path.resolve(result.stdout.trim())).toBe(changedPath);
+		const lines = result.stdout.split('\n').filter(Boolean).map(line => path.resolve(line));
+		expect(lines).toStrictEqual([changedPath]);
 	});
 
 	test('glob pattern expands to matching files', async () => {
