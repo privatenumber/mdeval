@@ -31,6 +31,9 @@ export const load: LoadHook = async (url, context, nextLoad) => {
 	const source = await fs.readFile(fileURLToPath(url), 'utf8');
 	const { scriptBlocks, markers } = parseMarkdown(source);
 
+	// Empty ESM module instead of falling through to Node's default `.md`
+	// loader, which throws "Unknown file extension". Lets consumers import
+	// from `.md` stubs that haven't been mdeval-converted yet.
 	if (scriptBlocks.length === 0 && markers.length === 0) {
 		return {
 			format: 'module',
