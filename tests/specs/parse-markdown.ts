@@ -155,9 +155,70 @@ describe('parseMarkdown', () => {
 		expect(markers).toStrictEqual([]);
 	});
 
-	test('ignores unclosed marker', () => {
+	test('throws on unclosed marker followed by another well-formed marker', () => {
+		const source = '<!--mdeval a-->some\n\n<!--mdeval b-->42<!--/mdeval-->';
+		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('throws on unclosed marker at EOF', () => {
 		const source = 'before <!--mdeval x-->42 no closing tag';
+		expect(() => parseMarkdown(source)).toThrow(/offset 7/);
+	});
+
+	test('throws on unclosed marker even with non-mdeval HTML comment in content', () => {
+		const source = '<!--mdeval x-->some <!-- note --> stuff';
+		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('does not treat <!--mdevalfoo inside marker content as a real opening', () => {
+		const source = '<!--mdeval x-->prefix <!--mdevalfoo--> suffix<!--/mdeval-->';
 		const { markers } = parseMarkdown(source);
+		expect(markers).toHaveLength(1);
+		expect(markers[0].expression).toBe('x');
+		expect(markerContent(source, markers[0])).toBe('prefix <!--mdevalfoo--> suffix');
+	});
+
+	test('throws on first of two stacked unclosed opens', () => {
+		const source = '<!--mdeval a-->one\n\n<!--mdeval b-->two\n\n<!--mdeval c-->42<!--/mdeval-->';
+		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('throws on unclosed marker with CRLF line endings', () => {
+		const source = '<!--mdeval a-->some\r\n\r\n<!--mdeval b-->42<!--/mdeval-->';
+		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('throws on marker open with missing -->', () => {
+		const source = '<!--mdeval x with no end of expression';
+		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('does not throw on unclosed marker inside fenced code block', () => {
+		const source = '```\n<!--mdeval x-->orphan\n```';
+		const { scriptBlocks, markers } = parseMarkdown(source);
+		expect(scriptBlocks).toStrictEqual([]);
+		expect(markers).toStrictEqual([]);
+	});
+
+	test('throws on unclosed script block followed by another well-formed marker', () => {
+		const source = '<!--mdeval\nconst x = 1;\n\n<!--mdeval y-->42<!--/mdeval-->';
+		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('throws on unclosed script block at EOF', () => {
+		const source = '<!--mdeval\nconst x = 1;\n';
+		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('throws on unclosed script block with intervening script open', () => {
+		const source = '<!--mdeval\nconst x = 1;\n\n<!--mdeval\nconst y = 2;\n-->';
+		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('does not throw on unclosed script block inside fenced code block', () => {
+		const source = '````\n<!--mdeval\nconst x = 1;\n````';
+		const { scriptBlocks, markers } = parseMarkdown(source);
+		expect(scriptBlocks).toStrictEqual([]);
 		expect(markers).toStrictEqual([]);
 	});
 
