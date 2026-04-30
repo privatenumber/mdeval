@@ -39,7 +39,7 @@ await Promise.all(files.map(async (file) => {
 
 		if (output !== source) {
 			await fs.writeFile(resolvedPath, output, 'utf8');
-			console.log(`Updated: ${file}`);
+			console.log(file);
 		}
 	} catch (error) {
 		console.error(`Error processing ${file}:`, error instanceof Error ? error.message : error);

@@ -195,13 +195,17 @@ Markers inside headings are always inline — markdown in the value always rende
 ```yaml
 # lefthook.yml
 pre-commit:
-  commands:
-    mdeval:
-      glob: "*.md"
-      run: npx mdeval "**/*.md" && git add -u ":(glob)**/*.md"
+  jobs:
+    - name: mdeval
+      # lefthook's default `gobwas` matcher requires `**` to span 1+ dirs,
+      # so `**/*.md` alone misses root-level files like README.md
+      glob: ["*.md", "**/*.md"]
+      run: |
+        files=$(npx mdeval "**/*.md")
+        [ -n "$files" ] && git add $files
 ```
 
-`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. The `git add -u` re-stages any files mdeval updated in-place so they're included in the commit.
+`git add $files` re-stages only the files mdeval actually rewrote. Assumes `.md` paths without spaces.
 
 **Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
 

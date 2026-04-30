@@ -201,13 +201,17 @@ npm install lefthook --save-dev
 ```yaml
 # lefthook.yml
 pre-commit:
-  commands:
-    mdeval:
-      glob: "*.md"
-      run: npx mdeval "**/*.md" && git add -u ":(glob)**/*.md"
+  jobs:
+    - name: mdeval
+      # lefthook's default `gobwas` matcher requires `**` to span 1+ dirs,
+      # so `**/*.md` alone misses root-level files like README.md
+      glob: ["*.md", "**/*.md"]
+      run: |
+        files=$(npx mdeval "**/*.md")
+        [ -n "$files" ] && git add $files
 ```
 
-`glob: "*.md"` makes the hook a no-op when no Markdown files are staged. The `git add -u` re-stages any files mdeval updated in-place so they're included in the commit.
+`glob` makes the hook a no-op when no Markdown files are staged. mdeval prints the path of each file it rewrites to stdout, so `git add $files` re-stages only the files it actually updated. Note: `$files` relies on shell word-splitting, so this assumes `.md` paths without spaces.
 
 ## Agent Skills
 
