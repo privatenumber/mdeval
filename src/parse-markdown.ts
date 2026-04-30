@@ -87,6 +87,29 @@ const createIsInCode = (source: string) => {
 	};
 };
 
+// Locate the next real mdeval opening — a `<!--mdeval` followed by space, LF,
+// or CRLF. Skips false matches like `<!--mdevalfoo` so they don't get mistaken
+// for a stray opening when reasoning about an unclosed marker.
+const findNextMdevalOpening = (source: string, from: number): number => {
+	let cursor = from;
+	while (cursor < source.length) {
+		const candidate = source.indexOf(COMMENT_TAG, cursor);
+		if (candidate === -1) {
+			return -1;
+		}
+		const after = source[candidate + COMMENT_TAG.length];
+		if (
+			after === ' '
+			|| after === '\n'
+			|| (after === '\r' && source[candidate + COMMENT_TAG.length + 1] === '\n')
+		) {
+			return candidate;
+		}
+		cursor = candidate + COMMENT_TAG.length;
+	}
+	return -1;
+};
+
 // Single-pass scan of `source` for both script blocks (`<!--mdeval\n…-->`) and
 // value markers (`<!--mdeval expr-->value<!--/mdeval-->`). Candidates whose
 // opening offset falls inside a code range are dropped — those are literal
@@ -119,8 +142,24 @@ export const parseMarkdown = (source: string): ParseResult => {
 		if (nextChar === '\n' || (nextChar === '\r' && source[afterTag + 1] === '\n')) {
 			const contentStart = nextChar === '\n' ? afterTag + 1 : afterTag + 2;
 			const closeStart = source.indexOf(COMMENT_CLOSE, contentStart);
-			if (closeStart === -1) {
-				break;
+			const nextOpening = findNextMdevalOpening(source, contentStart);
+			const interveningOpen = (
+				nextOpening !== -1
+				&& (closeStart === -1 || nextOpening < closeStart)
+			);
+			if (closeStart === -1 || interveningOpen) {
+				if (!isInCode(start)) {
+					throw new Error(
+						interveningOpen
+							? `mdeval: unclosed script block at offset ${start} (another mdeval opening found before \`-->\`)`
+							: `mdeval: unclosed script block at offset ${start} (missing \`-->\`)`,
+					);
+				}
+				if (closeStart === -1) {
+					break;
+				}
+				searchFrom = contentStart;
+				continue;
 			}
 			const end = closeStart + COMMENT_CLOSE.length;
 			if (!isInCode(start)) {
@@ -139,13 +178,28 @@ export const parseMarkdown = (source: string): ParseResult => {
 			const exprStart = afterTag + 1;
 			const exprEnd = source.indexOf(COMMENT_CLOSE, exprStart);
 			if (exprEnd === -1) {
-				break;
+				if (isInCode(start)) {
+					break;
+				}
+				throw new Error(
+					`mdeval: unclosed marker open at offset ${start} (missing \`-->\` on the marker open)`,
+				);
 			}
 			const contentStart = exprEnd + COMMENT_CLOSE.length;
 			const closeStart = source.indexOf(MARKER_CLOSE, contentStart);
-			if (closeStart === -1) {
-				searchFrom = contentStart;
-				continue;
+			const nextOpening = findNextMdevalOpening(source, contentStart);
+			const isUnclosed = (
+				closeStart === -1
+				|| (nextOpening !== -1 && nextOpening < closeStart)
+			);
+			if (isUnclosed) {
+				if (isInCode(start)) {
+					searchFrom = contentStart;
+					continue;
+				}
+				throw new Error(
+					`mdeval: unclosed marker open at offset ${start} (missing \`<!--/mdeval-->\`)`,
+				);
 			}
 			const markerEnd = closeStart + MARKER_CLOSE.length;
 			if (!isInCode(start)) {
