@@ -128,24 +128,33 @@ How you access them depends on the file extension:
 | `.md` | Available as globals — call directly: `block(x)` or `` $`cmd` `` |
 | `.js`, `.ts`, anything else | Import explicitly: `import { block, $ } from 'mdeval'` |
 
-The `.md` case works because the CLI seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import for clarity and portability. `import { block, $ } from 'mdeval'` is itself side-effect-free — nothing on `globalThis` is touched.
+The `.md` case works because the CLI (and `--import mdeval`) seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import for clarity and portability.
 
 ## Using `.md` exports from a script
 
 `.md` files with mdeval script blocks are real ESM modules — anything they `export` can be imported from a Node script. Useful for validation tools, migration scripts, or any code that needs to read structured data out of a Markdown knowledge base.
 
+Run your script with `--import mdeval`:
+
+```bash
+node --import mdeval ./consumer.js
+```
+
+`consumer.js` can then use ordinary static imports against `.md` files:
+
 ```js
-import { registerMdevalLoader } from 'mdeval'
+import { todos } from './TODOS.md'
 
-registerMdevalLoader()
-
-const { todos } = await import('./TODOS.md')
 console.log(todos)
 ```
 
-`registerMdevalLoader()` does two things: it seeds `block` and `$` on `globalThis` (so `.md` modules find the helpers they expect), and it registers a Node ESM loader so `.md` files resolve as modules.
+`--import mdeval` runs mdeval's runtime as a side effect before any of `consumer.js`'s imports are linked: it seeds `block` and `$` on `globalThis` and registers the Node ESM loader so `.md` files resolve as modules. Without `--import mdeval`, `consumer.js`'s static `import` of a `.md` file fails — Node has no idea how to load `.md` yet.
 
-The `.md` import has to be **dynamic** (`await import(...)`). Static `import` declarations are resolved before any top-level code runs, so they execute before `registerMdevalLoader()` — the loader isn't installed yet and Node can't handle `.md`.
+You can also point `--import mdeval` at a `.md` file directly:
+
+```bash
+node --import mdeval ./TODOS.md
+```
 
 ## Notes
 

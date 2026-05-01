@@ -4,13 +4,15 @@ import { $ } from 'zx';
 export const block = (value: unknown): string => `\n${String(value)}\n`;
 export { $ };
 
-// Sets up the side effects an mdeval consumer needs before importing a `.md`
-// file: seeds `block` / `$` on `globalThis` (which `.md` modules expect to find
-// there), then registers the Node ESM loader so `.md` resolves as a module.
-export const registerMdevalLoader = (): void => {
-	Object.assign(globalThis, {
-		block,
-		$,
-	});
-	register(new URL('md-loader.mjs', import.meta.url));
-};
+// Importing this module is the opt-in for side effects: seeding the helpers
+// `.md` modules expect on `globalThis`, then installing the Node ESM loader so
+// `.md` files resolve as modules. Designed for `node --import mdeval` so
+// downstream scripts can use static `import` against `.md` files.
+Object.assign(globalThis, {
+	block,
+	$,
+});
+register(new URL(
+	import.meta.url.endsWith('.ts') ? 'md-loader.ts' : 'md-loader.mjs',
+	import.meta.url,
+));

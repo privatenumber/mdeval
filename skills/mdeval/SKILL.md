@@ -63,17 +63,23 @@ CLI seeds the helpers on `globalThis` at startup. Modules imported transitively 
 
 ## Importing `.md` exports from a script
 
-Use when a Node script (validation, migration, agent tooling) needs to read exports from a `.md`. The recipe:
+Use when a Node script (validation, migration, agent tooling) needs to read exports from a `.md`. Run the script with `--import mdeval`:
 
-```js
-import { registerMdevalLoader } from 'mdeval';
-
-registerMdevalLoader();
-const { todos } = await import('./TODOS.md');
+```bash
+node --import mdeval ./consumer.js
 ```
 
-- `registerMdevalLoader()` seeds `block`/`$` on `globalThis` and registers the Node ESM loader. Calling it is the explicit opt-in to those side effects — `import { block, $ } from 'mdeval'` alone does nothing.
-- The `.md` import must be dynamic (`await import(...)`). Static `import` runs before `registerMdevalLoader()`, before Node knows how to handle `.md`.
+`consumer.js` can use ordinary static imports against `.md` files:
+
+```js
+import { todos } from './TODOS.md';
+
+console.log(todos);
+```
+
+- `--import mdeval` runs mdeval's runtime before any of the script's imports link — seeds `block`/`$` on `globalThis` and registers the Node ESM loader.
+- Without `--import mdeval`, static `import` of a `.md` fails — Node can't resolve `.md` until the loader is registered.
+- Works on `.md` directly too: `node --import mdeval ./TODOS.md`.
 
 ## CLI
 

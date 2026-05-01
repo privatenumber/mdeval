@@ -5,17 +5,17 @@ import spawn from 'nano-spawn';
 
 // Project root acts as the `mdeval` package (its package.json has
 // `name: "mdeval"`). Symlinking `node_modules/mdeval` → project root inside
-// each fixture lets the consumer resolve `import 'mdeval'` as a plain bare
-// specifier — exactly the recipe external users follow after `npm i mdeval`.
+// each fixture lets `node --import mdeval` resolve the bare specifier — exactly
+// the invocation external users follow after `npm i mdeval`.
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 
+// Consumer uses static `import` against the `.md` file. This only works if
+// the loader is registered before the linker resolves consumer's imports —
+// hence `--import mdeval` (which auto-registers via runtime.mjs side effects)
+// at spawn time.
 const consumerScript = (mdPath: string) => `
-import { registerMdevalLoader } from 'mdeval';
-
-registerMdevalLoader();
-
-const mod = await import(${JSON.stringify(mdPath)});
-process.stdout.write(JSON.stringify(mod));
+import * as mod from ${JSON.stringify(mdPath)};
+process.stdout.write(JSON.stringify({ ...mod }));
 `;
 
 const buildFixture = (dataMd: string) => createFixture({
@@ -24,13 +24,19 @@ const buildFixture = (dataMd: string) => createFixture({
 	'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
 });
 
+const runConsumer = async (fixturePath: string) => spawn(
+	process.execPath,
+	['--import', 'mdeval', path.join(fixturePath, 'consumer.mjs')],
+	{ cwd: fixturePath },
+);
+
 describe('recipe', () => {
-	test('external script imports plain .md exports', async () => {
+	test('external script imports plain .md exports via --import mdeval', async () => {
 		await using fixture = await buildFixture(
 			'# Data\n\n<!--mdeval\nexport const todos = ["write", "test", "ship"];\nexport const count = 3;\n-->\n',
 		);
 
-		const result = await spawn(process.execPath, [fixture.getPath('consumer.mjs')]);
+		const result = await runConsumer(fixture.path);
 
 		const exported = JSON.parse(result.stdout) as Record<string, unknown>;
 		expect(exported.todos).toStrictEqual(['write', 'test', 'ship']);
@@ -47,7 +53,7 @@ describe('recipe', () => {
 			'',
 		].join('\n'));
 
-		const result = await spawn(process.execPath, [fixture.getPath('consumer.mjs')]);
+		const result = await runConsumer(fixture.path);
 
 		const exported = JSON.parse(result.stdout) as Record<string, unknown>;
 		expect(exported.heading).toBe('\n# Hello\n');
@@ -64,7 +70,7 @@ describe('recipe', () => {
 			'',
 		].join('\n'));
 
-		const result = await spawn(process.execPath, [fixture.getPath('consumer.mjs')]);
+		const result = await runConsumer(fixture.path);
 
 		const exported = JSON.parse(result.stdout) as Record<string, unknown>;
 		expect(exported.greeting).toBe('recipe-ok');
