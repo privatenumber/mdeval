@@ -54,7 +54,7 @@ Duplicate expressions across markers are evaluated once and reused.
 | `block(value)` | Wraps value with newlines for block-level rendering |
 | `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates: `` $`git branch` `` |
 
-The CLI seeds `block` and `$` on `globalThis`, so they're available in any `.md` file mdeval processes plus any module those files import. For non-`.md` JavaScript outside the mdeval graph, import them explicitly: `import { block, $ } from 'mdeval'` (the import itself is side-effect-free).
+The CLI seeds `block` and `$` on `globalThis`, so they're available in any `.md` file mdeval processes plus any module those files import. In non-`.md` files, import them explicitly: `import { block, $ } from 'mdeval'` (the import itself is side-effect-free).
 
 ## CLI
 

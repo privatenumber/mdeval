@@ -159,7 +159,7 @@ The source of truth for contacts live in `CONTACTS.md`. If contact info changes,
 
 - When processing multiple files (`mdeval a.md b.md`), all files **share the same Node.js runtime** — including the module cache, `globalThis`, and `process.env`. This is the same behavior as any Node.js program using `import()`.
 
-- The CLI seeds **`block`** and **`$`** on `globalThis`, so any `.md` file processed by mdeval — and any non-`.md` module those files import — finds them at runtime. For non-`.md` JavaScript that runs outside the mdeval graph, import them explicitly:
+- The CLI seeds **`block`** and **`$`** on `globalThis`, so any `.md` file processed by mdeval — and any non-`.md` module those files import — finds them at runtime. In non-`.md` files, import them explicitly instead:
 
   ```js
   import { block, $ } from 'mdeval'
