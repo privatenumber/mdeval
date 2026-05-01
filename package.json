@@ -23,7 +23,7 @@
 	"bin": "./dist/cli.mjs",
 	"exports": {
 		".": "./dist/runtime.mjs",
-		"./register": "./dist/register.mjs"
+		"./loader": "./dist/loader.mjs"
 	},
 	"imports": {
 		"#md-loader": "./dist/md-loader.mjs"

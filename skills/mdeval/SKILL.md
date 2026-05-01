@@ -59,14 +59,14 @@ Duplicate expressions across markers are evaluated once and reused.
 | `.md` | Globals — call directly: `block(x)`, `` $`cmd` `` |
 | `.js`, `.ts`, anything else | `import { block, $ } from 'mdeval'` |
 
-CLI (and `--import mdeval/register`) seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import. `import { block, $ } from 'mdeval'` is side-effect-free.
+CLI (and `--import mdeval/loader`) seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import. `import { block, $ } from 'mdeval'` is side-effect-free.
 
 ## Importing `.md` exports from a script
 
-Use when a Node script (validation, migration, agent tooling) needs to read exports from a `.md`. Run the script with `--import mdeval/register`:
+Use when a Node script (validation, migration, agent tooling) needs to read exports from a `.md`. Run the script with `--import mdeval/loader`:
 
 ```bash
-node --import mdeval/register ./consumer.js
+node --import mdeval/loader ./consumer.js
 ```
 
 `consumer.js` can use ordinary static imports against `.md` files:
@@ -77,10 +77,10 @@ import { todos } from './TODOS.md';
 console.log(todos);
 ```
 
-- `--import mdeval/register` is a side-effect-only entry — seeds `block`/`$` on `globalThis` and registers the Node ESM loader before any of the script's imports link.
+- `--import mdeval/loader` is a side-effect-only entry — seeds `block`/`$` on `globalThis` and registers the Node ESM loader before any of the script's imports link.
 - Without it, static `import` of a `.md` fails — Node can't resolve `.md` until the loader is registered.
 - The plain `mdeval` import (`import { block, $ } from 'mdeval'`) stays pure — no globals, no loader. Use it when you only want the helpers.
-- Works on `.md` directly too: `node --import mdeval/register ./TODOS.md`.
+- Works on `.md` directly too: `node --import mdeval/loader ./TODOS.md`.
 
 ## CLI
 

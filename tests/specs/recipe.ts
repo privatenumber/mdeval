@@ -5,13 +5,13 @@ import spawn from 'nano-spawn';
 
 // Project root acts as the `mdeval` package (its package.json has
 // `name: "mdeval"`). Symlinking `node_modules/mdeval` → project root inside
-// each fixture lets `node --import mdeval/register` resolve the bare specifier
+// each fixture lets `node --import mdeval/loader` resolve the bare specifier
 // — exactly the invocation external users follow after `npm i mdeval`.
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 
 // Consumer uses static `import` against the `.md` file. This only works if
 // the loader is registered before the linker resolves consumer's imports —
-// hence `--import mdeval/register` (the side-effect-only entry) at spawn time.
+// hence `--import mdeval/loader` (the side-effect-only entry) at spawn time.
 const consumerScript = (mdPath: string) => `
 import * as mod from ${JSON.stringify(mdPath)};
 process.stdout.write(JSON.stringify({ ...mod }));
@@ -25,7 +25,7 @@ const buildFixture = (dataMd: string) => createFixture({
 
 const runConsumer = async (fixturePath: string) => spawn(
 	process.execPath,
-	['--import', 'mdeval/register', path.join(fixturePath, 'consumer.mjs')],
+	['--import', 'mdeval/loader', path.join(fixturePath, 'consumer.mjs')],
 	{ cwd: fixturePath },
 );
 
