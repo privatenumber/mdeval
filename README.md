@@ -112,6 +112,24 @@ const list = ul(events.map(({ date, description }) => `${bold(date)} — ${descr
 
 The source of truth for contacts live in `CONTACTS.md`. If contact info changes, run `mdeval **/*.md` and all files get re-rendered with the latest data.
 
+## Helpers
+
+mdeval ships two helpers used in markers:
+
+| Helper | Description |
+|--------|-------------|
+| `block(value)` | Wraps the value with surrounding newlines so block-level Markdown (headings, lists, tables) renders correctly |
+| `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates |
+
+How you access them depends on the file extension:
+
+| File | Access |
+|------|--------|
+| `.md` | Available as globals — call directly: `block(x)` or `` $`cmd` `` |
+| `.js`, `.ts`, anything else | Import explicitly: `import { block, $ } from 'mdeval'` |
+
+The `.md` case works because the CLI seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import for clarity and portability. `import { block, $ } from 'mdeval'` is itself side-effect-free — nothing on `globalThis` is touched.
+
 ## Notes
 
 - A file can have **multiple script blocks** — they're merged into one module, so variables and imports are shared. We recommend placing them at the top to signal the file has generated content.
@@ -129,14 +147,6 @@ The source of truth for contacts live in `CONTACTS.md`. If contact info changes,
   In large documents, this IIFE pattern lets you keep logic next to the marker it serves instead of in a distant script block.
 
 - Marker expressions are **auto-awaited** — promises resolve automatically, so you can use `fetch()` or any async API directly in a marker without wrapping it in a script block.
-
-- **`$`** from [zx](https://google.github.io/zx/) is available as a global — run shell commands directly in markers:
-
-  ```markdown
-  <!--mdeval $`git branch --show-current`-->main<!--/mdeval-->
-  ```
-
-- If your value starts with a heading, list, or other block element, wrap it with **`block()`** so it renders on its own line. `block()` is a global helper that adds newlines before and after the value.
 
 - You can **import from other `.md` files**. Only the script blocks are executed — no markers are processed:
 

@@ -75,6 +75,40 @@ describe('processSource', () => {
 		)).rejects.toThrow('async fail');
 	});
 
+	test('user-declared `block` shadows the global helper', async () => {
+		const source = '<!--mdeval\nconst block = (x) => `<<${x}>>`;\nconst value = "test";\n-->\n\n<!--mdeval block(value)-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', '<<test>>'));
+	});
+
+	test('user-declared `$` shadows the global helper', async () => {
+		const source = '<!--mdeval\nconst $ = "jQuery";\n-->\n\n<!--mdeval $-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', 'jQuery'));
+	});
+
+	test('user-imported `block` from another module shadows the global helper', async () => {
+		const helperJs = 'export const block = (x) => `IMPORTED:${x}`;';
+		const md = '<!--mdeval\nimport { block } from \'./helpers.js\';\nconst value = "test";\n-->\n\n<!--mdeval block(value)-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'helpers.js': helperJs,
+			'test.md': md,
+		});
+		const output = await processSource(md, fixture.getPath('test.md'));
+		expect(output).toBe(md.replace('old', 'IMPORTED:test'));
+	});
+
+	test('user-imported `$` from another module shadows the global helper', async () => {
+		const helperJs = 'export const $ = "jQuery-from-helper";';
+		const md = '<!--mdeval\nimport { $ } from \'./helpers.js\';\n-->\n\n<!--mdeval $-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'helpers.js': helperJs,
+			'test.md': md,
+		});
+		const output = await processSource(md, fixture.getPath('test.md'));
+		expect(output).toBe(md.replace('old', 'jQuery-from-helper'));
+	});
+
 	test('block() wraps value with newlines', async () => {
 		const source = '<!--mdeval\nconst x = "# Title";\n-->\n\n<!--mdeval block(x)-->old<!--/mdeval-->';
 		const output = await processMarkdown(source);

@@ -47,12 +47,19 @@ Duplicate expressions across markers are evaluated once and reused.
 | `Promise` | Auto-awaited, then coerced |
 | `undefined`, `null` | Error |
 
-## Globals
+## Helpers
 
-| Global | Description |
+| Helper | Description |
 |--------|-------------|
 | `block(value)` | Wraps value with newlines for block-level rendering |
 | `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates: `` $`git branch` `` |
+
+| File | Access |
+|------|--------|
+| `.md` | Globals — call directly: `block(x)`, `` $`cmd` `` |
+| `.js`, `.ts`, anything else | `import { block, $ } from 'mdeval'` |
+
+CLI seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import. `import { block, $ } from 'mdeval'` is side-effect-free.
 
 ## CLI
 

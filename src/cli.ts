@@ -2,12 +2,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cli } from 'cleye';
 import { glob } from 'tinyglobby';
-import { $ } from 'zx';
+import { block, $ } from './runtime.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 
-globalThis.block = (value: unknown) => `\n${String(value)}\n`;
-globalThis.$ = $;
+// Seed helpers on globalThis so `.md` files can reference `block(...)` and
+// `$\`...\`` directly. Library imports of `mdeval` are side-effect-free; this
+// seeding is part of the CLI's setup.
+Object.assign(globalThis, {
+	block,
+	$,
+});
 
 const argv = cli({
 	name: 'mdeval',
