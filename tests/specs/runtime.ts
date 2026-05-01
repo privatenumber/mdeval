@@ -16,7 +16,7 @@ describe('runtime', () => {
 	test('$ interpolates JS values via tagged template', async () => {
 		const message = 'world';
 		const result = await $`echo ${message}`;
-		expect(String(result)).toBe('world');
+		expect(String(result)).toBe(message);
 	});
 
 	test('$ rejects on non-zero exit code', async () => {
