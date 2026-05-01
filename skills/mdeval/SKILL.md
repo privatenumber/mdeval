@@ -66,17 +66,14 @@ CLI seeds the helpers on `globalThis` at startup. Modules imported transitively 
 Use when a Node script (validation, migration, agent tooling) needs to read exports from a `.md`. The recipe:
 
 ```js
-import { register } from 'node:module';
-import { block, $ } from 'mdeval';
+import { registerMdevalLoader } from 'mdeval';
 
-Object.assign(globalThis, { block, $ });           // helpers `.md` modules expect as globals
-register('mdeval/loader', import.meta.url);        // teach Node how to load `.md` as ESM
-const { todos } = await import('./TODOS.md');      // dynamic — must run after `register`
+registerMdevalLoader();
+const { todos } = await import('./TODOS.md');
 ```
 
-- Static `import './foo.md'` will fail — it resolves before `register` runs. Use `await import(...)`.
-- Skipping the `Object.assign` step makes any `.md` that calls `block(...)` or `` $`...` `` throw `not defined`.
-- `import { block, $ } from 'mdeval'` itself does nothing — no globals, no loader. The recipe makes the side effects explicit.
+- `registerMdevalLoader()` seeds `block`/`$` on `globalThis` and registers the Node ESM loader. Calling it is the explicit opt-in to those side effects — `import { block, $ } from 'mdeval'` alone does nothing.
+- The `.md` import must be dynamic (`await import(...)`). Static `import` runs before `registerMdevalLoader()`, before Node knows how to handle `.md`.
 
 ## CLI
 

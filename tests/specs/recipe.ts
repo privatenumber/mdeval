@@ -5,17 +5,14 @@ import spawn from 'nano-spawn';
 
 // Project root acts as the `mdeval` package (its package.json has
 // `name: "mdeval"`). Symlinking `node_modules/mdeval` → project root inside
-// each fixture lets the consumer resolve `import 'mdeval'` and
-// `import 'mdeval/loader'` as plain bare specifiers — exactly the recipe
-// external users follow after `npm i mdeval`.
+// each fixture lets the consumer resolve `import 'mdeval'` as a plain bare
+// specifier — exactly the recipe external users follow after `npm i mdeval`.
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 
 const consumerScript = (mdPath: string) => `
-import { register } from 'node:module';
-import { block, $ } from 'mdeval';
+import { registerMdevalLoader } from 'mdeval';
 
-Object.assign(globalThis, { block, $ });
-register('mdeval/loader', import.meta.url);
+registerMdevalLoader();
 
 const mod = await import(${JSON.stringify(mdPath)});
 process.stdout.write(JSON.stringify(mod));
