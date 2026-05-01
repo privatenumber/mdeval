@@ -130,6 +130,35 @@ How you access them depends on the file extension:
 
 The `.md` case works because the CLI seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import for clarity and portability. `import { block, $ } from 'mdeval'` is itself side-effect-free — nothing on `globalThis` is touched.
 
+## Using `.md` exports from a script
+
+`.md` files with mdeval script blocks are real ESM modules — anything they `export` can be imported from a Node script. Useful for validation tools, migration scripts, or any code that needs to read structured data out of a Markdown knowledge base.
+
+```js
+import { register } from 'node:module'
+import { block, $ } from 'mdeval'
+
+// 1. Seed the helpers `.md` modules expect to find as globals.
+Object.assign(globalThis, {
+    block,
+    $
+})
+
+// 2. Register the loader so Node knows how to compile `.md` to ESM.
+register('mdeval/loader', import.meta.url)
+
+// 3. Import the .md dynamically — must be after `register` runs.
+const { todos } = await import('./TODOS.md')
+console.log(todos)
+```
+
+The four steps explained:
+
+- **`import { block, $ } from 'mdeval'`** is side-effect-free. It just gives you the helpers — nothing is touched on `globalThis` and no loader is registered yet. This keeps the package safe to import from anywhere.
+- **`Object.assign(globalThis, { block, $ })`** mirrors what the CLI does on startup. `.md` modules call `block(...)` and `` $`...` `` as if they were globals, so any code path that loads a `.md` needs to seed them first. Skip this step and a `.md` that uses `block(x)` will throw `block is not defined`.
+- **`register('mdeval/loader', import.meta.url)`** installs the loader on Node's [module customization hook](https://nodejs.org/api/module.html#moduleregisterspecifier-parenturl-options) chain. After this, `import` of any `.md` file resolves through `mdeval`'s loader, which compiles the script blocks plus marker expressions into an ESM module.
+- **`await import('./TODOS.md')`** has to be a *dynamic* import. Static `import` declarations are resolved before any top-level code runs, so they execute before `register` — the loader isn't installed yet and Node can't handle `.md`. Dynamic imports are evaluated lazily, after the `register` call.
+
 ## Notes
 
 - A file can have **multiple script blocks** — they're merged into one module, so variables and imports are shared. We recommend placing them at the top to signal the file has generated content.

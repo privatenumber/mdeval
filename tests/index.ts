@@ -14,4 +14,5 @@ describe('mdeval', () => {
 	import('./specs/parse-markdown.ts');
 	import('./specs/process-source.ts');
 	import('./specs/cli.ts');
+	import('./specs/recipe.ts');
 });

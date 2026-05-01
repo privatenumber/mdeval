@@ -61,6 +61,23 @@ Duplicate expressions across markers are evaluated once and reused.
 
 CLI seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import. `import { block, $ } from 'mdeval'` is side-effect-free.
 
+## Importing `.md` exports from a script
+
+Use when a Node script (validation, migration, agent tooling) needs to read exports from a `.md`. The recipe:
+
+```js
+import { register } from 'node:module';
+import { block, $ } from 'mdeval';
+
+Object.assign(globalThis, { block, $ });           // helpers `.md` modules expect as globals
+register('mdeval/loader', import.meta.url);        // teach Node how to load `.md` as ESM
+const { todos } = await import('./TODOS.md');      // dynamic — must run after `register`
+```
+
+- Static `import './foo.md'` will fail — it resolves before `register` runs. Use `await import(...)`.
+- Skipping the `Object.assign` step makes any `.md` that calls `block(...)` or `` $`...` `` throw `not defined`.
+- `import { block, $ } from 'mdeval'` itself does nothing — no globals, no loader. The recipe makes the side effects explicit.
+
 ## CLI
 
 ```bash
