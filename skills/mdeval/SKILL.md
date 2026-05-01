@@ -197,6 +197,27 @@ Markers inside headings are always inline — markdown in the value always rende
 ![<!-- comment -->](image.png)
 ````
 
+**`<details>` requires blank lines around the `</summary>` close.** Block-level Markdown inside a `<details>` only renders when blank lines surround the closing `</summary>` tag — otherwise lists, code fences, tables, and other block elements render as literal text. md-pen's `details(summary, content)` emits the correct shape:
+
+````markdown
+<!--mdeval
+import { details, ul } from 'md-pen';
+-->
+
+<!--mdeval block(details(
+  'Click me',
+  ul(['item one', 'item two']),
+))-->
+<details>
+<summary>Click me</summary>
+
+- item one
+- item two
+
+</details>
+<!--/mdeval-->
+````
+
 **Set up a git hook so values never go stale.** Use [Lefthook](https://github.com/evilmartians/lefthook) with this config:
 
 ```yaml
