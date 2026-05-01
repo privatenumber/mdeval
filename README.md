@@ -128,16 +128,16 @@ How you access them depends on the file extension:
 | `.md` | Available as globals — call directly: `block(x)` or `` $`cmd` `` |
 | `.js`, `.ts`, anything else | Import explicitly: `import { block, $ } from 'mdeval'` |
 
-The `.md` case works because the CLI (and `--import mdeval`) seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import for clarity and portability.
+The `.md` case works because the CLI (and `--import mdeval/register`) seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import for clarity and portability. The plain `import { block, $ } from 'mdeval'` is side-effect-free — no globals are touched, no loader is registered.
 
 ## Using `.md` exports from a script
 
 `.md` files with mdeval script blocks are real ESM modules — anything they `export` can be imported from a Node script. Useful for validation tools, migration scripts, or any code that needs to read structured data out of a Markdown knowledge base.
 
-Run your script with `--import mdeval`:
+Run your script with `--import mdeval/register`:
 
 ```bash
-node --import mdeval ./consumer.js
+node --import mdeval/register ./consumer.js
 ```
 
 `consumer.js` can then use ordinary static imports against `.md` files:
@@ -148,12 +148,14 @@ import { todos } from './TODOS.md'
 console.log(todos)
 ```
 
-`--import mdeval` runs mdeval's runtime as a side effect before any of `consumer.js`'s imports are linked: it seeds `block` and `$` on `globalThis` and registers the Node ESM loader so `.md` files resolve as modules. Without `--import mdeval`, `consumer.js`'s static `import` of a `.md` file fails — Node has no idea how to load `.md` yet.
+`--import mdeval/register` is a side-effect-only entry. Before any of `consumer.js`'s imports are linked, it seeds `block` and `$` on `globalThis` and registers the Node ESM loader so `.md` files resolve as modules. Without it, the static `import` of a `.md` fails — Node has no idea how to load `.md` yet.
 
-You can also point `--import mdeval` at a `.md` file directly:
+The plain `mdeval` import stays pure — `import { block, $ } from 'mdeval'` just gives you the helpers without touching `globalThis` or registering any loader. The split keeps "I want the helpers in my script" separate from "I want to load `.md` files".
+
+You can also point `--import mdeval/register` at a `.md` file directly:
 
 ```bash
-node --import mdeval ./TODOS.md
+node --import mdeval/register ./TODOS.md
 ```
 
 ## Notes

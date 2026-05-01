@@ -1,5 +1,5 @@
 import { pathToFileURL } from 'node:url';
-import './runtime.ts';
+import './register.ts';
 import {
 	parseMarkdown, COMMENT_TAG, MARKER_OPEN, MARKER_CLOSE,
 	COMMENT_CLOSE, EXPORT_PREFIX, buildExpressionMap,
