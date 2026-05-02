@@ -2,7 +2,7 @@ import type { LoadHook } from 'node:module';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-	parseMarkdown, EXPORT_PREFIX, buildExpressionMap, type ScriptBlock, type Marker,
+	parseMarkdown, EXPORT_PREFIX, MARKER_OPEN, buildExpressionMap, type ScriptBlock, type Marker,
 } from './parse-markdown.ts';
 import { createMappedSource } from './mapped-source.ts';
 
@@ -28,9 +28,14 @@ const generateModule = (
 
 	for (const [expression, index] of expressionMap) {
 		const marker = firstMarker.get(expression)!;
+		const prefix = `export const ${EXPORT_PREFIX}${index} = `;
 		out.appendLines(
-			`export const ${EXPORT_PREFIX}${index} = ${expression};`,
+			`${prefix}${expression};`,
 			marker.start,
+			{
+				genColumn: prefix.length,
+				sourceOffset: marker.start + MARKER_OPEN.length,
+			},
 		);
 	}
 

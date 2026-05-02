@@ -58,12 +58,13 @@ describe('source map', () => {
 		expect(stderr).toMatch(/data\.md:6:\d+/);
 	});
 
-	test('runtime error in a marker expression remaps to original .md line', async () => {
+	test('runtime error in a marker expression remaps to original .md line and column', async () => {
 		// Line 1: <!--mdeval
 		// Line 2: const value = 1;
 		// Line 3: -->
 		// Line 4: (blank)
-		// Line 5: Result: <!--mdeval missingFn(value)-->old<!--/mdeval-->   ← marker line
+		// Line 5: Result: <!--mdeval missingFn(value)-->old<!--/mdeval-->
+		//                            ^ `missingFn` starts at column 20 (1-indexed)
 		await using fixture = await buildFixture([
 			'<!--mdeval',
 			'const value = 1;',
@@ -77,7 +78,7 @@ describe('source map', () => {
 		const stderr = result.stderr ?? '';
 
 		expect(stderr).toContain('ReferenceError: missingFn is not defined');
-		expect(stderr).toMatch(/data\.md:5:\d+/);
+		expect(stderr).toMatch(/data\.md:5:20/);
 	});
 
 	test('error inside a multi-line marker IIFE maps to its own line', async () => {
