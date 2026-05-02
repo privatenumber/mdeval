@@ -7,4 +7,5 @@ describe('mdeval', () => {
 	import('./specs/process-source.ts');
 	import('./specs/cli.ts');
 	import('./specs/recipe.ts');
+	import('./specs/source-map.ts');
 });

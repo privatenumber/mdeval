@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@jridgewell/gen-mapping':
+        specifier: ^0.3.13
+        version: 0.3.13
       cleye:
         specifier: ^2.3.0
         version: 2.3.0
