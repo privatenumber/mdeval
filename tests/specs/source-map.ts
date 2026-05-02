@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
-import spawn from 'nano-spawn';
+import spawn, { type SubprocessError } from 'nano-spawn';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -25,10 +25,7 @@ const runConsumer = async (fixturePath: string) => spawn(
 		path.join(fixturePath, 'consumer.mjs'),
 	],
 	{ cwd: fixturePath },
-).catch((error: unknown) => error as {
-	stderr?: string;
-	stdout?: string;
-});
+).catch((error: SubprocessError) => error);
 
 describe('source map', () => {
 	test('runtime error in a script block remaps to original .md line', async () => {
@@ -55,7 +52,7 @@ describe('source map', () => {
 		].join('\n'));
 
 		const result = await runConsumer(fixture.path);
-		const stderr = (result as { stderr?: string }).stderr ?? '';
+		const stderr = result.stderr ?? '';
 
 		expect(stderr).toContain('ReferenceError: nonexistentFunction is not defined');
 		expect(stderr).toMatch(/data\.md:6:\d+/);
@@ -77,7 +74,7 @@ describe('source map', () => {
 		].join('\n'));
 
 		const result = await runConsumer(fixture.path);
-		const stderr = (result as { stderr?: string }).stderr ?? '';
+		const stderr = result.stderr ?? '';
 
 		expect(stderr).toContain('ReferenceError: missingFn is not defined');
 		expect(stderr).toMatch(/data\.md:5:\d+/);

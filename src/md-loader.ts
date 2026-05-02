@@ -1,12 +1,10 @@
 import type { LoadHook } from 'node:module';
 import fs from 'node:fs/promises';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import {
-	GenMapping, addSegment, setSourceContent, toEncodedMap,
-} from '@jridgewell/gen-mapping';
+import { fileURLToPath } from 'node:url';
 import {
 	parseMarkdown, EXPORT_PREFIX, buildExpressionMap, type ScriptBlock, type Marker,
 } from './parse-markdown.ts';
+import { createMappedSource } from './mapped-source.ts';
 
 // Convert a 0-indexed source offset to a 0-indexed line number.
 const lineFromOffset = (source: string, offset: number): number => {
@@ -25,15 +23,7 @@ const generateModule = (
 	scriptBlocks: ScriptBlock[],
 	markers: Marker[],
 ): string => {
-	const sourceURL = pathToFileURL(filePath).href;
-	const map = new GenMapping({ file: filePath });
-	setSourceContent(map, sourceURL, source);
-
-	const lines: string[] = [];
-	const writeLine = (text: string, sourceLine: number) => {
-		addSegment(map, lines.length, 0, sourceURL, sourceLine, 0);
-		lines.push(text);
-	};
+	const out = createMappedSource(filePath, source);
 
 	for (const block of scriptBlocks) {
 		// `block.start` points at `<!--mdeval`; content begins on the next line.
@@ -45,7 +35,7 @@ const generateModule = (
 			blockLines.pop();
 		}
 		for (let index = 0; index < blockLines.length; index += 1) {
-			writeLine(blockLines[index], contentStartLine + index);
+			out.appendLine(blockLines[index], contentStartLine + index);
 		}
 	}
 
@@ -62,25 +52,20 @@ const generateModule = (
 		const markerLine = lineFromOffset(source, marker.start);
 		const exprLines = expression.split('\n');
 		const prefix = `export const ${EXPORT_PREFIX}${index} = `;
-		// First line carries the prefix; subsequent lines (if the expression spans
-		// multiple lines) keep their original indentation.
-		writeLine(
+		out.appendLine(
 			`${prefix}${exprLines[0]}${exprLines.length === 1 ? ';' : ''}`,
 			markerLine,
 		);
 		for (let lineIndex = 1; lineIndex < exprLines.length; lineIndex += 1) {
 			const isLast = lineIndex === exprLines.length - 1;
-			writeLine(
+			out.appendLine(
 				`${exprLines[lineIndex]}${isLast ? ';' : ''}`,
 				markerLine + lineIndex,
 			);
 		}
 	}
 
-	const body = `${lines.join('\n')}\n`;
-	const encoded = toEncodedMap(map);
-	const sourceMapUrl = `//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(encoded)).toString('base64')}`;
-	return `${body}${sourceMapUrl}\n`;
+	return out.toString();
 };
 
 export const load: LoadHook = async (url, context, nextLoad) => {
