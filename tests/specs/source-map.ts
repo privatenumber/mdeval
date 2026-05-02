@@ -25,7 +25,10 @@ const runConsumer = async (fixturePath: string) => spawn(
 		path.join(fixturePath, 'consumer.mjs'),
 	],
 	{ cwd: fixturePath },
-).catch((error: { stderr?: string; stdout?: string }) => error);
+).catch((error: unknown) => error as {
+	stderr?: string;
+	stdout?: string;
+});
 
 describe('source map', () => {
 	test('runtime error in a script block remaps to original .md line', async () => {
