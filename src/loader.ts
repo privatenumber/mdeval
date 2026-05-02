@@ -10,7 +10,4 @@ Object.assign(globalThis, {
 	block,
 	$,
 });
-register(new URL(
-	import.meta.url.endsWith('.ts') ? 'md-loader.ts' : 'md-loader.mjs',
-	import.meta.url,
-));
+register('#md-loader', import.meta.url);
