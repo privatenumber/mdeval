@@ -79,4 +79,56 @@ describe('source map', () => {
 		expect(stderr).toContain('ReferenceError: missingFn is not defined');
 		expect(stderr).toMatch(/data\.md:5:\d+/);
 	});
+
+	test('error inside a multi-line marker IIFE maps to its own line', async () => {
+		// Line 1: Result: <!--mdeval (() => {
+		// Line 2:   const a = 1;
+		// Line 3:   badThing();                ← error here
+		// Line 4:   return a;
+		// Line 5: })()-->old<!--/mdeval-->
+		await using fixture = await buildFixture([
+			'Result: <!--mdeval (() => {',
+			'  const a = 1;',
+			'  badThing();',
+			'  return a;',
+			'})()-->old<!--/mdeval-->',
+			'',
+		].join('\n'));
+
+		const result = await runConsumer(fixture.path);
+		const stderr = result.stderr ?? '';
+
+		expect(stderr).toContain('ReferenceError: badThing is not defined');
+		expect(stderr).toMatch(/data\.md:3:\d+/);
+	});
+
+	test('error in second of multiple script blocks maps to its line', async () => {
+		// Line 1: <!--mdeval
+		// Line 2: const a = 1;
+		// Line 3: -->
+		// Line 4: (blank)
+		// Line 5: <!--mdeval
+		// Line 6: badThing();                  ← error here
+		// Line 7: -->
+		// Line 8: (blank)
+		// Line 9: <!--mdeval a-->old<!--/mdeval-->
+		await using fixture = await buildFixture([
+			'<!--mdeval',
+			'const a = 1;',
+			'-->',
+			'',
+			'<!--mdeval',
+			'badThing();',
+			'-->',
+			'',
+			'<!--mdeval a-->old<!--/mdeval-->',
+			'',
+		].join('\n'));
+
+		const result = await runConsumer(fixture.path);
+		const stderr = result.stderr ?? '';
+
+		expect(stderr).toContain('ReferenceError: badThing is not defined');
+		expect(stderr).toMatch(/data\.md:6:\d+/);
+	});
 });
