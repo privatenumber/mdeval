@@ -20,7 +20,7 @@ export const createMappedSource = (
 			addSegment(map, lines.length, 0, sourceURL, sourceLine, 0);
 			lines.push(text);
 		},
-		toString() {
+		toString: () => {
 			const body = `${lines.join('\n')}\n`;
 			const encoded = toEncodedMap(map);
 			const inlineMap = `//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(encoded)).toString('base64')}`;
