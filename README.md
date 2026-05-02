@@ -162,7 +162,21 @@ node --import mdeval/loader ./TODOS.md
 
 - A file can have **multiple script blocks** — they're merged into one module, so variables and imports are shared. We recommend placing them at the top to signal the file has generated content.
 
-- Markers can be **self-contained** — no script block needed:
+- **Markers can span multiple lines.** Don't cram everything into one line — give the expression room to breathe. This is what makes inlining marker-specific logic next to its output practical:
+
+  ```markdown
+  <!--mdeval block(table([
+    { name: 'cleye', version: '^2.3.0' },
+    { name: 'md-pen', version: '^0.0.2' },
+  ]))-->
+  | Package | Version |
+  | - | - |
+  | cleye | ^2.3.0 |
+  | md-pen | ^0.0.2 |
+  <!--/mdeval-->
+  ```
+
+  When the expression needs statements or control flow, wrap it in an IIFE:
 
   ```markdown
   <!--mdeval (() => {
@@ -172,7 +186,7 @@ node --import mdeval/loader ./TODOS.md
   })()-->odd<!--/mdeval-->
   ```
 
-  In large documents, this IIFE pattern lets you keep logic next to the marker it serves instead of in a distant script block.
+  Coupling the expression to its rendered value keeps related code together and reads better than pushing every variable into a distant script block. Reserve script blocks for shared imports or values referenced by multiple markers.
 
 - Marker expressions are **auto-awaited** — promises resolve automatically, so you can use `fetch()` or any async API directly in a marker without wrapping it in a script block.
 

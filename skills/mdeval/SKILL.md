@@ -185,7 +185,21 @@ const x = String.fromCharCode(45, 45, 62);
 
 **Place scripts at the top.** Order doesn't affect execution — scripts can appear after the markers that reference them — but top placement signals the file contains generated content.
 
-**Use IIFEs to co-locate logic.** In large docs, keep marker-specific computation inline instead of in a distant script block: `<!--mdeval (() => { ... })()-->`.
+**Markers can span multiple lines — use them to inline logic.** Don't cram expressions into one line. Co-locate marker-specific computation with its output:
+
+````markdown
+<!--mdeval block(table([
+  { name: 'cleye', version: '^2.3.0' },
+  { name: 'md-pen', version: '^0.0.2' },
+]))-->
+| Package | Version |
+| - | - |
+| cleye | ^2.3.0 |
+| md-pen | ^0.0.2 |
+<!--/mdeval-->
+````
+
+For statements or control flow, wrap in an IIFE: `<!--mdeval (() => { ... })()-->`. Reserve script blocks for shared imports or values referenced by multiple markers.
 
 **Standalone markers suppress inline markdown in the value.** When a marker opens a line — standalone paragraph, list item, or blockquote — GitHub treats the entire line as a raw HTML block. Inline markdown in the value (`` `code` ``, `**bold**`, `[link](url)`) is not processed and appears literally.
 
