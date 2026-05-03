@@ -265,6 +265,16 @@ const depsTable = table(deps.map(([name, version]) => [
 <!--/mdeval-->
 ```
 
+## Dev loop
+
+While iterating on a render helper or imported `.ts` / `.json`, re-run mdeval on every save with [`chokidar-cli`](https://github.com/open-cli-tools/chokidar-cli):
+
+```bash
+npx chokidar-cli "**/*.{md,ts,js,json}" -c 'mdeval "**/*.md"'
+```
+
+Use `--ignore` to exclude paths that shouldn't trigger a re-run, e.g. `--ignore "node_modules/**"`.
+
 ## Git hook
 
 Run mdeval automatically before every commit so values never go stale. [Lefthook](https://github.com/evilmartians/lefthook) makes this easy:
