@@ -24,11 +24,13 @@ describe('parseMarkdown', () => {
 		expect(scriptBlocks).toStrictEqual([
 			{
 				content: 'const x = 1;\n',
+				contentStart: 11,
 				start: 0,
 				end: 27,
 			},
 			{
 				content: 'const y = 2;\n',
+				contentStart: 40,
 				start: 29,
 				end: 56,
 			},
@@ -41,6 +43,7 @@ describe('parseMarkdown', () => {
 		expect(scriptBlocks).toStrictEqual([
 			{
 				content: '\tconst x = 1;\n',
+				contentStart: 11,
 				start: 0,
 				end: 28,
 			},
@@ -53,6 +56,7 @@ describe('parseMarkdown', () => {
 		expect(scriptBlocks).toStrictEqual([
 			{
 				content: 'const x = 1;\r\n',
+				contentStart: 12,
 				start: 0,
 				end: source.length,
 			},

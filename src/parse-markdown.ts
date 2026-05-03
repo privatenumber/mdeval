@@ -27,6 +27,7 @@ export const buildExpressionMap = (
 
 export type ScriptBlock = {
 	content: string;
+	contentStart: number;
 	start: number;
 	end: number;
 };
@@ -165,6 +166,7 @@ export const parseMarkdown = (source: string): ParseResult => {
 			if (!isInCode(start)) {
 				scriptBlocks.push({
 					content: source.slice(contentStart, closeStart),
+					contentStart,
 					start,
 					end,
 				});
