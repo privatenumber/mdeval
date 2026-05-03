@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
 import spawn, { type SubprocessError } from 'nano-spawn';
-import { createMappedSource } from '../../src/mapped-source.ts';
+import { createSourceBuilder } from '../../src/source-builder.ts';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -273,10 +273,10 @@ describe('source map', () => {
 		)).join('\n');
 		const source = `# Header\n\n<!--mdeval\n${block}\n-->\n`;
 		const contentStart = source.indexOf(block);
-		const mappedSource = createMappedSource('/tmp/data.md', source);
-		mappedSource.appendSource(block, contentStart);
+		const sourceBuilder = createSourceBuilder('/tmp/data.md', source);
+		sourceBuilder.appendSource(block, contentStart);
 
-		const generatedSource = mappedSource.toString();
+		const generatedSource = sourceBuilder.toModuleSource();
 		const map = getInlineSourceMap(generatedSource);
 
 		expect(map.sources).toStrictEqual([pathToFileURL('/tmp/data.md').href]);
@@ -284,5 +284,24 @@ describe('source map', () => {
 		expect(JSON.stringify(map)).not.toContain(block);
 		expect(map.mappings.length).toBeLessThan(block.length * 1.3);
 		expect(generatedSource.length).toBeLessThan(block.length * 3.5);
+	});
+
+	test('source builder composes synthetic and source-backed spans explicitly', () => {
+		const source = 'Result: <!--mdeval value-->old<!--/mdeval-->\n';
+		const expression = 'value';
+		const expressionStart = source.indexOf(expression);
+		const sourceBuilder = createSourceBuilder('/tmp/data.md', source);
+		sourceBuilder.appendSynthetic('export const result = ');
+		sourceBuilder.appendSource(expression, expressionStart);
+		sourceBuilder.appendSynthetic(';\n');
+		sourceBuilder.appendSynthetic('// done\n');
+
+		const generatedSource = sourceBuilder.toModuleSource();
+		const map = getInlineSourceMap(generatedSource);
+
+		expect(generatedSource).toContain('export const result = value;\n// done\n');
+		expect(map.sources).toStrictEqual([pathToFileURL('/tmp/data.md').href]);
+		expect(map.sourcesContent).toStrictEqual([null]);
+		expect(map.mappings).not.toBe('');
 	});
 });

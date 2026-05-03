@@ -8,17 +8,6 @@ type Position = {
 	column: number;
 };
 
-type FirstLineAnchor = {
-	genColumn: number;
-	sourceOffset: number;
-};
-
-type MappingSpan = {
-	generatedOffset: number;
-	sourceOffset: number;
-	length: number;
-};
-
 const LF = 10;
 const CR = 13;
 
@@ -39,16 +28,17 @@ const isIdentifierCode = (code: number) => (
 	|| code === 36
 );
 
-// Builds a synthesized JS string alongside a source map back to an original
-// `.md` file, then emits it with an inline `//# sourceMappingURL=` so Node's
-// built-in source-map support can remap stack traces to the `.md`.
-export const createMappedSource = (
+// Builds synthesized JS alongside a source map back to an original `.md` file.
+// Callers append either source-backed text or synthetic JS; the builder owns
+// generated positions, compact segment emission, and inline map serialization.
+export const createSourceBuilder = (
 	filePath: string,
 	source: string,
 ) => {
 	const sourceURL = pathToFileURL(filePath).href;
 	const map = new GenMapping({ file: filePath });
 	const lines: string[] = [];
+	let currentLine = '';
 
 	// Precompute newline indices once so per-offset position lookup is O(log N)
 	// via binary search instead of O(offset) re-scans of `source`.
@@ -75,32 +65,36 @@ export const createMappedSource = (
 		};
 	};
 
-	const appendMappedText = (
+	const appendToGenerated = (char: string, code: number) => {
+		if (code === LF) {
+			lines.push(currentLine);
+			currentLine = '';
+			return;
+		}
+		currentLine += char;
+	};
+
+	const appendSourceText = (
 		text: string,
-		span: MappingSpan,
+		sourceOffset: number,
 	) => {
-		const { generatedOffset: spanStart } = span;
-		const spanEnd = spanStart + span.length;
-		const sourceStart = positionFromOffset(span.sourceOffset);
-		let generatedLine = lines.length;
-		let lineStart = 0;
+		const sourceStart = positionFromOffset(sourceOffset);
 		let sourceLine = sourceStart.line;
 		let sourceColumn = sourceStart.column;
 		let previousIsIdentifier = false;
 		let previousIsWhitespace = false;
 		for (
-			let generatedOffset = 0;
-			generatedOffset < text.length;
-			generatedOffset += 1
+			let offset = 0;
+			offset < text.length;
+			offset += 1
 		) {
-			const code = text.codePointAt(generatedOffset)!;
-			const isInSpan = generatedOffset >= spanStart && generatedOffset < spanEnd;
+			const code = text.codePointAt(offset)!;
 			const isWhitespace = isWhitespaceCode(code);
 			const isIdentifier = isIdentifierCode(code);
 			const isSegmentBoundary = (
-				isInSpan && !isWhitespace
+				!isWhitespace
 				&& (
-					generatedOffset === spanStart
+					offset === 0
 					|| previousIsWhitespace
 					|| !previousIsIdentifier
 					|| !isIdentifier
@@ -110,62 +104,44 @@ export const createMappedSource = (
 			if (isSegmentBoundary) {
 				addSegment(
 					map,
-					generatedLine,
-					generatedOffset - lineStart,
+					lines.length,
+					currentLine.length,
 					sourceURL,
 					sourceLine,
 					sourceColumn,
 				);
 			}
 
-			if (isInSpan) {
-				if (code === LF) {
-					sourceLine += 1;
-					sourceColumn = 0;
-				} else {
-					sourceColumn += 1;
-				}
-				previousIsIdentifier = isIdentifier;
-				previousIsWhitespace = isWhitespace;
-			}
-
 			if (code === LF) {
-				lines.push(text.slice(lineStart, generatedOffset));
-				lineStart = generatedOffset + 1;
-				generatedLine += 1;
+				sourceLine += 1;
+				sourceColumn = 0;
+			} else {
+				sourceColumn += 1;
 			}
+			previousIsIdentifier = isIdentifier;
+			previousIsWhitespace = isWhitespace;
+			appendToGenerated(text[offset], code);
 		}
-		if (lineStart < text.length) {
-			lines.push(text.slice(lineStart));
+	};
+
+	const appendSyntheticText = (text: string) => {
+		for (let offset = 0; offset < text.length; offset += 1) {
+			appendToGenerated(text[offset], text.codePointAt(offset)!);
 		}
 	};
 
 	return {
-		// Append source text copied verbatim into the output. Every generated
-		// column maps back to the matching source column so stack traces can point
-		// at the actual failing token, not just the start of its line.
+		// Append source text copied verbatim into the output. Segments are emitted
+		// at likely token boundaries so maps stay compact without a JS parser.
 		appendSource(text: string, sourceOffset: number) {
-			appendMappedText(text, {
-				generatedOffset: 0,
-				sourceOffset,
-				length: text.length,
-			});
+			appendSourceText(text, sourceOffset);
 		},
-		// Append generated text containing one source-backed span. Useful for an
-		// export line where a synthetic prefix wraps the original marker expression.
-		appendGenerated(
-			text: string,
-			firstLineAnchor: FirstLineAnchor,
-			length: number,
-		) {
-			appendMappedText(text, {
-				generatedOffset: firstLineAnchor.genColumn,
-				sourceOffset: firstLineAnchor.sourceOffset,
-				length,
-			});
+		appendSynthetic(text: string) {
+			appendSyntheticText(text);
 		},
-		toString: () => {
-			const body = `${lines.join('\n')}\n`;
+		toModuleSource: () => {
+			const bodyLines = currentLine === '' ? lines : [...lines, currentLine];
+			const body = `${bodyLines.join('\n')}\n`;
 			const encoded = toEncodedMap(map);
 			const inlineMap = `//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(encoded)).toString('base64')}`;
 			return `${body}${inlineMap}\n`;

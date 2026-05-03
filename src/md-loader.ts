@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
 	parseMarkdown, EXPORT_PREFIX, MARKER_OPEN, type ScriptBlock, type Marker,
 } from './parse-markdown.ts';
-import { createMappedSource } from './mapped-source.ts';
+import { createSourceBuilder } from './source-builder.ts';
 
 const generateModule = (
 	source: string,
@@ -12,10 +12,13 @@ const generateModule = (
 	scriptBlocks: ScriptBlock[],
 	markers: Marker[],
 ): string => {
-	const out = createMappedSource(filePath, source);
+	const out = createSourceBuilder(filePath, source);
 
 	for (const block of scriptBlocks) {
 		out.appendSource(block.content, block.contentStart);
+		if (!block.content.endsWith('\n')) {
+			out.appendSynthetic('\n');
+		}
 	}
 
 	// Single pass: assign each unique expression an index and remember the
@@ -37,17 +40,12 @@ const generateModule = (
 
 	for (const [expression, { index, marker }] of expressionToInfo) {
 		const prefix = `export const ${EXPORT_PREFIX}${index} = `;
-		out.appendGenerated(
-			`${prefix}${expression};`,
-			{
-				genColumn: prefix.length,
-				sourceOffset: marker.start + MARKER_OPEN.length,
-			},
-			expression.length,
-		);
+		out.appendSynthetic(prefix);
+		out.appendSource(expression, marker.start + MARKER_OPEN.length);
+		out.appendSynthetic(';\n');
 	}
 
-	return out.toString();
+	return out.toModuleSource();
 };
 
 export const load: LoadHook = async (url, context, nextLoad) => {
