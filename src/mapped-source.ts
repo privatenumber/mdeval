@@ -13,6 +13,12 @@ type FirstLineAnchor = {
 	sourceOffset: number;
 };
 
+type MappingSpan = {
+	generatedOffset: number;
+	sourceOffset: number;
+	length: number;
+};
+
 // Builds a synthesized JS string alongside a source map back to an original
 // `.md` file, then emits it with an inline `//# sourceMappingURL=` so Node's
 // built-in source-map support can remap stack traces to the `.md`.
@@ -50,41 +56,79 @@ export const createMappedSource = (
 		};
 	};
 
-	return {
-		// Append `text` to the output, mapping each of its lines to consecutive
-		// source lines starting at the line of `sourceOffset`. A trailing empty
-		// line (from `text` ending with `\n`) is dropped.
-		//
-		// `firstLineAnchor` adds a second segment on the first emitted line
-		// pointing from `genColumn` to a real position in source. Useful when
-		// the first line of `text` includes a synthetic prefix and the actual
-		// source content starts at `sourceOffset` within it.
-		appendLines(
-			text: string,
-			sourceOffset: number,
-			firstLineAnchor?: FirstLineAnchor,
+	const appendMappedText = (
+		text: string,
+		span: MappingSpan,
+	) => {
+		const generatedStartLine = lines.length;
+		const textLines = text.split('\n');
+		if (textLines.at(-1) === '') {
+			textLines.pop();
+		}
+
+		const generatedLineStarts: number[] = [];
+		let offset = 0;
+		for (const line of textLines) {
+			generatedLineStarts.push(offset);
+			offset += line.length + 1;
+			lines.push(line);
+		}
+
+		let lineIndex = 0;
+		const { generatedOffset: spanStart } = span;
+		const spanEnd = spanStart + span.length;
+		for (
+			let generatedOffset = spanStart;
+			generatedOffset < spanEnd;
+			generatedOffset += 1
 		) {
-			const start = positionFromOffset(sourceOffset);
-			const textLines = text.split('\n');
-			if (textLines.at(-1) === '') {
-				textLines.pop();
+			const char = text[generatedOffset];
+			if (char === '\n' || char === '\r') {
+				continue;
 			}
-			for (let index = 0; index < textLines.length; index += 1) {
-				const genLine = lines.length;
-				addSegment(map, genLine, 0, sourceURL, start.line + index, 0);
-				if (index === 0 && firstLineAnchor) {
-					const anchor = positionFromOffset(firstLineAnchor.sourceOffset);
-					addSegment(
-						map,
-						genLine,
-						firstLineAnchor.genColumn,
-						sourceURL,
-						anchor.line,
-						anchor.column,
-					);
-				}
-				lines.push(textLines[index]);
+			while (
+				lineIndex + 1 < generatedLineStarts.length
+				&& generatedLineStarts[lineIndex + 1] <= generatedOffset
+			) {
+				lineIndex += 1;
 			}
+			const sourcePosition = positionFromOffset(
+				span.sourceOffset + generatedOffset - span.generatedOffset,
+			);
+			addSegment(
+				map,
+				generatedStartLine + lineIndex,
+				generatedOffset - generatedLineStarts[lineIndex],
+				sourceURL,
+				sourcePosition.line,
+				sourcePosition.column,
+			);
+		}
+	};
+
+	return {
+		// Append source text copied verbatim into the output. Every generated
+		// column maps back to the matching source column so stack traces can point
+		// at the actual failing token, not just the start of its line.
+		appendSource(text: string, sourceOffset: number) {
+			appendMappedText(text, {
+				generatedOffset: 0,
+				sourceOffset,
+				length: text.length,
+			});
+		},
+		// Append generated text containing one source-backed span. Useful for an
+		// export line where a synthetic prefix wraps the original marker expression.
+		appendGenerated(
+			text: string,
+			firstLineAnchor: FirstLineAnchor,
+			length: number,
+		) {
+			appendMappedText(text, {
+				generatedOffset: firstLineAnchor.genColumn,
+				sourceOffset: firstLineAnchor.sourceOffset,
+				length,
+			});
 		},
 		toString: () => {
 			const body = `${lines.join('\n')}\n`;

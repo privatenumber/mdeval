@@ -15,7 +15,7 @@ const generateModule = (
 	const out = createMappedSource(filePath, source);
 
 	for (const block of scriptBlocks) {
-		out.appendLines(block.content, block.contentStart);
+		out.appendSource(block.content, block.contentStart);
 	}
 
 	// Single pass: assign each unique expression an index and remember the
@@ -37,13 +37,13 @@ const generateModule = (
 
 	for (const [expression, { index, marker }] of expressionToInfo) {
 		const prefix = `export const ${EXPORT_PREFIX}${index} = `;
-		out.appendLines(
+		out.appendGenerated(
 			`${prefix}${expression};`,
-			marker.start,
 			{
 				genColumn: prefix.length,
 				sourceOffset: marker.start + MARKER_OPEN.length,
 			},
+			expression.length,
 		);
 	}
 
