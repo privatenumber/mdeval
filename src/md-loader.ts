@@ -2,7 +2,7 @@ import type { LoadHook } from 'node:module';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
-	parseMarkdown, EXPORT_PREFIX, MARKER_OPEN, buildExpressionMap, type ScriptBlock, type Marker,
+	parseMarkdown, EXPORT_PREFIX, MARKER_OPEN, type ScriptBlock, type Marker,
 } from './parse-markdown.ts';
 import { createMappedSource } from './mapped-source.ts';
 
@@ -18,16 +18,24 @@ const generateModule = (
 		out.appendLines(block.content, block.contentStart);
 	}
 
-	const expressionMap = buildExpressionMap(markers);
-	const firstMarker = new Map<string, Marker>();
+	// Single pass: assign each unique expression an index and remember the
+	// first marker that produced it, so we can map the export back to its
+	// source position.
+	type ExpressionInfo = {
+		index: number;
+		marker: Marker;
+	};
+	const expressionToInfo = new Map<string, ExpressionInfo>();
 	for (const marker of markers) {
-		if (!firstMarker.has(marker.expression)) {
-			firstMarker.set(marker.expression, marker);
+		if (!expressionToInfo.has(marker.expression)) {
+			expressionToInfo.set(marker.expression, {
+				index: expressionToInfo.size,
+				marker,
+			});
 		}
 	}
 
-	for (const [expression, index] of expressionMap) {
-		const marker = firstMarker.get(expression)!;
+	for (const [expression, { index, marker }] of expressionToInfo) {
 		const prefix = `export const ${EXPORT_PREFIX}${index} = `;
 		out.appendLines(
 			`${prefix}${expression};`,

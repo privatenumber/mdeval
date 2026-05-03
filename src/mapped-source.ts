@@ -28,10 +28,8 @@ export const createMappedSource = (
 	// Precompute newline indices once so per-offset position lookup is O(log N)
 	// via binary search instead of O(offset) re-scans of `source`.
 	const newlineIndices: number[] = [];
-	for (let index = 0; index < source.length; index += 1) {
-		if (source[index] === '\n') {
-			newlineIndices.push(index);
-		}
+	for (let nl = source.indexOf('\n'); nl !== -1; nl = source.indexOf('\n', nl + 1)) {
+		newlineIndices.push(nl);
 	}
 
 	const positionFromOffset = (offset: number): Position => {
