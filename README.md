@@ -163,19 +163,7 @@ You can also point `--import mdeval/loader` at a `.md` file directly:
 node --import mdeval/loader ./TODOS.md
 ```
 
-### Source maps
-
-The loader emits an inline source map for every `.md` it generates and enables Node's source-map support as part of its side effects. Runtime stack traces from a `.md` remap to original line and column with no extra flag:
-
-```bash
-node --import mdeval/loader ./consumer.js
-```
-
-Boundaries:
-
-- **Runtime errors remap.** Stack frames inside script blocks and marker expressions point at the originating `.md` location.
-- **Parse-time syntax errors do not.** Node compiles the synthesized module before consuming the inline map, so syntax errors show generated locations.
-- **Source contents are not embedded.** Node reads the original `.md` from disk, which keeps loader output compact.
+Runtime stack traces from a `.md` point at original lines and columns — the loader sets up source maps automatically.
 
 ## Notes
 
