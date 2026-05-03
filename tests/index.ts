@@ -8,4 +8,5 @@ describe('mdeval', () => {
 	import('./specs/cli.ts');
 	import('./specs/recipe.ts');
 	import('./specs/source-map.ts');
+	import('./specs/watch.ts');
 });

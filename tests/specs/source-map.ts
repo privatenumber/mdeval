@@ -2,10 +2,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
-import spawn, { type SubprocessError } from 'nano-spawn';
+import type { SubprocessError } from 'nano-spawn';
+import { node, projectRoot } from '../utils/binaries.ts';
 import { createSourceBuilder } from '../../src/source-builder.ts';
-
-const projectRoot = path.resolve(import.meta.dirname, '../..');
 
 // Throws a runtime error inside a script block whose `.md` source line is
 // known. The synthesized module places the offending line somewhere different;
@@ -30,8 +29,7 @@ const buildFixtureWithPath = (
 // No `--enable-source-maps` flag — `mdeval/loader` calls
 // `process.setSourceMapsEnabled(true)` as part of its side effects, so every
 // test below also verifies that programmatic enable.
-const runConsumer = async (fixturePath: string) => spawn(
-	process.execPath,
+const runConsumer = async (fixturePath: string) => node(
 	[
 		'--import',
 		'mdeval/loader',
