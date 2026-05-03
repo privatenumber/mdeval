@@ -1,13 +1,7 @@
 import path from 'node:path';
 import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
-import spawn from 'nano-spawn';
-
-// Project root acts as the `mdeval` package (its package.json has
-// `name: "mdeval"`). Symlinking `node_modules/mdeval` → project root inside
-// each fixture lets `node --import mdeval/loader` resolve the bare specifier
-// — exactly the invocation external users follow after `npm i mdeval`.
-const projectRoot = path.resolve(import.meta.dirname, '../..');
+import { node, projectRoot } from '../utils/binaries.ts';
 
 // Consumer uses static `import` against the `.md` file. This only works if
 // the loader is registered before the linker resolves consumer's imports —
@@ -23,8 +17,7 @@ const buildFixture = (dataMd: string) => createFixture({
 	'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
 });
 
-const runConsumer = async (fixturePath: string) => spawn(
-	process.execPath,
+const runConsumer = async (fixturePath: string) => node(
 	['--import', 'mdeval/loader', path.join(fixturePath, 'consumer.mjs')],
 	{ cwd: fixturePath },
 );

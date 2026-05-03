@@ -1,5 +1,8 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { cli } from 'cleye';
 import { glob } from 'tinyglobby';
 import './loader.ts';
@@ -8,6 +11,13 @@ import { processSource } from './process-source.ts';
 
 const argv = cli({
 	name: 'mdeval',
+	flags: {
+		watch: {
+			type: Boolean,
+			alias: 'w',
+			description: 'Re-render on file changes (uses Node\'s --watch internally to track imports)',
+		},
+	},
 	parameters: ['<files...>'],
 });
 
@@ -20,6 +30,29 @@ const files = await glob(patterns, {
 if (files.length === 0) {
 	console.error('No files matched the given patterns');
 	process.exit(1);
+}
+
+if (argv.flags.watch) {
+	const child = spawn(
+		process.execPath,
+		[
+			'--watch',
+			fileURLToPath(import.meta.url),
+			...patterns,
+		],
+		{
+			stdio: 'inherit',
+		},
+	);
+
+	for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+		process.on(signal, () => {
+			child.kill(signal);
+		});
+	}
+
+	const [code, signal] = await once(child, 'exit') as [number | null, NodeJS.Signals | null];
+	process.exit(signal === 'SIGINT' ? 130 : (code ?? 1));
 }
 
 await Promise.all(files.map(async (file) => {

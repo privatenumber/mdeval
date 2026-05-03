@@ -253,6 +253,16 @@ const depsTable = table(deps.map(([name, version]) => [
 <!--/mdeval-->
 ```
 
+## Dev loop
+
+Re-render on every save:
+
+```bash
+mdeval --watch "**/*.md"
+```
+
+`--watch` (or `-w`) delegates to Node's built-in `--watch`, so changes to Markdown files and transitive imports such as render helpers trigger a fresh run. You'll see Node's `Restarting...` and `Completed running...` lifecycle lines around each render; that's expected.
+
 ## Git hook
 
 Run mdeval automatically before every commit so values never go stale. [Lefthook](https://github.com/evilmartians/lefthook) makes this easy:
