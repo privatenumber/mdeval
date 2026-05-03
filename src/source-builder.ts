@@ -65,13 +65,13 @@ export const createSourceBuilder = (
 		};
 	};
 
-	const appendToGenerated = (char: string, code: number) => {
-		if (code === LF) {
-			lines.push(currentLine);
-			currentLine = '';
-			return;
-		}
-		currentLine += char;
+	const appendLineChunk = (text: string) => {
+		currentLine += text;
+	};
+
+	const flushLine = () => {
+		lines.push(currentLine);
+		currentLine = '';
 	};
 
 	const appendSourceText = (
@@ -83,6 +83,8 @@ export const createSourceBuilder = (
 		let sourceColumn = sourceStart.column;
 		let previousIsIdentifier = false;
 		let previousIsWhitespace = false;
+		let lineStart = 0;
+		const generatedColumn = (offset: number) => currentLine.length + offset - lineStart;
 		for (
 			let offset = 0;
 			offset < text.length;
@@ -105,7 +107,7 @@ export const createSourceBuilder = (
 				addSegment(
 					map,
 					lines.length,
-					currentLine.length,
+					generatedColumn(offset),
 					sourceURL,
 					sourceLine,
 					sourceColumn,
@@ -120,13 +122,27 @@ export const createSourceBuilder = (
 			}
 			previousIsIdentifier = isIdentifier;
 			previousIsWhitespace = isWhitespace;
-			appendToGenerated(text[offset], code);
+
+			if (code === LF) {
+				appendLineChunk(text.slice(lineStart, offset));
+				flushLine();
+				lineStart = offset + 1;
+			}
+		}
+		if (lineStart < text.length) {
+			appendLineChunk(text.slice(lineStart));
 		}
 	};
 
 	const appendSyntheticText = (text: string) => {
-		for (let offset = 0; offset < text.length; offset += 1) {
-			appendToGenerated(text[offset], text.codePointAt(offset)!);
+		let cursor = 0;
+		for (let nl = text.indexOf('\n'); nl !== -1; nl = text.indexOf('\n', cursor)) {
+			appendLineChunk(text.slice(cursor, nl));
+			flushLine();
+			cursor = nl + 1;
+		}
+		if (cursor < text.length) {
+			appendLineChunk(text.slice(cursor));
 		}
 	};
 
