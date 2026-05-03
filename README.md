@@ -31,7 +31,12 @@ const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));
 -->
 ```
 
-Full Node.js, ESM imports, top-level `await`, and shell commands via [`$`](https://google.github.io/zx/) are supported.
+Script blocks support:
+
+- Full Node.js — any built-in module or installed package
+- ESM `import` / `export`
+- Top-level `await`
+- Shell commands via [`$`](https://google.github.io/zx/)
 
 A **value marker** is where the result appears. It starts with `<!--mdeval ` (with a space) followed by a JavaScript expression:
 
@@ -158,6 +163,8 @@ You can also point `--import mdeval/loader` at a `.md` file directly:
 node --import mdeval/loader ./TODOS.md
 ```
 
+Runtime stack traces from a `.md` point at original lines and columns — the loader sets up source maps automatically.
+
 ## Notes
 
 - A file can have **multiple script blocks** — they're merged into one module, so variables and imports are shared. We recommend placing them at the top to signal the file has generated content.
@@ -188,7 +195,11 @@ node --import mdeval/loader ./TODOS.md
 
   Coupling the expression to its rendered value keeps related code together and reads better than pushing every variable into a distant script block. Reserve script blocks for shared imports or values referenced by multiple markers.
 
-- Marker expressions are **auto-awaited** — promises resolve automatically, so you can use `fetch()` or any async API directly in a marker without wrapping it in a script block.
+- Marker expressions are **auto-awaited** — promises resolve automatically. Async APIs work directly in a marker without a script block:
+
+  ```markdown
+  Status: <!--mdeval (await fetch('https://api.github.com/repos/privatenumber/mdeval')).status-->200<!--/mdeval-->
+  ```
 
 - You can **import from other `.md` files**. Only the script blocks are executed — no markers are processed:
 

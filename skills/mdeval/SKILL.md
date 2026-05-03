@@ -81,6 +81,7 @@ console.log(todos);
 - Without it, static `import` of a `.md` fails — Node can't resolve `.md` until the loader is registered.
 - The plain `mdeval` import (`import { block, $ } from 'mdeval'`) stays pure — no globals, no loader. Use it when you only want the helpers.
 - Works on `.md` directly too: `node --import mdeval/loader ./TODOS.md`.
+- Runtime stack traces from a `.md` point at original lines and columns automatically.
 
 ## CLI
 
