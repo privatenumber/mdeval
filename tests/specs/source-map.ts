@@ -3,6 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
 import spawn, { type SubprocessError } from 'nano-spawn';
+import { createMappedSource } from '../../src/mapped-source.ts';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 
@@ -36,6 +37,18 @@ const runConsumer = async (fixturePath: string) => spawn(
 	],
 	{ cwd: fixturePath },
 ).catch((error: SubprocessError) => error);
+
+type EncodedSourceMap = {
+	sources: string[];
+	sourcesContent?: string[];
+	mappings: string;
+};
+
+const getInlineSourceMap = (generatedSource: string): EncodedSourceMap => {
+	const match = generatedSource.match(/sourceMappingURL=data:application\/json;base64,([\d+/=A-Za-z]+)/);
+	expect(match).not.toBeNull();
+	return JSON.parse(Buffer.from(match![1], 'base64').toString('utf8'));
+};
 
 describe('source map', () => {
 	test('runtime error in a script block remaps to original .md line', async () => {
@@ -235,5 +248,41 @@ describe('source map', () => {
 
 		expect(stderr).toContain('ReferenceError: missingFromSpecialPath is not defined');
 		expect(stderr).toContain('dir with spaces/data #1.md:4:15');
+	});
+
+	test('marker before its script block still remaps to the marker source location', async () => {
+		await using fixture = await buildFixture([
+			'Value: <!--mdeval value + missingBeforeScript()-->old<!--/mdeval-->',
+			'',
+			'<!--mdeval',
+			'const value = 1;',
+			'-->',
+			'',
+		].join('\n'));
+
+		const result = await runConsumer(fixture.path);
+		const stderr = result.stderr ?? '';
+
+		expect(stderr).toContain('ReferenceError: missingBeforeScript is not defined');
+		expect(stderr).toMatch(/data\.md:1:19/);
+	});
+
+	test('inline map omits sourcesContent and stays compact for large source spans', () => {
+		const block = Array.from({ length: 100 }, (_, index) => (
+			`const value${index} = input${index} + ${index};`
+		)).join('\n');
+		const source = `# Header\n\n<!--mdeval\n${block}\n-->\n`;
+		const contentStart = source.indexOf(block);
+		const mappedSource = createMappedSource('/tmp/data.md', source);
+		mappedSource.appendSource(block, contentStart);
+
+		const generatedSource = mappedSource.toString();
+		const map = getInlineSourceMap(generatedSource);
+
+		expect(map.sources).toStrictEqual([pathToFileURL('/tmp/data.md').href]);
+		expect(map.sourcesContent).toStrictEqual([null]);
+		expect(JSON.stringify(map)).not.toContain(block);
+		expect(map.mappings.length).toBeLessThan(block.length * 1.3);
+		expect(generatedSource.length).toBeLessThan(block.length * 3.5);
 	});
 });

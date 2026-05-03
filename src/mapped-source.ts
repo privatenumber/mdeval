@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import {
-	GenMapping, addSegment, setSourceContent, toEncodedMap,
+	GenMapping, addSegment, toEncodedMap,
 } from '@jridgewell/gen-mapping';
 
 type Position = {
@@ -19,6 +19,29 @@ type MappingSpan = {
 	length: number;
 };
 
+const IDENTIFIER_CHAR = /[$\w]/;
+const WHITESPACE = /\s/;
+
+const isSegmentBoundary = (
+	text: string,
+	spanStart: number,
+	generatedOffset: number,
+): boolean => {
+	const char = text[generatedOffset];
+	if (char === '\n' || char === '\r' || WHITESPACE.test(char)) {
+		return false;
+	}
+	if (generatedOffset === spanStart) {
+		return true;
+	}
+	const previous = text[generatedOffset - 1];
+	return (
+		WHITESPACE.test(previous)
+		|| !IDENTIFIER_CHAR.test(previous)
+		|| !IDENTIFIER_CHAR.test(char)
+	);
+};
+
 // Builds a synthesized JS string alongside a source map back to an original
 // `.md` file, then emits it with an inline `//# sourceMappingURL=` so Node's
 // built-in source-map support can remap stack traces to the `.md`.
@@ -28,7 +51,6 @@ export const createMappedSource = (
 ) => {
 	const sourceURL = pathToFileURL(filePath).href;
 	const map = new GenMapping({ file: filePath });
-	setSourceContent(map, sourceURL, source);
 	const lines: string[] = [];
 
 	// Precompute newline indices once so per-offset position lookup is O(log N)
@@ -82,8 +104,7 @@ export const createMappedSource = (
 			generatedOffset < spanEnd;
 			generatedOffset += 1
 		) {
-			const char = text[generatedOffset];
-			if (char === '\n' || char === '\r') {
+			if (!isSegmentBoundary(text, spanStart, generatedOffset)) {
 				continue;
 			}
 			while (
