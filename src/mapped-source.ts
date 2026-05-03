@@ -19,28 +19,25 @@ type MappingSpan = {
 	length: number;
 };
 
-const IDENTIFIER_CHAR = /[$\w]/;
-const WHITESPACE = /\s/;
+const LF = 10;
+const CR = 13;
 
-const isSegmentBoundary = (
-	text: string,
-	spanStart: number,
-	generatedOffset: number,
-): boolean => {
-	const char = text[generatedOffset];
-	if (char === '\n' || char === '\r' || WHITESPACE.test(char)) {
-		return false;
-	}
-	if (generatedOffset === spanStart) {
-		return true;
-	}
-	const previous = text[generatedOffset - 1];
-	return (
-		WHITESPACE.test(previous)
-		|| !IDENTIFIER_CHAR.test(previous)
-		|| !IDENTIFIER_CHAR.test(char)
-	);
-};
+const isWhitespaceCode = (code: number) => (
+	code === 9
+	|| code === LF
+	|| code === 11
+	|| code === 12
+	|| code === CR
+	|| code === 32
+);
+
+const isIdentifierCode = (code: number) => (
+	(code >= 48 && code <= 57)
+	|| (code >= 65 && code <= 90)
+	|| code === 95
+	|| (code >= 97 && code <= 122)
+	|| code === 36
+);
 
 // Builds a synthesized JS string alongside a source map back to an original
 // `.md` file, then emits it with an inline `//# sourceMappingURL=` so Node's
@@ -99,31 +96,54 @@ export const createMappedSource = (
 		let lineIndex = 0;
 		const { generatedOffset: spanStart } = span;
 		const spanEnd = spanStart + span.length;
+		const sourceStart = positionFromOffset(span.sourceOffset);
+		let sourceLine = sourceStart.line;
+		let sourceColumn = sourceStart.column;
+		let previousIsIdentifier = false;
+		let previousIsWhitespace = false;
 		for (
 			let generatedOffset = spanStart;
 			generatedOffset < spanEnd;
 			generatedOffset += 1
 		) {
-			if (!isSegmentBoundary(text, spanStart, generatedOffset)) {
-				continue;
-			}
-			while (
-				lineIndex + 1 < generatedLineStarts.length
-				&& generatedLineStarts[lineIndex + 1] <= generatedOffset
-			) {
-				lineIndex += 1;
-			}
-			const sourcePosition = positionFromOffset(
-				span.sourceOffset + generatedOffset - span.generatedOffset,
+			const code = text.codePointAt(generatedOffset)!;
+			const isWhitespace = isWhitespaceCode(code);
+			const isIdentifier = isIdentifierCode(code);
+			const isBoundary = (
+				!isWhitespace
+				&& (
+					generatedOffset === spanStart
+					|| previousIsWhitespace
+					|| !previousIsIdentifier
+					|| !isIdentifier
+				)
 			);
-			addSegment(
-				map,
-				generatedStartLine + lineIndex,
-				generatedOffset - generatedLineStarts[lineIndex],
-				sourceURL,
-				sourcePosition.line,
-				sourcePosition.column,
-			);
+
+			if (isBoundary) {
+				while (
+					lineIndex + 1 < generatedLineStarts.length
+					&& generatedLineStarts[lineIndex + 1] <= generatedOffset
+				) {
+					lineIndex += 1;
+				}
+				addSegment(
+					map,
+					generatedStartLine + lineIndex,
+					generatedOffset - generatedLineStarts[lineIndex],
+					sourceURL,
+					sourceLine,
+					sourceColumn,
+				);
+			}
+
+			if (code === LF) {
+				sourceLine += 1;
+				sourceColumn = 0;
+			} else {
+				sourceColumn += 1;
+			}
+			previousIsIdentifier = isIdentifier;
+			previousIsWhitespace = isWhitespace;
 		}
 	};
 
