@@ -10,4 +10,11 @@ Object.assign(globalThis, {
 	block,
 	$,
 });
+
+// Enable Node's source-map support so runtime stack traces from `.md` files
+// remap to original lines without users needing `--enable-source-maps`. The
+// loader is already side-effecting; carrying this here keeps the recipe to a
+// single `--import mdeval/loader`.
+process.setSourceMapsEnabled(true);
+
 register('#md-loader', import.meta.url);

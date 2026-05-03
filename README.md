@@ -165,10 +165,10 @@ node --import mdeval/loader ./TODOS.md
 
 ### Source maps
 
-The loader emits an inline source map for every `.md` it generates, so runtime errors from a `.md` remap to its original line and column when Node has source-map support enabled:
+The loader emits an inline source map for every `.md` it generates and enables Node's source-map support as part of its side effects. Runtime stack traces from a `.md` remap to original line and column with no extra flag:
 
 ```bash
-node --enable-source-maps --import mdeval/loader ./consumer.js
+node --import mdeval/loader ./consumer.js
 ```
 
 Boundaries:

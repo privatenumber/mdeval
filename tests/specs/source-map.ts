@@ -27,10 +27,12 @@ const buildFixtureWithPath = (
 	'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
 });
 
+// No `--enable-source-maps` flag — `mdeval/loader` calls
+// `process.setSourceMapsEnabled(true)` as part of its side effects, so every
+// test below also verifies that programmatic enable.
 const runConsumer = async (fixturePath: string) => spawn(
 	process.execPath,
 	[
-		'--enable-source-maps',
 		'--import',
 		'mdeval/loader',
 		path.join(fixturePath, 'consumer.mjs'),
