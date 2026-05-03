@@ -79,38 +79,26 @@ export const createMappedSource = (
 		text: string,
 		span: MappingSpan,
 	) => {
-		const generatedStartLine = lines.length;
-		const textLines = text.split('\n');
-		if (textLines.at(-1) === '') {
-			textLines.pop();
-		}
-
-		const generatedLineStarts: number[] = [];
-		let offset = 0;
-		for (const line of textLines) {
-			generatedLineStarts.push(offset);
-			offset += line.length + 1;
-			lines.push(line);
-		}
-
-		let lineIndex = 0;
 		const { generatedOffset: spanStart } = span;
 		const spanEnd = spanStart + span.length;
 		const sourceStart = positionFromOffset(span.sourceOffset);
+		let generatedLine = lines.length;
+		let lineStart = 0;
 		let sourceLine = sourceStart.line;
 		let sourceColumn = sourceStart.column;
 		let previousIsIdentifier = false;
 		let previousIsWhitespace = false;
 		for (
-			let generatedOffset = spanStart;
-			generatedOffset < spanEnd;
+			let generatedOffset = 0;
+			generatedOffset < text.length;
 			generatedOffset += 1
 		) {
 			const code = text.codePointAt(generatedOffset)!;
+			const isInSpan = generatedOffset >= spanStart && generatedOffset < spanEnd;
 			const isWhitespace = isWhitespaceCode(code);
 			const isIdentifier = isIdentifierCode(code);
-			const isBoundary = (
-				!isWhitespace
+			const isSegmentBoundary = (
+				isInSpan && !isWhitespace
 				&& (
 					generatedOffset === spanStart
 					|| previousIsWhitespace
@@ -119,31 +107,36 @@ export const createMappedSource = (
 				)
 			);
 
-			if (isBoundary) {
-				while (
-					lineIndex + 1 < generatedLineStarts.length
-					&& generatedLineStarts[lineIndex + 1] <= generatedOffset
-				) {
-					lineIndex += 1;
-				}
+			if (isSegmentBoundary) {
 				addSegment(
 					map,
-					generatedStartLine + lineIndex,
-					generatedOffset - generatedLineStarts[lineIndex],
+					generatedLine,
+					generatedOffset - lineStart,
 					sourceURL,
 					sourceLine,
 					sourceColumn,
 				);
 			}
 
-			if (code === LF) {
-				sourceLine += 1;
-				sourceColumn = 0;
-			} else {
-				sourceColumn += 1;
+			if (isInSpan) {
+				if (code === LF) {
+					sourceLine += 1;
+					sourceColumn = 0;
+				} else {
+					sourceColumn += 1;
+				}
+				previousIsIdentifier = isIdentifier;
+				previousIsWhitespace = isWhitespace;
 			}
-			previousIsIdentifier = isIdentifier;
-			previousIsWhitespace = isWhitespace;
+
+			if (code === LF) {
+				lines.push(text.slice(lineStart, generatedOffset));
+				lineStart = generatedOffset + 1;
+				generatedLine += 1;
+			}
+		}
+		if (lineStart < text.length) {
+			lines.push(text.slice(lineStart));
 		}
 	};
 
