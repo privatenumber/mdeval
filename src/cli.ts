@@ -1,12 +1,10 @@
-import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { cli } from 'cleye';
 import chokidar from 'chokidar';
-import picomatch from 'picomatch';
 import { glob } from 'tinyglobby';
-import { enableCacheBust, loadedFiles } from './loader.ts';
+import { setupLoader } from './setup-loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 
@@ -16,33 +14,19 @@ const argv = cli({
 		watch: {
 			type: Boolean,
 			alias: 'w',
-			description: 'Re-render on file changes; tracks transitive imports automatically',
+			description: 'Re-render on file changes',
 		},
 	},
 	parameters: ['<files...>'],
 });
+
+setupLoader({ cacheBust: argv.flags.watch });
 
 const patterns = argv._.files;
 const targetsNodeModules = patterns.some(pattern => pattern.includes('node_modules'));
 const globIgnore = targetsNodeModules ? [] : ['**/node_modules/**'];
 
 const expandPatterns = () => glob(patterns, { ignore: globIgnore });
-
-const initialFiles = await expandPatterns();
-
-if (initialFiles.length === 0) {
-	console.error('No files matched the given patterns');
-	process.exit(1);
-}
-
-// Watch mode opts the loader hook into mtime-based cache-busting on every
-// transitive import so changed files re-evaluate on the next render. The
-// control message is fire-and-forget — the initial render doesn't need
-// cache-bust (cache is empty) and subsequent renders run after the message
-// has been processed by the loader thread.
-if (argv.flags.watch) {
-	enableCacheBust();
-}
 
 // Track files we're currently writing and the mtime of the last write so the
 // watcher can ignore the chokidar events caused by our own writes. Without
@@ -88,34 +72,24 @@ const renderFile = async (
 };
 
 if (argv.flags.watch) {
-	// Loader-hook messages travel from the customization-thread MessagePort to
-	// this thread's listener via the event loop. After awaiting the imports we
-	// still need to drain any pending messages before reading `loadedFiles`,
-	// otherwise transitive imports surfaced by this render won't be in the set
-	// when we go to add them to the watcher.
-	const flushLoaderMessages = () => new Promise<void>((resolve) => {
-		setImmediate(resolve);
-	});
-
+	// Re-glob on every render so newly-added files matching the input pattern
+	// are picked up automatically. Each pass shares one `Date.now()` cache-bust
+	// so entry .md files re-evaluate fresh; the loader-hook resolve step
+	// mtime-busts every transitive import so changed helpers also reload.
+	// Reset the exit code each iteration — a previous render's failure
+	// shouldn't carry over once a recovered render runs cleanly.
 	const renderAll = async () => {
-		// One cache-bust value per render pass: every `.md` import gets the
-		// same `?mtime=...` so the entry modules re-evaluate on this pass and
-		// freshly resolve their transitive imports (which the loader-hook
-		// resolve step then mtime-busts based on each file's actual mtime).
+		process.exitCode = 0;
 		const cacheBust = Date.now();
 		const files = await expandPatterns();
 		await Promise.all(files.map(file => renderFile(file, cacheBust)));
-		await flushLoaderMessages();
 	};
 
-	// Match the user's input patterns against new chokidar events to decide
-	// whether a path should be rendered as a target. picomatch handles `**`,
-	// `{a,b}`, and `!` negation the same way tinyglobby does.
-	const isInputMatch = picomatch(patterns, { dot: false });
-
-	// Watch from cwd recursively so newly-created files matching the input
-	// pattern get picked up — chokidar's `add` event is what makes item 3 work.
-	// The ignored callback mirrors the glob's node_modules / dotdir filters.
+	// Watch from cwd recursively. Any non-ignored add/change schedules a
+	// render — `renderAll` itself decides which files match the user's input
+	// pattern by re-globbing. Renders are idempotent (no write when the output
+	// matches the input) so events on unrelated files cost only the render
+	// pass, never produce spurious rewrites.
 	const ignored = (eventPath: string): boolean => {
 		const relative = path.relative(process.cwd(), eventPath);
 		if (!relative || relative.startsWith('..')) {
@@ -145,22 +119,7 @@ if (argv.flags.watch) {
 		interval: 200,
 	});
 
-	// Start chokidar before the initial render so that any chokidar events
-	// caused by our own initial-render writes are seen (and filtered through
-	// `writingFiles` / `lastWriteMtimes`). If we deferred until after the
-	// initial render, edits that race with the watcher's setup window would
-	// be missed entirely.
-	await once(watcher, 'ready');
-
 	await renderAll();
-
-	// Transitive imports (helper.ts, helper.json, etc.) live anywhere under the
-	// project root and aren't necessarily matched by the input pattern. Add
-	// each one chokidar would otherwise have skipped so edits trigger a
-	// re-render. `loadedFiles` is populated by the loader hook via MessagePort.
-	for (const file of loadedFiles) {
-		watcher.add(file);
-	}
 
 	// Coalesce bursts of file events into a single render pass — file editors
 	// often emit several events per save (write + atime touch + temp swap).
@@ -181,15 +140,7 @@ if (argv.flags.watch) {
 					if (renderRequested) {
 						continue;
 					}
-					const before = loadedFiles.size;
 					await renderAll();
-					if (loadedFiles.size > before) {
-						// New transitive imports surfaced from this render — wire
-						// the watcher up to them so the next change is detected.
-						for (const file of loadedFiles) {
-							watcher.add(file);
-						}
-					}
 				}
 			} finally {
 				pendingRender = undefined;
@@ -204,12 +155,6 @@ if (argv.flags.watch) {
 		// writing (covered by `writingFiles`) and events that arrive after the
 		// write but match the recorded mtime (covered by `lastWriteMtimes`).
 		if (writingFiles.has(absolute)) {
-			return;
-		}
-
-		const isMatch = isInputMatch(eventPath);
-		const isTransitive = loadedFiles.has(absolute);
-		if (!isMatch && !isTransitive) {
 			return;
 		}
 
@@ -243,5 +188,10 @@ if (argv.flags.watch) {
 		shutdown().catch(() => undefined);
 	});
 } else {
+	const initialFiles = await expandPatterns();
+	if (initialFiles.length === 0) {
+		console.error('No files matched the given patterns');
+		process.exit(1);
+	}
 	await Promise.all(initialFiles.map(file => renderFile(file)));
 }

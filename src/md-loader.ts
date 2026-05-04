@@ -1,5 +1,4 @@
 import type { InitializeHook, LoadHook, ResolveHook } from 'node:module';
-import type { MessagePort } from 'node:worker_threads';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
@@ -16,7 +15,6 @@ const stripQuery = (url: string) => {
 	return index === -1 ? url : url.slice(0, index);
 };
 
-let port: MessagePort | undefined;
 let cacheBustEnabled = false;
 
 const generateModule = (
@@ -62,14 +60,9 @@ const generateModule = (
 };
 
 export const initialize: InitializeHook = (
-	data: { port?: MessagePort } | undefined,
+	data: { cacheBust?: boolean } | undefined,
 ) => {
-	port = data?.port;
-	port?.on('message', (message) => {
-		if (message && typeof message === 'object' && 'enableCacheBust' in message) {
-			cacheBustEnabled = Boolean(message.enableCacheBust);
-		}
-	});
+	cacheBustEnabled = data?.cacheBust ?? false;
 };
 
 // Watch mode: every project-owned import gets an mtime suffix so a fresh
@@ -101,17 +94,6 @@ export const resolve: ResolveHook = async (specifier, context, nextResolve) => {
 
 export const load: LoadHook = async (url, context, nextLoad) => {
 	const cleanUrl = stripQuery(url);
-
-	// Report project files (skip node: built-ins and anything under
-	// node_modules) so cli.ts can wire up file watchers for transitive imports
-	// in watch mode. Outside watch mode no port is set and this is a no-op.
-	if (
-		port
-		&& cleanUrl.startsWith('file://')
-		&& !cleanUrl.includes('/node_modules/')
-	) {
-		port.postMessage(fileURLToPath(cleanUrl));
-	}
 
 	if (!cleanUrl.endsWith('.md')) {
 		return nextLoad(url, context);

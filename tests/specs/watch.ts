@@ -225,27 +225,69 @@ describe('--watch', async () => {
 		}
 	});
 
-	await test('with zero matches exits 1 before entering watch mode', async () => {
-		await using fixture = await createFixture({});
-		const child = spawnMdeval(
-			['--watch', 'docs/*.md'],
-			{
-				cwd: fixture.path,
-				stdio: ['ignore', 'pipe', 'pipe'],
-			},
-		);
-		let stderr = '';
-		child.stderr!.on('data', (chunk: Buffer) => {
-			stderr += chunk.toString();
+	await test('exits 0 after recovering from a render error', async () => {
+		await using fixture = await createFixture({
+			'data.md': '<!--mdeval\nexport const v = thisDoesNotExist();\n-->\n\n<!--mdeval v-->old<!--/mdeval-->\n',
 		});
+		const dataPath = fixture.getPath('data.md');
+		const watcher = startWatcher(fixture.path, ['data.md']);
 
-		const cancelHardKill = scheduleHardKill(child, 3000);
+		try {
+			// Initial render fails — earlier versions latched process.exitCode
+			// to 1 here and never cleared it.
+			await delay(500);
+			// User fixes the script. Render runs cleanly.
+			await fs.writeFile(
+				dataPath,
+				'<!--mdeval\nexport const v = "ok";\n-->\n\n<!--mdeval v-->old<!--/mdeval-->\n',
+				'utf8',
+			);
+			await waitForFileContent(dataPath, content => content.includes('-->ok<'));
 
-		const [exitCode] = await once(child, 'exit') as [number | null, NodeJS.Signals | null];
-		await cancelHardKill();
+			// SIGINT now should exit 0 (or the SIGINT signal code), not 1.
+			const exited = once(watcher, 'exit') as Promise<[number | null, NodeJS.Signals | null]>;
+			watcher.kill('SIGINT');
+			const [code, signal] = await exited;
+			const observed = signal === 'SIGINT' ? 0 : code;
+			expect([0, null]).toContain(observed);
+		} finally {
+			await stopWatcher(watcher);
+		}
+	});
 
-		expect(exitCode).toBe(1);
-		expect(stderr).toContain('No files matched');
+	await test('starts watching even when the pattern initially matches zero files', async () => {
+		await using fixture = await createFixture({});
+		const watcher = startWatcher(fixture.path, ['*.md']);
+
+		try {
+			// Watcher should still be running after a beat — it's waiting for
+			// matches rather than exiting on zero initial matches.
+			await delay(500);
+			expect(watcher.exitCode).toBe(null);
+
+			// Drop a matching file in. The watcher's `add` event picks it up
+			// and runs an initial render.
+			const dataPath = fixture.getPath('new.md');
+			await fs.writeFile(
+				dataPath,
+				'<!--mdeval\nexport const v = 1;\n-->\n\n<!--mdeval v-->0<!--/mdeval-->\n',
+				'utf8',
+			);
+			await waitForFileContent(dataPath, content => content.includes('-->1<'));
+		} finally {
+			await stopWatcher(watcher);
+		}
+	});
+
+	await test('without --watch, the CLI errors out when no files match', async () => {
+		await using fixture = await createFixture({});
+		const result = await mdeval(
+			['nope-*.md'],
+			{ cwd: fixture.path },
+		).catch((error: { exitCode?: number;
+			stderr?: string; }) => error);
+		expect((result as { exitCode?: number }).exitCode).toBe(1);
+		expect((result as { stderr?: string }).stderr ?? '').toContain('No files matched');
 	});
 
 	await test('exits cleanly on SIGINT', async () => {
