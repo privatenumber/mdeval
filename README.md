@@ -261,7 +261,7 @@ Re-render on every save:
 mdeval --watch "**/*.md"
 ```
 
-`--watch` (or `-w`) delegates to Node's built-in `--watch`, so changes to Markdown files and transitive imports such as render helpers trigger a fresh run. You'll see Node's `Restarting...` and `Completed running...` lifecycle lines around each render; that's expected.
+`--watch` (or `-w`) re-renders matched `.md` files when they change, when a transitive import (helper `.ts`, data `.json`, etc.) changes, or when a new file matching the pattern appears.
 
 ## Git hook
 

@@ -9,6 +9,7 @@ import { coerceValue } from './coerce-value.ts';
 export const processSource = async (
 	source: string,
 	filePath: string,
+	cacheBust?: number,
 ): Promise<string> => {
 	const { markers } = parseMarkdown(source);
 
@@ -16,7 +17,12 @@ export const processSource = async (
 		return source;
 	}
 
-	const rawValues = await import(pathToFileURL(filePath).href);
+	// In watch mode the same file gets imported repeatedly. Node's ESM cache
+	// keys on URL, so a `?mtime=...` suffix forces a fresh evaluation when the
+	// file changes. Outside watch mode no cacheBust value is passed and the
+	// import is plain.
+	const url = pathToFileURL(filePath).href + (cacheBust === undefined ? '' : `?mtime=${cacheBust}`);
+	const rawValues = await import(url);
 	const expressionMap = buildExpressionMap(markers);
 
 	const resolvedValues = await Promise.all(

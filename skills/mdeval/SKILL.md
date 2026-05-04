@@ -95,7 +95,7 @@ mdeval --watch "**/*.md"            # re-render on save; -w works too
 
 Supports full glob syntax including `**` recursive, `{a,b}` brace expansion, and `!` negation.
 
-`--watch` delegates to Node's built-in `--watch`, so Markdown files and transitive imports trigger re-renders. Node's `Restarting...` / `Completed running...` lifecycle lines are expected.
+`--watch` re-renders matched `.md` files when they change, when a transitive import (helper `.ts`, data `.json`, etc.) changes, or when a new file matching the pattern appears.
 
 `node_modules` and hidden directories (`.git`, `.next`, etc.) are automatically excluded from glob expansion. No need to manually negate them. To explicitly include `node_modules`, reference it in the pattern: `mdeval "node_modules/pkg/*.md"`.
 
