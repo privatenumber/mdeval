@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { cli } from 'cleye';
 import chokidar from 'chokidar';
@@ -73,17 +74,47 @@ const renderFile = async (
 };
 
 if (argv.flags.watch) {
+	// Drain any in-flight loader-hook port messages so `loadedFiles` reflects
+	// what was actually imported during the just-finished render. Without this,
+	// the `loadedFiles.clear()` at the next render's start would race the late
+	// arrivals of the previous render's posts and lose tracking entries.
+	const flushLoaderMessages = () => new Promise<void>((resolve) => {
+		setImmediate(resolve);
+	});
+
+	// Files outside cwd (e.g. `../shared/util.ts`) live outside chokidar's
+	// recursive watch root, so events for them never fire unless we add them
+	// explicitly. Track which ones we've already added so we don't call
+	// `watcher.add` repeatedly for the same path.
+	const watchedOutsideCwd = new Set<string>();
+	const cwdPrefix = `${process.cwd()}${path.sep}`;
+
 	// Re-glob on every render so newly-added files matching the input pattern
 	// are picked up automatically. Each pass shares one `Date.now()` cache-bust
 	// so entry .md files re-evaluate fresh; the loader-hook resolve step
 	// mtime-busts every transitive import so changed helpers also reload.
 	// Reset the exit code each iteration — a previous render's failure
-	// shouldn't carry over once a recovered render runs cleanly.
+	// shouldn't carry over once a recovered render runs cleanly. Clearing
+	// `loadedFiles` first means files no longer in the import graph (e.g. a
+	// helper.ts whose import was removed) drop out of the precision filter.
 	const renderAll = async () => {
 		process.exitCode = 0;
+		loadedFiles.clear();
 		const cacheBust = Date.now();
 		const files = await expandPatterns();
 		await Promise.all(files.map(file => renderFile(file, cacheBust)));
+		await flushLoaderMessages();
+
+		// Wire chokidar up to any loaded files that live outside cwd. Inside
+		// cwd they're already covered by the recursive watch. Outside, we have
+		// to add them explicitly or events for them never fire.
+		for (const filePath of loadedFiles) {
+			if (filePath.startsWith(cwdPrefix) || watchedOutsideCwd.has(filePath)) {
+				continue;
+			}
+			watchedOutsideCwd.add(filePath);
+			watcher.add(filePath);
+		}
 	};
 
 	// Match candidate event paths against the user's input glob. Used to
@@ -125,6 +156,21 @@ if (argv.flags.watch) {
 		usePolling: true,
 		interval: 200,
 	});
+
+	// Surface watcher errors instead of silently leaving the process alive
+	// with a dead watcher. Most failures here are unrecoverable (lost watch
+	// handles, perms changes); exit non-zero so a supervising process can
+	// restart.
+	watcher.on('error', (error) => {
+		console.error('mdeval watch error:', error instanceof Error ? error.message : error);
+		process.exit(1);
+	});
+
+	// Wait for chokidar's initial scan to complete before the initial render
+	// so that the polling watch is actually active when our writes (and the
+	// user's first edit) fire. Without this, an edit that races the watcher's
+	// setup window would be missed.
+	await once(watcher, 'ready');
 
 	await renderAll();
 

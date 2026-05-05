@@ -1,6 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, test } from 'manten';
 import { createFixture } from 'fs-fixture';
@@ -274,6 +275,81 @@ describe('--watch', async () => {
 				'utf8',
 			);
 			await waitForFileContent(dataPath, content => content.includes('-->1<'));
+		} finally {
+			await stopWatcher(watcher);
+		}
+	});
+
+	await test('re-renders when a transitive import outside cwd changes', async () => {
+		await using fixture = await createFixture({
+			'workspace/data.md': [
+				'<!--mdeval',
+				'import { v } from "../helper.ts";',
+				'export { v };',
+				'-->',
+				'',
+				'V: <!--mdeval v-->none<!--/mdeval-->',
+				'',
+			].join('\n'),
+			'helper.ts': 'export const v = 1;\n',
+		});
+		const dataPath = fixture.getPath('workspace/data.md');
+		const helperPath = fixture.getPath('helper.ts');
+		const watcher = startWatcher(path.join(fixture.path, 'workspace'), ['data.md']);
+
+		try {
+			await waitForFileContent(dataPath, content => content.includes('-->1<'));
+			await fs.writeFile(helperPath, 'export const v = 99;\n', 'utf8');
+			await waitForFileContent(dataPath, content => content.includes('-->99<'));
+		} finally {
+			await stopWatcher(watcher);
+		}
+	});
+
+	await test('drops a removed transitive import from the precision filter', async () => {
+		await using fixture = await createFixture({
+			'helper.ts': 'export const used = "x";\n',
+			'data.md': [
+				'<!--mdeval',
+				'import { used } from "./helper.ts";',
+				'export const value = used;',
+				'-->',
+				'',
+				'V: <!--mdeval value-->none<!--/mdeval-->',
+				'',
+			].join('\n'),
+		});
+		const dataPath = fixture.getPath('data.md');
+		const helperPath = fixture.getPath('helper.ts');
+		const watcher = startWatcher(fixture.path, ['data.md']);
+
+		let stdoutChunks = '';
+		watcher.stdout!.on('data', (chunk: Buffer) => {
+			stdoutChunks += chunk.toString();
+		});
+
+		try {
+			// Initial render: helper.ts is in the import graph.
+			await waitForFileContent(dataPath, content => content.includes('-->x<'));
+
+			// User edits data.md to remove the helper import. After re-render
+			// helper.ts is no longer in the import graph.
+			await fs.writeFile(dataPath, [
+				'<!--mdeval',
+				'export const value = "inline";',
+				'-->',
+				'',
+				'V: <!--mdeval value-->none<!--/mdeval-->',
+				'',
+			].join('\n'), 'utf8');
+			await waitForFileContent(dataPath, content => content.includes('-->inline<'));
+
+			// Editing the now-orphaned helper.ts should NOT trigger a render.
+			const before = stdoutChunks.split('\n').filter(line => line.trim() === 'data.md').length;
+			await fs.writeFile(helperPath, 'export const used = "different";\n', 'utf8');
+			await delay(800);
+			const after = stdoutChunks.split('\n').filter(line => line.trim() === 'data.md').length;
+			expect(after).toBe(before);
 		} finally {
 			await stopWatcher(watcher);
 		}
