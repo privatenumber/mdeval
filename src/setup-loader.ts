@@ -7,13 +7,11 @@ import { block, $ } from './runtime.ts';
 //
 // `cacheBust` is a watch-mode optimization: when on, the loader hook adds
 // `?mtime=...` to every project-owned file URL so Node's URL-keyed ESM cache
-// invalidates when any imported file changes. cli.ts sets this true for
-// `--watch`; the public `mdeval/loader` entry leaves it off.
-//
-// Returns the `loadedFiles` set populated by the loader hook via MessagePort.
-// The hook runs on Node's module-customization worker thread and posts every
-// project-owned file URL it loads back to this thread; cli.ts reads this set
-// to filter chokidar events to "files actually in the .md import graph."
+// invalidates when any imported file changes, and posts each loaded URL back
+// to this thread via MessagePort so cli.ts can filter chokidar events to
+// "files actually in the .md import graph." cli.ts sets this true for
+// `--watch`; the public `mdeval/loader` entry leaves it off and skips the
+// MessagePort plumbing entirely.
 export const setupLoader = ({ cacheBust = false } = {}): {
 	loadedFiles: Set<string>;
 } => {
@@ -24,6 +22,14 @@ export const setupLoader = ({ cacheBust = false } = {}): {
 	process.setSourceMapsEnabled(true);
 
 	const loadedFiles = new Set<string>();
+
+	if (!cacheBust) {
+		register('#md-loader', import.meta.url, {
+			data: { cacheBust },
+		});
+		return { loadedFiles };
+	}
+
 	const { port1, port2 } = new MessageChannel();
 	port1.on('message', (filePath: string) => {
 		loadedFiles.add(filePath);

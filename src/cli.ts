@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { once } from 'node:events';
-import { setTimeout as delay } from 'node:timers/promises';
+import { setImmediate, setTimeout } from 'node:timers/promises';
 import { cli } from 'cleye';
 import chokidar from 'chokidar';
 import picomatch from 'picomatch';
@@ -74,14 +74,6 @@ const renderFile = async (
 };
 
 if (argv.flags.watch) {
-	// Drain any in-flight loader-hook port messages so `loadedFiles` reflects
-	// what was actually imported during the just-finished render. Without this,
-	// the `loadedFiles.clear()` at the next render's start would race the late
-	// arrivals of the previous render's posts and lose tracking entries.
-	const flushLoaderMessages = () => new Promise<void>((resolve) => {
-		setImmediate(resolve);
-	});
-
 	// Re-glob on every render so newly-added files matching the input pattern
 	// are picked up automatically. Each pass shares one `Date.now()` cache-bust
 	// so entry .md files re-evaluate fresh; the loader-hook resolve step
@@ -90,6 +82,8 @@ if (argv.flags.watch) {
 	// shouldn't carry over once a recovered render runs cleanly. Clearing
 	// `loadedFiles` first means files no longer in the import graph (e.g. a
 	// helper.ts whose import was removed) drop out of the precision filter.
+	// `setImmediate` after the renders drains any in-flight loader-hook port
+	// messages so `loadedFiles` reflects what was actually imported.
 	//
 	// Known limitation: transitive imports that resolve outside cwd (e.g.
 	// `import "../shared/util.ts"` when cwd is a subdirectory) are not watched.
@@ -102,7 +96,7 @@ if (argv.flags.watch) {
 		const cacheBust = Date.now();
 		const files = await expandPatterns();
 		await Promise.all(files.map(file => renderFile(file, cacheBust)));
-		await flushLoaderMessages();
+		await setImmediate();
 	};
 
 	// Match candidate event paths against the user's input glob. Used to
@@ -117,20 +111,11 @@ if (argv.flags.watch) {
 	// matches the input) so events on unrelated files cost only the render
 	// pass, never produce spurious rewrites.
 	const ignored = (eventPath: string): boolean => {
-		const relative = path.relative(process.cwd(), eventPath);
-		if (!relative || relative.startsWith('..')) {
-			return false;
-		}
-		const segments = relative.split(path.sep);
-		for (const segment of segments) {
-			if (segment === 'node_modules' && !targetsNodeModules) {
-				return true;
-			}
-			if (segment.startsWith('.') && segment !== '.' && segment !== '..') {
-				return true;
-			}
-		}
-		return false;
+		const segments = path.relative(process.cwd(), eventPath).split(path.sep);
+		return segments.some(segment => (
+			segment.startsWith('.')
+			|| (segment === 'node_modules' && !targetsNodeModules)
+		));
 	};
 
 	// Polling avoids reliability quirks of macOS FSEvents (some tmpdir-style
@@ -177,7 +162,7 @@ if (argv.flags.watch) {
 			try {
 				while (renderRequested) {
 					renderRequested = false;
-					await delay(50);
+					await setTimeout(50);
 					if (renderRequested) {
 						continue;
 					}
@@ -231,12 +216,11 @@ if (argv.flags.watch) {
 		process.exit(process.exitCode ?? 0);
 	};
 
-	process.on('SIGINT', () => {
-		shutdown().catch(() => undefined);
-	});
-	process.on('SIGTERM', () => {
-		shutdown().catch(() => undefined);
-	});
+	for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+		process.on(signal, () => {
+			shutdown().catch(() => undefined);
+		});
+	}
 } else {
 	const initialFiles = await expandPatterns();
 	if (initialFiles.length === 0) {

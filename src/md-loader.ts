@@ -101,9 +101,12 @@ export const load: LoadHook = async (url, context, nextLoad) => {
 
 	// Report project files (skip node: built-ins and anything under
 	// node_modules) so cli.ts can filter chokidar events to the import graph.
-	// Outside watch mode no port is set and this is a no-op.
+	// Only relevant in watch mode — gating on `cacheBustEnabled` avoids per-
+	// import postMessage cost for one-shot CLI runs and for external
+	// `node --import mdeval/loader` consumers.
 	if (
-		port
+		cacheBustEnabled
+		&& port
 		&& cleanUrl.startsWith('file://')
 		&& !cleanUrl.includes('/node_modules/')
 	) {
