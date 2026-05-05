@@ -80,7 +80,7 @@ const waitForFileContent = async (
 };
 
 describe('--watch', async () => {
-	await test('re-renders on .md change', async () => {
+	await test('re-evaluates on .md change', async () => {
 		await using fixture = await createFixture({
 			'data.md': '<!--mdeval\nlet v = 1;\nexport { v };\n-->\n\nValue: <!--mdeval v-->0<!--/mdeval-->\n',
 		});
@@ -137,7 +137,7 @@ describe('--watch', async () => {
 		}
 	});
 
-	await test('re-renders when an imported .ts file changes', async () => {
+	await test('re-evaluates when an imported .ts file changes', async () => {
 		await using fixture = await createFixture({
 			'helper.ts': 'export const value = 1;\n',
 			'data.md': '<!--mdeval\nimport { value } from "./helper.ts";\nexport { value };\n-->\n\nValue: <!--mdeval value-->0<!--/mdeval-->\n',
@@ -155,7 +155,7 @@ describe('--watch', async () => {
 		}
 	});
 
-	await test('re-renders when an imported .json file changes', async () => {
+	await test('re-evaluates when an imported .json file changes', async () => {
 		await using fixture = await createFixture({
 			'helper.json': '{"value": 1}\n',
 			'data.md': [
@@ -181,7 +181,7 @@ describe('--watch', async () => {
 		}
 	});
 
-	await test('re-renders any of multiple files', async () => {
+	await test('re-evaluates any of multiple files', async () => {
 		await using fixture = await createFixture({
 			'a.md': '<!--mdeval\nexport const a = "alpha";\n-->\n\n<!--mdeval a-->old<!--/mdeval-->\n',
 			'b.md': '<!--mdeval\nexport const b = "bravo";\n-->\n\n<!--mdeval b-->old<!--/mdeval-->\n',
@@ -225,7 +225,7 @@ describe('--watch', async () => {
 		}
 	});
 
-	await test('exits 0 after recovering from a render error', async () => {
+	await test('exits 0 after recovering from an evaluation error', async () => {
 		await using fixture = await createFixture({
 			'data.md': '<!--mdeval\nexport const v = thisDoesNotExist();\n-->\n\n<!--mdeval v-->old<!--/mdeval-->\n',
 		});
@@ -233,10 +233,10 @@ describe('--watch', async () => {
 		const watcher = startWatcher(fixture.path, ['data.md']);
 
 		try {
-			// Initial render fails — earlier versions latched process.exitCode
+			// Initial evaluation fails — earlier versions latched process.exitCode
 			// to 1 here and never cleared it.
 			await delay(500);
-			// User fixes the script. Render runs cleanly.
+			// User fixes the script. Evaluation runs cleanly.
 			await fs.writeFile(
 				dataPath,
 				'<!--mdeval\nexport const v = "ok";\n-->\n\n<!--mdeval v-->old<!--/mdeval-->\n',
@@ -266,7 +266,7 @@ describe('--watch', async () => {
 			expect(watcher.exitCode).toBe(null);
 
 			// Drop a matching file in. The watcher's `add` event picks it up
-			// and runs an initial render.
+			// and runs an initial evaluation.
 			const dataPath = fixture.getPath('new.md');
 			await fs.writeFile(
 				dataPath,
@@ -302,10 +302,10 @@ describe('--watch', async () => {
 		});
 
 		try {
-			// Initial render: helper.ts is in the import graph.
+			// Initial evaluation: helper.ts is in the import graph.
 			await waitForFileContent(dataPath, content => content.includes('-->x<'));
 
-			// User edits data.md to remove the helper import. After re-render
+			// User edits data.md to remove the helper import. After re-evaluation
 			// helper.ts is no longer in the import graph.
 			await fs.writeFile(dataPath, [
 				'<!--mdeval',
@@ -317,7 +317,7 @@ describe('--watch', async () => {
 			].join('\n'), 'utf8');
 			await waitForFileContent(dataPath, content => content.includes('-->inline<'));
 
-			// Editing the now-orphaned helper.ts should NOT trigger a render.
+			// Editing the now-orphaned helper.ts should NOT trigger a evaluation pass.
 			const before = stdoutChunks.split('\n').filter(line => line.trim() === 'data.md').length;
 			await fs.writeFile(helperPath, 'export const used = "different";\n', 'utf8');
 			await delay(800);
@@ -328,7 +328,7 @@ describe('--watch', async () => {
 		}
 	});
 
-	await test('unrelated file edits do not trigger a render', async () => {
+	await test('unrelated file edits do not trigger a evaluation pass', async () => {
 		await using fixture = await createFixture({
 			'data.md': '<!--mdeval\nlet v = 1;\nexport { v };\n-->\n\n<!--mdeval v-->0<!--/mdeval-->\n',
 			'notes.txt': 'plain notes, not in the import graph\n',
@@ -343,7 +343,7 @@ describe('--watch', async () => {
 		});
 
 		try {
-			// Initial render writes once.
+			// Initial evaluation writes once.
 			await waitForFileContent(dataPath, content => content.includes('-->1<'));
 			// Edit a file that is neither matched by the input glob nor in the
 			// import graph. Precision filter should drop the chokidar event.
@@ -352,8 +352,8 @@ describe('--watch', async () => {
 			const pathLines = stdoutChunks
 				.split('\n')
 				.filter(line => line.trim() === 'data.md');
-			// Exactly one path-print: the initial render. Anything more means we
-			// rendered in response to the unrelated edit.
+			// Exactly one path-print: the initial evaluation. Anything more means we
+			// processed in response to the unrelated edit.
 			expect(pathLines.length).toBe(1);
 		} finally {
 			await stopWatcher(watcher);
@@ -392,10 +392,10 @@ describe('--watch', async () => {
 	await test('--help shows the watch flag', async () => {
 		const result = await mdeval(['--help']);
 		expect(result.stdout).toMatch(/-w,\s+--watch/);
-		expect(result.stdout).toMatch(/Re-render on file changes/);
+		expect(result.stdout).toMatch(/Re-evaluate on file changes/);
 	});
 
-	await test('without --watch, the CLI does one render and exits', async () => {
+	await test('without --watch, the CLI does one pass and exits', async () => {
 		await using fixture = await createFixture({
 			'data.md': '<!--mdeval\nexport const v = 1;\n-->\n\n<!--mdeval v-->0<!--/mdeval-->\n',
 		});
@@ -426,7 +426,7 @@ describe('--watch', async () => {
 
 		try {
 			await waitForFileContent(dataPath, content => /-->1</.test(content));
-			// Trigger a re-render to confirm the lifecycle output is also absent
+			// Trigger a re-evaluation to confirm the lifecycle output is also absent
 			// across restarts, not just on initial run.
 			const initialContent = await fs.readFile(dataPath, 'utf8');
 			const updated = initialContent.replace('let v = 1;', 'let v = 7;');
@@ -439,7 +439,7 @@ describe('--watch', async () => {
 		}
 	});
 
-	await test('self-writes do not trigger another render', async () => {
+	await test('self-writes do not trigger a re-evaluation', async () => {
 		await using fixture = await createFixture({
 			'data.md': '<!--mdeval\nlet v = 1;\nexport { v };\n-->\n\n<!--mdeval v-->0<!--/mdeval-->\n',
 		});
@@ -452,22 +452,22 @@ describe('--watch', async () => {
 		});
 
 		try {
-			// Initial render writes once.
+			// Initial evaluation writes once.
 			await waitForFileContent(dataPath, content => /-->1</.test(content));
 			// One user edit. mdeval rewrites the file, which would historically
-			// trigger another render iteration under `node --watch`.
+			// trigger a re-evaluation iteration under `node --watch`.
 			const initialContent = await fs.readFile(dataPath, 'utf8');
 			const updated = initialContent.replace('let v = 1;', 'let v = 99;');
 			await fs.writeFile(dataPath, updated, 'utf8');
 			await waitForFileContent(dataPath, content => /-->99</.test(content));
-			// Hold for a beat so any spurious follow-up render would have time
+			// Hold for a beat so any spurious follow-up evaluation would have time
 			// to write — then count the path-printed lines.
 			await delay(500);
 			const pathLines = stdoutChunks
 				.split('\n')
 				.filter(line => line.trim() === 'data.md');
-			// Expect exactly two path-prints: initial render + one for the user
-			// edit. A third would mean we re-rendered on our own write.
+			// Expect exactly two path-prints: initial evaluation + one for the user
+			// edit. A third would mean we re-evaluationed on our own write.
 			expect(pathLines.length).toBe(2);
 		} finally {
 			await stopWatcher(watcher);
@@ -481,10 +481,10 @@ describe('--watch', async () => {
 		const watcher = startWatcher(fixture.path, ['*.md']);
 
 		try {
-			// Initial render is on a.md only — b.md doesn't exist yet.
+			// Initial evaluation is on a.md only — b.md doesn't exist yet.
 			await waitForFileContent(fixture.getPath('a.md'), content => content.includes('-->alpha<'));
 			// Create b.md mid-session. It matches the glob, so chokidar's `add`
-			// event should kick off a render that picks it up.
+			// event should kick off an evaluation that picks it up.
 			await fs.writeFile(
 				fixture.getPath('b.md'),
 				'<!--mdeval\nexport const b = "bravo";\n-->\n\n<!--mdeval b-->none<!--/mdeval-->\n',

@@ -255,13 +255,13 @@ const depsTable = table(deps.map(([name, version]) => [
 
 ## Dev loop
 
-Re-render on every save:
+Re-evaluate on every save:
 
 ```bash
 mdeval --watch "**/*.md"
 ```
 
-`--watch` (or `-w`) re-renders matched `.md` files when they change, when a transitive import (helper `.ts`, data `.json`, etc.) changes, or when a new file matching the pattern appears.
+`--watch` (or `-w`) re-evaluates matched `.md` files when they change, when a transitive import (helper `.ts`, data `.json`, etc.) changes, or when a new file matching the pattern appears.
 
 ## Git hook
 

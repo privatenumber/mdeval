@@ -10,13 +10,65 @@ import { setupLoader } from './setup-loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 
+// Tracks files we just wrote so chokidar events caused by our own writes
+// don't trigger another iteration. Two windows are covered: `writing` for the
+// in-flight write/stat, `mtimes` for events arriving after the write completes
+// (the recorded mtime matches the stat result).
+const createSelfWriteTracker = () => {
+	const writing = new Set<string>();
+	const mtimes = new Map<string, number>();
+	return {
+		async track(filePath: string, write: () => Promise<void>) {
+			writing.add(filePath);
+			try {
+				await write();
+				mtimes.set(filePath, (await fs.stat(filePath)).mtimeMs);
+			} finally {
+				writing.delete(filePath);
+			}
+		},
+		async isSelfWrite(filePath: string): Promise<boolean> {
+			if (writing.has(filePath)) return true;
+			try {
+				return mtimes.get(filePath) === (await fs.stat(filePath)).mtimeMs;
+			} catch {
+				return false;
+			}
+		},
+	};
+};
+
+// Coalesces bursts of calls into one invocation: each call requests a run;
+// after `intervalMs` of quiet, the action runs. Calls during a run queue
+// another after, so events that arrive mid-run aren't lost.
+const createDebounced = (intervalMs: number, action: () => Promise<void>) => {
+	let pending: Promise<void> | undefined;
+	let requested = false;
+	return () => {
+		requested = true;
+		if (pending) return;
+		pending = (async () => {
+			try {
+				while (requested) {
+					requested = false;
+					await setTimeout(intervalMs);
+					if (requested) continue;
+					await action();
+				}
+			} finally {
+				pending = undefined;
+			}
+		})();
+	};
+};
+
 const argv = cli({
 	name: 'mdeval',
 	flags: {
 		watch: {
 			type: Boolean,
 			alias: 'w',
-			description: 'Re-render on file changes',
+			description: 'Re-evaluate on file changes',
 		},
 	},
 	parameters: ['<files...>'],
@@ -30,18 +82,9 @@ const globIgnore = targetsNodeModules ? [] : ['**/node_modules/**'];
 
 const expandPatterns = () => glob(patterns, { ignore: globIgnore });
 
-// Track files we're currently writing and the mtime of the last write so the
-// watcher can ignore the chokidar events caused by our own writes. Without
-// this, every render that mutates a file kicks off another render iteration.
-const writingFiles = new Set<string>();
-const lastWriteMtimes = new Map<string, number>();
+const selfWrites = createSelfWriteTracker();
 
-// Render a single .md file. `cacheBust` busts Node's ESM module cache so
-// re-imports see updated content during watch mode. The `writingFiles` /
-// `lastWriteMtimes` bookkeeping covers both the in-flight window (chokidar
-// fires events while we're still writing) and the post-write window (events
-// fire after we've finished but the mtime matches what we wrote).
-const renderFile = async (
+const processFile = async (
 	file: string,
 	cacheBust?: number,
 ): Promise<void> => {
@@ -57,14 +100,7 @@ const renderFile = async (
 		const output = await processSource(source, resolvedPath, cacheBust);
 
 		if (output !== source) {
-			writingFiles.add(resolvedPath);
-			try {
-				await fs.writeFile(resolvedPath, output, 'utf8');
-				const stat = await fs.stat(resolvedPath);
-				lastWriteMtimes.set(resolvedPath, stat.mtimeMs);
-			} finally {
-				writingFiles.delete(resolvedPath);
-			}
+			await selfWrites.track(resolvedPath, () => fs.writeFile(resolvedPath, output, 'utf8'));
 			console.log(file);
 		}
 	} catch (error) {
@@ -74,42 +110,22 @@ const renderFile = async (
 };
 
 if (argv.flags.watch) {
-	// Re-glob on every render so newly-added files matching the input pattern
-	// are picked up automatically. Each pass shares one `Date.now()` cache-bust
-	// so entry .md files re-evaluate fresh; the loader-hook resolve step
-	// mtime-busts every transitive import so changed helpers also reload.
-	// Reset the exit code each iteration — a previous render's failure
-	// shouldn't carry over once a recovered render runs cleanly. Clearing
-	// `loadedFiles` first means files no longer in the import graph (e.g. a
-	// helper.ts whose import was removed) drop out of the precision filter.
-	// `setImmediate` after the renders drains any in-flight loader-hook port
-	// messages so `loadedFiles` reflects what was actually imported.
-	//
-	// Known limitation: transitive imports that resolve outside cwd (e.g.
-	// `import "../shared/util.ts"` when cwd is a subdirectory) are not watched.
-	// chokidar's recursive watch only covers cwd, and watcher.add() on
-	// outside-cwd paths is unreliable across platforms with polling enabled.
-	// Run mdeval from a higher cwd so all imports stay inside the watch root.
-	const renderAll = async () => {
+	const processAll = async () => {
+		// Reset the exit code so a previous failed pass doesn't latch on.
 		process.exitCode = 0;
+		// Rebuild the import-graph index so files no longer in the graph drop
+		// out of the precision filter on subsequent events.
 		loadedFiles.clear();
 		const cacheBust = Date.now();
 		const files = await expandPatterns();
-		await Promise.all(files.map(file => renderFile(file, cacheBust)));
+		await Promise.all(files.map(file => processFile(file, cacheBust)));
+		// Drain any in-flight loader-hook port messages so loadedFiles reflects
+		// what was actually imported during this pass.
 		await setImmediate();
 	};
 
-	// Match candidate event paths against the user's input glob. Used to
-	// recognize new files appearing under cwd (chokidar `add` event) before
-	// they've been imported and registered in `loadedFiles`. picomatch handles
-	// `**`, `{a,b}`, and `!` negation the same way tinyglobby does.
 	const isInputMatch = picomatch(patterns, { dot: false });
 
-	// Watch from cwd recursively. Any non-ignored add/change schedules a
-	// render — `renderAll` itself decides which files match the user's input
-	// pattern by re-globbing. Renders are idempotent (no write when the output
-	// matches the input) so events on unrelated files cost only the render
-	// pass, never produce spurious rewrites.
 	const ignored = (eventPath: string): boolean => {
 		const segments = path.relative(process.cwd(), eventPath).split(path.sep);
 		return segments.some(segment => (
@@ -118,10 +134,9 @@ if (argv.flags.watch) {
 		));
 	};
 
-	// Polling avoids reliability quirks of macOS FSEvents (some tmpdir-style
-	// paths don't deliver events) at the cost of a small constant CPU baseline.
-	// 200ms is well below human-perceptible latency for save → re-render and
-	// keeps total CPU under a few percent for typical project sizes.
+	// Polling sidesteps macOS FSEvents quirks for tmpdir-style paths at a
+	// small constant CPU cost. 200ms is below human-perceptible save → eval
+	// latency.
 	const watcher = chokidar.watch('.', {
 		ignored,
 		ignoreInitial: true,
@@ -130,79 +145,29 @@ if (argv.flags.watch) {
 		interval: 200,
 	});
 
-	// Surface watcher errors instead of silently leaving the process alive
-	// with a dead watcher. Most failures here are unrecoverable (lost watch
-	// handles, perms changes); exit non-zero so a supervising process can
-	// restart.
 	watcher.on('error', (error) => {
 		console.error('mdeval watch error:', error instanceof Error ? error.message : error);
 		process.exit(1);
 	});
 
-	// Wait for chokidar's initial scan to complete before the initial render
-	// so that the polling watch is actually active when our writes (and the
-	// user's first edit) fire. Without this, an edit that races the watcher's
-	// setup window would be missed.
+	// Wait for chokidar's initial scan so the watch is active before our
+	// initial-pass writes (and the user's first edit) land.
 	await once(watcher, 'ready');
 
-	await renderAll();
+	await processAll();
 
-	// Coalesce bursts of file events into a single render pass — file editors
-	// often emit several events per save (write + atime touch + temp swap).
-	// Without debounce we'd render N times for one Ctrl-S.
-	let pendingRender: Promise<void> | undefined;
-	let renderRequested = false;
-
-	const scheduleRender = () => {
-		renderRequested = true;
-		if (pendingRender) {
-			return;
-		}
-		pendingRender = (async () => {
-			try {
-				while (renderRequested) {
-					renderRequested = false;
-					await setTimeout(50);
-					if (renderRequested) {
-						continue;
-					}
-					await renderAll();
-				}
-			} finally {
-				pendingRender = undefined;
-			}
-		})();
-	};
+	const debouncedProcess = createDebounced(50, processAll);
 
 	const onEvent = async (eventPath: string) => {
 		const absolute = path.resolve(eventPath);
 
-		// Skip self-writes. Two windows: events that arrive while we're still
-		// writing (covered by `writingFiles`) and events that arrive after the
-		// write but match the recorded mtime (covered by `lastWriteMtimes`).
-		if (writingFiles.has(absolute)) {
-			return;
-		}
+		if (await selfWrites.isSelfWrite(absolute)) return;
 
-		// Precision filter: only render for files in the .md import graph (any
-		// previously-loaded file, reported by the loader hook) or for new files
-		// matching the input glob (so `add` events for not-yet-imported targets
-		// trigger a render). Everything else — random `.txt` edits, package.json
-		// saves — is ignored to avoid wasted render passes.
-		if (!loadedFiles.has(absolute) && !isInputMatch(eventPath)) {
-			return;
-		}
+		// Precision filter: react only to files in the .md import graph or
+		// new files matching the input pattern. Everything else is ignored.
+		if (!loadedFiles.has(absolute) && !isInputMatch(eventPath)) return;
 
-		try {
-			const stat = await fs.stat(absolute);
-			if (lastWriteMtimes.get(absolute) === stat.mtimeMs) {
-				return;
-			}
-		} catch {
-			// File may have been deleted between event and stat — fall through.
-		}
-
-		scheduleRender();
+		debouncedProcess();
 	};
 
 	watcher.on('add', onEvent);
@@ -210,9 +175,6 @@ if (argv.flags.watch) {
 
 	const shutdown = async () => {
 		await watcher.close();
-		if (pendingRender) {
-			await pendingRender;
-		}
 		process.exit(process.exitCode ?? 0);
 	};
 
@@ -227,5 +189,5 @@ if (argv.flags.watch) {
 		console.error('No files matched the given patterns');
 		process.exit(1);
 	}
-	await Promise.all(initialFiles.map(file => renderFile(file)));
+	await Promise.all(initialFiles.map(file => processFile(file)));
 }
