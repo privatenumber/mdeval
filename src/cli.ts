@@ -22,15 +22,19 @@ const createSelfWriteTracker = () => {
 			writing.add(filePath);
 			try {
 				await write();
-				mtimes.set(filePath, (await fs.stat(filePath)).mtimeMs);
+				const stat = await fs.stat(filePath);
+				mtimes.set(filePath, stat.mtimeMs);
 			} finally {
 				writing.delete(filePath);
 			}
 		},
 		async isSelfWrite(filePath: string): Promise<boolean> {
-			if (writing.has(filePath)) return true;
+			if (writing.has(filePath)) {
+				return true;
+			}
 			try {
-				return mtimes.get(filePath) === (await fs.stat(filePath)).mtimeMs;
+				const stat = await fs.stat(filePath);
+				return mtimes.get(filePath) === stat.mtimeMs;
 			} catch {
 				return false;
 			}
@@ -46,13 +50,13 @@ const createDebounced = (intervalMs: number, action: () => Promise<void>) => {
 	let requested = false;
 	return () => {
 		requested = true;
-		if (pending) return;
+		if (pending) { return; }
 		pending = (async () => {
 			try {
 				while (requested) {
 					requested = false;
 					await setTimeout(intervalMs);
-					if (requested) continue;
+					if (requested) { continue; }
 					await action();
 				}
 			} finally {
@@ -161,11 +165,11 @@ if (argv.flags.watch) {
 	const onEvent = async (eventPath: string) => {
 		const absolute = path.resolve(eventPath);
 
-		if (await selfWrites.isSelfWrite(absolute)) return;
+		if (await selfWrites.isSelfWrite(absolute)) { return; }
 
 		// Precision filter: react only to files in the .md import graph or
 		// new files matching the input pattern. Everything else is ignored.
-		if (!loadedFiles.has(absolute) && !isInputMatch(eventPath)) return;
+		if (!loadedFiles.has(absolute) && !isInputMatch(eventPath)) { return; }
 
 		debouncedProcess();
 	};
