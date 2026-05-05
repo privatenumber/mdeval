@@ -1,4 +1,5 @@
 import type { InitializeHook, LoadHook, ResolveHook } from 'node:module';
+import type { MessagePort } from 'node:worker_threads';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
@@ -16,6 +17,7 @@ const stripQuery = (url: string) => {
 };
 
 let cacheBustEnabled = false;
+let port: MessagePort | undefined;
 
 const generateModule = (
 	source: string,
@@ -60,9 +62,11 @@ const generateModule = (
 };
 
 export const initialize: InitializeHook = (
-	data: { cacheBust?: boolean } | undefined,
+	data: { cacheBust?: boolean;
+		port?: MessagePort; } | undefined,
 ) => {
 	cacheBustEnabled = data?.cacheBust ?? false;
+	port = data?.port;
 };
 
 // Watch mode: every project-owned import gets an mtime suffix so a fresh
@@ -94,6 +98,17 @@ export const resolve: ResolveHook = async (specifier, context, nextResolve) => {
 
 export const load: LoadHook = async (url, context, nextLoad) => {
 	const cleanUrl = stripQuery(url);
+
+	// Report project files (skip node: built-ins and anything under
+	// node_modules) so cli.ts can filter chokidar events to the import graph.
+	// Outside watch mode no port is set and this is a no-op.
+	if (
+		port
+		&& cleanUrl.startsWith('file://')
+		&& !cleanUrl.includes('/node_modules/')
+	) {
+		port.postMessage(fileURLToPath(cleanUrl));
+	}
 
 	if (!cleanUrl.endsWith('.md')) {
 		return nextLoad(url, context);

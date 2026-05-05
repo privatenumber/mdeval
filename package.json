@@ -45,11 +45,13 @@
 		"chokidar": "^5.0.0",
 		"cleye": "^2.3.0",
 		"micromark": "^4.0.2",
+		"picomatch": "^4.0.4",
 		"tinyglobby": "^0.2.15",
 		"zx": "8.8.5-lite"
 	},
 	"devDependencies": {
 		"@types/node": "^25.5.0",
+		"@types/picomatch": "^4.0.3",
 		"clean-pkg-json": "^1.4.1",
 		"fs-fixture": "^2.12.0",
 		"lintroll": "^1.30.0",

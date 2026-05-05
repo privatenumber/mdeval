@@ -279,6 +279,38 @@ describe('--watch', async () => {
 		}
 	});
 
+	await test('unrelated file edits do not trigger a render', async () => {
+		await using fixture = await createFixture({
+			'data.md': '<!--mdeval\nlet v = 1;\nexport { v };\n-->\n\n<!--mdeval v-->0<!--/mdeval-->\n',
+			'notes.txt': 'plain notes, not in the import graph\n',
+		});
+		const dataPath = fixture.getPath('data.md');
+		const notesPath = fixture.getPath('notes.txt');
+		const watcher = startWatcher(fixture.path, ['data.md']);
+
+		let stdoutChunks = '';
+		watcher.stdout!.on('data', (chunk: Buffer) => {
+			stdoutChunks += chunk.toString();
+		});
+
+		try {
+			// Initial render writes once.
+			await waitForFileContent(dataPath, content => content.includes('-->1<'));
+			// Edit a file that is neither matched by the input glob nor in the
+			// import graph. Precision filter should drop the chokidar event.
+			await fs.writeFile(notesPath, 'edited unrelated content\n', 'utf8');
+			await delay(800);
+			const pathLines = stdoutChunks
+				.split('\n')
+				.filter(line => line.trim() === 'data.md');
+			// Exactly one path-print: the initial render. Anything more means we
+			// rendered in response to the unrelated edit.
+			expect(pathLines.length).toBe(1);
+		} finally {
+			await stopWatcher(watcher);
+		}
+	});
+
 	await test('without --watch, the CLI errors out when no files match', async () => {
 		await using fixture = await createFixture({});
 		const result = await mdeval(

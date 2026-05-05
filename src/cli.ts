@@ -3,6 +3,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { cli } from 'cleye';
 import chokidar from 'chokidar';
+import picomatch from 'picomatch';
 import { glob } from 'tinyglobby';
 import { setupLoader } from './setup-loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
@@ -20,7 +21,7 @@ const argv = cli({
 	parameters: ['<files...>'],
 });
 
-setupLoader({ cacheBust: argv.flags.watch });
+const { loadedFiles } = setupLoader({ cacheBust: argv.flags.watch });
 
 const patterns = argv._.files;
 const targetsNodeModules = patterns.some(pattern => pattern.includes('node_modules'));
@@ -84,6 +85,12 @@ if (argv.flags.watch) {
 		const files = await expandPatterns();
 		await Promise.all(files.map(file => renderFile(file, cacheBust)));
 	};
+
+	// Match candidate event paths against the user's input glob. Used to
+	// recognize new files appearing under cwd (chokidar `add` event) before
+	// they've been imported and registered in `loadedFiles`. picomatch handles
+	// `**`, `{a,b}`, and `!` negation the same way tinyglobby does.
+	const isInputMatch = picomatch(patterns, { dot: false });
 
 	// Watch from cwd recursively. Any non-ignored add/change schedules a
 	// render — `renderAll` itself decides which files match the user's input
@@ -155,6 +162,15 @@ if (argv.flags.watch) {
 		// writing (covered by `writingFiles`) and events that arrive after the
 		// write but match the recorded mtime (covered by `lastWriteMtimes`).
 		if (writingFiles.has(absolute)) {
+			return;
+		}
+
+		// Precision filter: only render for files in the .md import graph (any
+		// previously-loaded file, reported by the loader hook) or for new files
+		// matching the input glob (so `add` events for not-yet-imported targets
+		// trigger a render). Everything else — random `.txt` edits, package.json
+		// saves — is ignored to avoid wasted render passes.
+		if (!loadedFiles.has(absolute) && !isInputMatch(eventPath)) {
 			return;
 		}
 
