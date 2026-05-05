@@ -1,7 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, test } from 'manten';
 import { createFixture } from 'fs-fixture';
@@ -275,32 +274,6 @@ describe('--watch', async () => {
 				'utf8',
 			);
 			await waitForFileContent(dataPath, content => content.includes('-->1<'));
-		} finally {
-			await stopWatcher(watcher);
-		}
-	});
-
-	await test('re-renders when a transitive import outside cwd changes', async () => {
-		await using fixture = await createFixture({
-			'workspace/data.md': [
-				'<!--mdeval',
-				'import { v } from "../helper.ts";',
-				'export { v };',
-				'-->',
-				'',
-				'V: <!--mdeval v-->none<!--/mdeval-->',
-				'',
-			].join('\n'),
-			'helper.ts': 'export const v = 1;\n',
-		});
-		const dataPath = fixture.getPath('workspace/data.md');
-		const helperPath = fixture.getPath('helper.ts');
-		const watcher = startWatcher(path.join(fixture.path, 'workspace'), ['data.md']);
-
-		try {
-			await waitForFileContent(dataPath, content => content.includes('-->1<'));
-			await fs.writeFile(helperPath, 'export const v = 99;\n', 'utf8');
-			await waitForFileContent(dataPath, content => content.includes('-->99<'));
 		} finally {
 			await stopWatcher(watcher);
 		}

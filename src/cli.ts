@@ -82,13 +82,6 @@ if (argv.flags.watch) {
 		setImmediate(resolve);
 	});
 
-	// Files outside cwd (e.g. `../shared/util.ts`) live outside chokidar's
-	// recursive watch root, so events for them never fire unless we add them
-	// explicitly. Track which ones we've already added so we don't call
-	// `watcher.add` repeatedly for the same path.
-	const watchedOutsideCwd = new Set<string>();
-	const cwdPrefix = `${process.cwd()}${path.sep}`;
-
 	// Re-glob on every render so newly-added files matching the input pattern
 	// are picked up automatically. Each pass shares one `Date.now()` cache-bust
 	// so entry .md files re-evaluate fresh; the loader-hook resolve step
@@ -97,6 +90,12 @@ if (argv.flags.watch) {
 	// shouldn't carry over once a recovered render runs cleanly. Clearing
 	// `loadedFiles` first means files no longer in the import graph (e.g. a
 	// helper.ts whose import was removed) drop out of the precision filter.
+	//
+	// Known limitation: transitive imports that resolve outside cwd (e.g.
+	// `import "../shared/util.ts"` when cwd is a subdirectory) are not watched.
+	// chokidar's recursive watch only covers cwd, and watcher.add() on
+	// outside-cwd paths is unreliable across platforms with polling enabled.
+	// Run mdeval from a higher cwd so all imports stay inside the watch root.
 	const renderAll = async () => {
 		process.exitCode = 0;
 		loadedFiles.clear();
@@ -104,17 +103,6 @@ if (argv.flags.watch) {
 		const files = await expandPatterns();
 		await Promise.all(files.map(file => renderFile(file, cacheBust)));
 		await flushLoaderMessages();
-
-		// Wire chokidar up to any loaded files that live outside cwd. Inside
-		// cwd they're already covered by the recursive watch. Outside, we have
-		// to add them explicitly or events for them never fire.
-		for (const filePath of loadedFiles) {
-			if (filePath.startsWith(cwdPrefix) || watchedOutsideCwd.has(filePath)) {
-				continue;
-			}
-			watchedOutsideCwd.add(filePath);
-			watcher.add(filePath);
-		}
 	};
 
 	// Match candidate event paths against the user's input glob. Used to
