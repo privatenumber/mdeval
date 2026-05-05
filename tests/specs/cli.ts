@@ -3,14 +3,7 @@ import path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
-import spawn, { type Options } from 'nano-spawn';
-
-const cliPath = path.resolve(import.meta.dirname, '../../dist/cli.mjs');
-
-const mdeval = (
-	arguments_: string[],
-	options?: Options,
-) => spawn(process.execPath, [cliPath, ...arguments_], options);
+import { mdeval } from '../utils/binaries.ts';
 
 describe('cli', () => {
 	test('updates file in-place', async () => {

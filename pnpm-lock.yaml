@@ -11,12 +11,18 @@ importers:
       '@jridgewell/gen-mapping':
         specifier: ^0.3.13
         version: 0.3.13
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       cleye:
         specifier: ^2.3.0
         version: 2.3.0
       micromark:
         specifier: ^4.0.2
         version: 4.0.2
+      picomatch:
+        specifier: ^4.0.4
+        version: 4.0.4
       tinyglobby:
         specifier: ^0.2.15
         version: 0.2.15
@@ -27,6 +33,9 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       clean-pkg-json:
         specifier: ^1.4.1
         version: 1.4.1
@@ -813,6 +822,9 @@ packages:
   '@types/node@25.5.0':
     resolution: {integrity: sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw==}
 
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
+
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
 
@@ -1127,6 +1139,10 @@ packages:
 
   character-entities@2.0.2:
     resolution: {integrity: sha512-shx7oQ0Awen/BRIdkjkvz54PnEEI/EjwXDSIZp86/KKdbafHh1Df/RYGBhn4hbe2+uKC9FnT5UCEdyPz3ai9hQ==}
+
+  chokidar@5.0.0:
+    resolution: {integrity: sha512-TQMmc3w+5AxjpL8iIiwebF73dRDF4fBIieAqGn9RGCWaEVwQ6Fb2cGe31Yns0RRIzii5goJ1Y7xbMwo1TxMplw==}
+    engines: {node: '>= 20.19.0'}
 
   ci-info@4.4.0:
     resolution: {integrity: sha512-77PSwercCZU2Fc4sX94eF8k8Pxte6JAwL4/ICZLFjJLqegs7kCuAsqqj/70NQF6TvDpgFjkubQB2FW2ZZddvQg==}
@@ -2346,6 +2362,10 @@ packages:
   react-is@18.3.1:
     resolution: {integrity: sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==}
 
+  readdirp@5.0.0:
+    resolution: {integrity: sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ==}
+    engines: {node: '>= 20.19.0'}
+
   refa@0.12.1:
     resolution: {integrity: sha512-J8rn6v4DBb2nnFqkqwy6/NnTYMcgLA+sLr0iIO41qpv0n+ngb7ksag2tMRl0inb1bbO/esUwzW1vbJi7K0sI0g==}
     engines: {node: ^12.0.0 || ^14.0.0 || >=16.0.0}
@@ -3394,6 +3414,8 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
+  '@types/picomatch@4.0.3': {}
+
   '@types/resolve@1.20.2': {}
 
   '@types/stack-utils@2.0.3': {}
@@ -3714,6 +3736,10 @@ snapshots:
   change-case@5.4.4: {}
 
   character-entities@2.0.2: {}
+
+  chokidar@5.0.0:
+    dependencies:
+      readdirp: 5.0.0
 
   ci-info@4.4.0: {}
 
@@ -5349,6 +5375,8 @@ snapshots:
   react-is@16.13.1: {}
 
   react-is@18.3.1: {}
+
+  readdirp@5.0.0: {}
 
   refa@0.12.1:
     dependencies:

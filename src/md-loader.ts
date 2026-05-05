@@ -1,10 +1,23 @@
-import type { LoadHook } from 'node:module';
+import type { InitializeHook, LoadHook, ResolveHook } from 'node:module';
+import type { MessagePort } from 'node:worker_threads';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
 	parseMarkdown, EXPORT_PREFIX, MARKER_OPEN, type ScriptBlock, type Marker,
 } from './parse-markdown.ts';
 import { createSourceBuilder } from './source-builder.ts';
+
+// Watch mode appends a `?mtime=...` query so Node's URL-keyed ESM cache treats
+// the changed file as a new module. The query is stripped before we read the
+// file or compare the extension; outside watch mode, URLs come through
+// unmodified.
+const stripQuery = (url: string) => {
+	const index = url.indexOf('?');
+	return index === -1 ? url : url.slice(0, index);
+};
+
+let cacheBustEnabled = false;
+let port: MessagePort | undefined;
 
 const generateModule = (
 	source: string,
@@ -48,12 +61,63 @@ const generateModule = (
 	return out.toModuleSource();
 };
 
+export const initialize: InitializeHook = (
+	data: { cacheBust?: boolean;
+		port?: MessagePort; } | undefined,
+) => {
+	cacheBustEnabled = data?.cacheBust ?? false;
+	port = data?.port;
+};
+
+// Watch mode: every project-owned import gets an mtime suffix so a fresh
+// content load happens automatically when the file changes. URLs that already
+// carry a query (e.g. the entry `.md` busted by processSource with Date.now())
+// pass through unchanged so we don't double-mangle them.
+export const resolve: ResolveHook = async (specifier, context, nextResolve) => {
+	const result = await nextResolve(specifier, context);
+	if (
+		!cacheBustEnabled
+		|| !result.url.startsWith('file://')
+		|| result.url.includes('/node_modules/')
+		|| result.url.includes('?')
+	) {
+		return result;
+	}
+	try {
+		const filePath = fileURLToPath(result.url);
+		const stat = await fs.stat(filePath);
+		return {
+			...result,
+			url: `${result.url}?mtime=${stat.mtimeMs}`,
+			shortCircuit: true,
+		};
+	} catch {
+		return result;
+	}
+};
+
 export const load: LoadHook = async (url, context, nextLoad) => {
-	if (!url.endsWith('.md')) {
+	const cleanUrl = stripQuery(url);
+
+	// Report project files (skip node: built-ins and anything under
+	// node_modules) so cli.ts can filter chokidar events to the import graph.
+	// Only relevant in watch mode — gating on `cacheBustEnabled` avoids per-
+	// import postMessage cost for one-shot CLI runs and for external
+	// `node --import mdeval/loader` consumers.
+	if (
+		cacheBustEnabled
+		&& port
+		&& cleanUrl.startsWith('file://')
+		&& !cleanUrl.includes('/node_modules/')
+	) {
+		port.postMessage(fileURLToPath(cleanUrl));
+	}
+
+	if (!cleanUrl.endsWith('.md')) {
 		return nextLoad(url, context);
 	}
 
-	const filePath = fileURLToPath(url);
+	const filePath = fileURLToPath(cleanUrl);
 	const source = await fs.readFile(filePath, 'utf8');
 	const { scriptBlocks, markers } = parseMarkdown(source);
 

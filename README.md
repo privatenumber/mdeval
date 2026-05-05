@@ -253,6 +253,16 @@ const depsTable = table(deps.map(([name, version]) => [
 <!--/mdeval-->
 ```
 
+## Dev loop
+
+Re-evaluate on every save:
+
+```bash
+mdeval --watch "**/*.md"
+```
+
+`--watch` (or `-w`) re-evaluates matched `.md` files when they change, when a transitive import (helper `.ts`, data `.json`, etc.) changes, or when a new file matching the pattern appears.
+
 ## Git hook
 
 Run mdeval automatically before every commit so values never go stale. [Lefthook](https://github.com/evilmartians/lefthook) makes this easy:
