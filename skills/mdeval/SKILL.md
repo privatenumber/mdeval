@@ -266,7 +266,7 @@ pre-commit:
       glob: ["*.md", "**/*.md"]
       run: |
         files=$(npx mdeval "**/*.md")
-        [ -n "$files" ] && git add $files
+        [ -z "$files" ] || git add $files
 ```
 
 `git add $files` re-stages only the files mdeval actually rewrote. Assumes `.md` paths without spaces.
