@@ -4,7 +4,14 @@ import remarkGfm from 'remark-gfm';
 import { visit } from 'unist-util-visit';
 import { COMMENT_TAG } from './parse-markdown.ts';
 
-export type LeakKind = 'inline code' | 'fenced code' | 'indented code' | 'unrecognized context';
+export type LeakKind =
+	| 'inline code'
+	| 'fenced code'
+	| 'indented code'
+	| 'image alt'
+	| 'image title'
+	| 'link title'
+	| 'unrecognized context';
 
 export type RenderedLeak = {
 	kind: LeakKind;
@@ -138,6 +145,34 @@ const countMarkerOpeningsInValue = (value: string): number => {
 	return count;
 };
 
+// HTML-attribute values (image alt, image title, link title) become literal
+// text in the rendered DOM — attribute values aren't HTML-comment-processed.
+// A marker in alt text is visible to screen readers and image-fallback
+// rendering; a title shows in browser tooltips. Source positions for
+// attribute leaks are approximate (the wrapping node's start) because mdast
+// stores attribute values as plain strings without per-character positions.
+const collectAttributeLeaks = (
+	source: string,
+	startOffset: number,
+	attributeValue: string | null | undefined,
+	kind: LeakKind,
+): RenderedLeak[] => {
+	if (!attributeValue) {
+		return [];
+	}
+	const count = countMarkerOpeningsInValue(attributeValue);
+	if (count === 0) {
+		return [];
+	}
+	const { line, column } = offsetToLineColumn(source, startOffset);
+	return Array.from({ length: count }, () => ({
+		kind,
+		line,
+		column,
+		offset: startOffset,
+	}));
+};
+
 // Text nodes contain visible-rendered content. A marker opening here means
 // some escape mechanism kept CommonMark from parsing the opener as inline
 // HTML (`\<!--mdeval` via backslash escape, `&lt;!--mdeval` via character
@@ -200,6 +235,10 @@ const collectTextLeaks = (
 // 2. `code` (fenced or indented) — same verbatim treatment, wrapped in
 //    `<pre><code>`.
 // 3. `text` nodes containing `<!--mdeval ...` — see `collectTextLeaks`.
+// 4. `image.alt`, `image.title`, `link.title` — HTML attribute values, see
+//    `collectAttributeLeaks`. Link children (link text) are NOT a leak:
+//    inline HTML inside `<a>` is preserved as a real HTML comment and
+//    sanitized by GitHub.
 export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	// Broader predicate than `COMMENT_TAG` because encoded forms — `\<!--`
 	// (backslash escape) and `&lt;!--` (character reference) — won't contain
@@ -232,6 +271,22 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 			case 'text': {
 				const { value } = node as { value: string };
 				leaks.push(...collectTextLeaks(source, startOffset, endOffset, value));
+				break;
+			}
+			case 'image': {
+				const image = node as {
+					alt: string | null;
+					title: string | null;
+				};
+				leaks.push(
+					...collectAttributeLeaks(source, startOffset, image.alt, 'image alt'),
+					...collectAttributeLeaks(source, startOffset, image.title, 'image title'),
+				);
+				break;
+			}
+			case 'link': {
+				const link = node as { title: string | null };
+				leaks.push(...collectAttributeLeaks(source, startOffset, link.title, 'link title'));
 				break;
 			}
 			// Other node types don't contribute to the leak surface.

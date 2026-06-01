@@ -212,4 +212,37 @@ describe('validate-rendering', () => {
 		expect(leaks).toHaveLength(2);
 		expect(leaks.every(leak => leak.kind === 'unrecognized context')).toBe(true);
 	});
+
+	test('marker in image alt text is flagged as image alt leak', () => {
+		// Image alt becomes an HTML attribute value. The marker chars
+		// appear as literal text visible to screen readers and image-
+		// fallback rendering.
+		const source = '![<!--mdeval description-->Photo<!--/mdeval-->](photo.png)';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('image alt');
+	});
+
+	test('marker in image title attribute is flagged as image title leak', () => {
+		const source = '![Photo](photo.png "<!--mdeval caption-->A photo<!--/mdeval-->")';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('image title');
+	});
+
+	test('marker in link title attribute is flagged as link title leak', () => {
+		const source = '[Click](https://example.com "<!--mdeval tooltip-->Hover<!--/mdeval-->")';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('link title');
+	});
+
+	test('marker in link text is not a leak (HTML comment is preserved and stripped)', () => {
+		// CommonMark recognizes the comment inside link text as inline raw
+		// HTML, producing an `<a>` with literal `<!--...-->` markers inside.
+		// GitHub's sanitizer strips HTML comments, so readers see only the
+		// link's visible text without marker syntax.
+		const source = '[<!--mdeval label-->Old<!--/mdeval-->](https://example.com)';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
 });
