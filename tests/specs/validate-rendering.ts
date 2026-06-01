@@ -278,4 +278,37 @@ describe('validate-rendering', () => {
 		const source = 'No references here.\n\n[unused]: https://example.com "<!--mdeval tooltip-->Hover<!--/mdeval-->"';
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
+
+	test('marker in raw HTML attribute value is flagged as raw html leak', () => {
+		// Raw HTML tags pass through to the DOM unmodified. A marker
+		// inside an attribute value renders as literal text visible in
+		// the attribute.
+		const source = '<img alt="<!--mdeval caption-->old<!--/mdeval-->" src="x.png">';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('raw html');
+	});
+
+	test('mdeval marker tags themselves are not raw-html leaks', () => {
+		// `<!--mdeval x-->...<!--/mdeval-->` outside any code becomes two
+		// `html` nodes whose values are standalone HTML comments. Those
+		// are stripped by GitHub's sanitizer and must not warn.
+		const source = '<!--mdeval x-->old<!--/mdeval-->';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
+	test('duplicate reference definition uses the first; later marker-laden duplicate does not leak', () => {
+		// CommonMark resolves `[x][ref]` against the FIRST `[ref]:` line.
+		// A marker on a later duplicate is unreachable at the use site.
+		const source = '[x][ref]\n\n[ref]: /a "safe"\n[ref]: /b "<!--mdeval bad-->bad<!--/mdeval-->"';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
+	test('single-line fence with marker only in info string and no body is not a leak', () => {
+		// An unclosed empty fence at EOF (`` ```js <!--mdeval foo-->``)
+		// has no rendered code body. The info string isn't rendered, so
+		// no warning.
+		const source = '```js <!--mdeval foo-->';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
 });

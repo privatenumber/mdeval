@@ -11,6 +11,7 @@ export type LeakKind =
 	| 'image alt'
 	| 'image title'
 	| 'link title'
+	| 'raw html'
 	| 'unrecognized context';
 
 export type RenderedLeak = {
@@ -92,7 +93,9 @@ const fencedOrIndented = (
 // but the info string after the fence (lang + meta) is not part of the
 // rendered code body. Skip past the first newline so the scan doesn't
 // false-positive on markers that appear only in the meta string (e.g.
-// ` ```js <!--mdeval foo` ).
+// ` ```js <!--mdeval foo` ). When the fence has no newline before its end
+// — e.g. an unclosed empty fence at EOF — there's no rendered body at all,
+// so return an empty range.
 const renderedCodeRange = (
 	source: string,
 	startOffset: number,
@@ -104,7 +107,7 @@ const renderedCodeRange = (
 	}
 	const firstNewline = source.indexOf('\n', startOffset);
 	if (firstNewline === -1 || firstNewline >= endOffset) {
-		return [startOffset, endOffset];
+		return [startOffset, startOffset];
 	}
 	return [firstNewline + 1, endOffset];
 };
@@ -253,19 +256,25 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 
 	const tree = unified().use(remarkParse).use(remarkGfm).parse(source);
 
-	// Pre-pass: index every reference definition's title by identifier, for
-	// definitions whose title contains marker openings. Lets reference-style
-	// link/image leaks be reported at the reference's use site (where the
-	// tooltip / alt actually renders) rather than at the definition source.
-	// Definitions with no markers — or unused ones — produce no entries here
-	// since unused definitions don't render anything.
+	// Pre-pass: index the FIRST reference definition's title by identifier.
+	// CommonMark resolves references against the first definition for any
+	// given label even if duplicates follow, so a later definition with a
+	// marker-laden title doesn't actually render anywhere. Empty-string
+	// entries are kept for first-seen definitions with no useful title, so
+	// a later duplicate doesn't overwrite the canonical first.
+	//
+	// Lets reference-style link/image leaks be reported at the reference's
+	// use site (where the tooltip / alt actually renders) rather than at
+	// the definition source. Unused definitions don't render anything and
+	// are never queried.
 	const definitionTitles = new Map<string, string>();
 	visit(tree, 'definition', (node) => {
 		const definition = node as { identifier: string;
 			title?: string | null; };
-		if (definition.title && countMarkerOpeningsInValue(definition.title) > 0) {
-			definitionTitles.set(definition.identifier, definition.title);
+		if (definitionTitles.has(definition.identifier)) {
+			return;
 		}
+		definitionTitles.set(definition.identifier, definition.title ?? '');
 	});
 
 	const leaks: RenderedLeak[] = [];
@@ -329,6 +338,29 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 				leaks.push(
 					...collectAttributeLeaks(source, startOffset, referencedTitle, 'link title'),
 				);
+				break;
+			}
+			case 'html': {
+				// Raw HTML blocks/inline spans pass through to the rendered
+				// DOM untouched. Real HTML comments — including mdeval
+				// marker tags themselves — are stripped by GitHub's
+				// sanitizer, so they're not leaks. Anything else (tag
+				// elements with attributes, text inside raw block content)
+				// renders visibly, and markers inside those attribute
+				// values or text contexts leak.
+				const { value } = node as { value: string };
+				if (value.startsWith('<!--')) {
+					break;
+				}
+				for (const offset of findMarkerOpeningsInRange(source, startOffset, endOffset)) {
+					const { line, column } = offsetToLineColumn(source, offset);
+					leaks.push({
+						kind: 'raw html',
+						line,
+						column,
+						offset,
+					});
+				}
 				break;
 			}
 			// Other node types don't contribute to the leak surface.
