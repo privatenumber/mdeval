@@ -1,5 +1,6 @@
 import { parseFragment } from 'parse5';
 import { findMarkerOpenings } from './marker.ts';
+import type { Point } from './line-index.ts';
 
 // Raw HTML scanning via parse5. parse5 is the WHATWG-spec HTML parser, so
 // it handles attribute value extraction, entity decoding (named `&lt;`,
@@ -16,21 +17,59 @@ type Parse5Node = {
 	childNodes?: Parse5Node[];
 	sourceCodeLocation?: {
 		startOffset?: number;
+		endOffset?: number;
 		attrs?: Record<string, { startOffset: number } | undefined>;
 	};
 };
 
-export const findRawHtmlLeakOffsets = (
+export type RawHtmlLeakPosition = {
+	line: number;
+	column: number;
+	offset: number;
+};
+
+// Advance a starting (line, column) by walking `length` chars of `value`,
+// resetting column on every newline. Used to map decoded text-node value
+// offsets back to a (line, column) that lines up with what the reader sees
+// — literal `<!--mdeval` in source would have been parsed as a real HTML
+// comment by parse5, so any opening that survives into a text node's value
+// got there through entity decoding, and a source-byte offset for it
+// doesn't exist.
+const advanceByValue = (
+	startLine: number,
+	startColumn: number,
+	value: string,
+	length: number,
+): { line: number;
+	column: number; } => {
+	let line = startLine;
+	let column = startColumn;
+	for (let index = 0; index < length; index += 1) {
+		if (value[index] === '\n') {
+			line += 1;
+			column = 1;
+		} else {
+			column += 1;
+		}
+	}
+	return {
+		line,
+		column,
+	};
+};
+
+export const findRawHtmlLeaks = (
 	source: string,
 	rangeStart: number,
 	rangeEnd: number,
-): number[] => {
+	point: Point,
+): RawHtmlLeakPosition[] => {
 	const fragment = source.slice(rangeStart, rangeEnd);
 	const tree = parseFragment(fragment, {
 		sourceCodeLocationInfo: true,
 	}) as unknown as Parse5Node;
 
-	const offsets: number[] = [];
+	const leaks: RawHtmlLeakPosition[] = [];
 	const visit = (node: Parse5Node): void => {
 		if (node.attrs && node.sourceCodeLocation?.attrs) {
 			for (const attribute of node.attrs) {
@@ -38,8 +77,16 @@ export const findRawHtmlLeakOffsets = (
 				if (!location) {
 					continue;
 				}
+				const attributeOffset = rangeStart + location.startOffset;
+				// Attribute values don't have per-character source
+				// positions; best-effort pointer is the attribute's start.
 				for (const _ of findMarkerOpenings(attribute.value)) {
-					offsets.push(rangeStart + location.startOffset);
+					const { line, column } = point(attributeOffset);
+					leaks.push({
+						line,
+						column,
+						offset: attributeOffset,
+					});
 				}
 			}
 		}
@@ -48,8 +95,24 @@ export const findRawHtmlLeakOffsets = (
 			&& typeof node.value === 'string'
 			&& node.sourceCodeLocation?.startOffset !== undefined
 		) {
-			for (const _ of findMarkerOpenings(node.value)) {
-				offsets.push(rangeStart + node.sourceCodeLocation.startOffset);
+			const valueOpenings = findMarkerOpenings(node.value);
+			if (valueOpenings.length === 0) {
+				return;
+			}
+			const textStartOffset = rangeStart + node.sourceCodeLocation.startOffset;
+			const textStart = point(textStartOffset);
+			for (const valueOffset of valueOpenings) {
+				const { line, column } = advanceByValue(
+					textStart.line,
+					textStart.column,
+					node.value,
+					valueOffset,
+				);
+				leaks.push({
+					line,
+					column,
+					offset: textStartOffset,
+				});
 			}
 		}
 		for (const child of node.childNodes ?? []) {
@@ -57,5 +120,5 @@ export const findRawHtmlLeakOffsets = (
 		}
 	};
 	visit(tree);
-	return offsets;
+	return leaks;
 };

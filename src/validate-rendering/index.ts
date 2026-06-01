@@ -6,7 +6,7 @@ import { visitParents } from 'unist-util-visit-parents';
 import type { Node } from 'unist';
 import type { RenderedLeak, WalkNode } from './types.ts';
 import { buildLineIndex, offsetToLineColumn, type Point } from './line-index.ts';
-import { findRawHtmlLeakOffsets } from './raw-html.ts';
+import { findRawHtmlLeaks } from './raw-html.ts';
 import { classifyAttributeLeak, classifyTextLeak } from './classifiers.ts';
 import { collectAttributeLeaks, collectTextNodeLeaks } from './collect.ts';
 
@@ -76,13 +76,10 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 			if (start === undefined || end === undefined) {
 				return;
 			}
-			for (const offset of findRawHtmlLeakOffsets(source, start, end)) {
-				const { line, column } = point(offset);
+			for (const leak of findRawHtmlLeaks(source, start, end, point)) {
 				leaks.push({
 					kind: 'raw html',
-					line,
-					column,
-					offset,
+					...leak,
 				});
 			}
 			return;

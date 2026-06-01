@@ -354,6 +354,18 @@ describe('validate-rendering', () => {
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
 
+	test('entity-encoded marker on a later line of raw HTML text reports the marker line', () => {
+		// `<div>\n&lt;!--mdeval x-->...\n</div>` — the marker only exists
+		// in the text-node value after entity decoding. parse5 gives us
+		// the text node's start position; per-marker line:column comes
+		// from walking the decoded value. Should warn at line 2 (the
+		// `&lt;` line), not line 1 (the `<div>` line).
+		const source = '<div>\n&lt;!--mdeval x-->old<!--/mdeval-->\n</div>';
+		const leaks = findRenderedLeaks(source).filter(leak => leak.kind === 'raw html');
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].line).toBe(2);
+	});
+
 	test('marker in raw HTML inside unreferenced footnote is not flagged', () => {
 		// Same rule, raw-HTML variant: `mdast-util-to-hast` drops the
 		// unreferenced footnote body during conversion, so the raw HTML
