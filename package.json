@@ -1,0 +1,47 @@
+{
+  "name": "mdeval",
+  "version": "0.0.0-semantic-release",
+  "description": "Evaluate JavaScript in markdown HTML comments and interpolate results in-place",
+  "keywords": [
+    "markdown",
+    "eval",
+    "interpolation",
+    "dynamic",
+    "readme"
+  ],
+  "license": "MIT",
+  "repository": "privatenumber/mdeval",
+  "author": {
+    "name": "Hiroki Osame",
+    "email": "hiroki.osame@gmail.com"
+  },
+  "files": [
+    "dist",
+    "skills"
+  ],
+  "type": "module",
+  "bin": "./dist/cli.mjs",
+  "exports": {
+    ".": "./dist/runtime.mjs",
+    "./loader": "./dist/loader.mjs"
+  },
+  "imports": {
+    "#md-loader": "./dist/md-loader.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@jridgewell/gen-mapping": "^0.3.13",
+    "cleye": "^2.3.0",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm-footnote": "^2.1.0",
+    "mdast-util-to-hast": "^13.2.1",
+    "micromark": "^4.0.2",
+    "micromark-extension-gfm-footnote": "^2.1.0",
+    "parse5": "^8.0.1",
+    "tinyglobby": "^0.2.15",
+    "unist-util-visit-parents": "^6.0.2",
+    "zx": "8.8.5-lite"
+  }
+}
