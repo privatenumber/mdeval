@@ -35,6 +35,9 @@ importers:
       tinyglobby:
         specifier: ^0.2.15
         version: 0.2.15
+      unist-util-visit-parents:
+        specifier: ^6.0.2
+        version: 6.0.2
       zx:
         specifier: 8.8.5-lite
         version: 8.8.5-lite
@@ -42,6 +45,9 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
+      '@types/unist':
+        specifier: ^3.0.3
+        version: 3.0.3
       clean-pkg-json:
         specifier: ^1.4.1
         version: 1.4.1

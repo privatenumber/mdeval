@@ -3,6 +3,8 @@ import { gfm } from 'micromark-extension-gfm';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { toHast } from 'mdast-util-to-hast';
 import { parseFragment } from 'parse5';
+import { visitParents } from 'unist-util-visit-parents';
+import type { Node, Parent } from 'unist';
 import { COMMENT_TAG } from './parse-markdown.ts';
 
 export type LeakKind =
@@ -145,47 +147,21 @@ const findRawHtmlLeakOffsets = (
 	return offsets;
 };
 
-// Minimal tree walker. Returns SKIP from the callback to prune the subtree
-// rooted at the current node. Used for both mdast (one type) and hast
-// (another type) trees, hence the structural typing.
-const SKIP = Symbol('skip');
+// The mdast and hast trees we walk are unist-compatible (both extend the
+// `Node` interface), so we can use the canonical `visitParents` traversal
+// with ancestor tracking. Parse5's tree is a different shape and stays on
+// its custom recursive walk inside `findRawHtmlLeakOffsets`.
 
-type WalkNode = {
-	type: string;
+type WalkNode = Node & {
 	tagName?: string;
 	value?: string;
 	properties?: Record<string, unknown>;
-	position?: {
-		start: { line: number;
-			column: number;
-			offset?: number; };
-	};
 	children?: WalkNode[];
 };
 
-type WalkCallback = (node: WalkNode, ancestors: readonly WalkNode[]) => void | typeof SKIP;
-
-const walk = (root: WalkNode, callback: WalkCallback): void => {
-	const ancestors: WalkNode[] = [];
-	const visit = (node: WalkNode): void => {
-		if (callback(node, ancestors) === SKIP) {
-			return;
-		}
-		if (!node.children) {
-			return;
-		}
-		ancestors.push(node);
-		for (const child of node.children) {
-			visit(child);
-		}
-		ancestors.pop();
-	};
-	visit(root);
-};
-
-const classifyTextLeak = (ancestors: readonly WalkNode[]): LeakKind => {
+const classifyTextLeak = (ancestors: readonly Parent[]): LeakKind => {
 	let inCode = false;
-	for (const ancestor of ancestors) {
+	for (const ancestor of ancestors as WalkNode[]) {
 		if (ancestor.tagName === 'pre') {
 			return 'code block';
 		}
@@ -219,11 +195,11 @@ type PositionRange = {
 	startColumn?: number;
 };
 
-const positionRange = (node: WalkNode, ancestors: readonly WalkNode[]): PositionRange => {
-	const candidates = [node, ...ancestors.toReversed()];
+const positionRange = (node: WalkNode, ancestors: readonly Node[]): PositionRange => {
+	const candidates: readonly WalkNode[] = [node, ...(ancestors.toReversed() as WalkNode[])];
 	for (const candidate of candidates) {
 		const start = candidate.position?.start.offset;
-		const end = (candidate as { position?: { end?: { offset?: number } } }).position?.end?.offset;
+		const end = candidate.position?.end.offset;
 		if (start !== undefined && end !== undefined) {
 			return {
 				startOffset: start,
@@ -326,18 +302,17 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	const mdast = fromMarkdown(source, {
 		extensions: [gfm()],
 		mdastExtensions: [gfmFromMarkdown()],
-	}) as unknown as WalkNode;
+	});
 	const leaks: RenderedLeak[] = [];
 
-	// Pass 1: raw HTML nodes need source-byte scanning because hast-util-raw
-	// would strip positions when re-parsing through parse5. The state machine
-	// over the mdast `html` node's source range gives us exact line:column.
-	walk(mdast, (node) => {
-		if (node.type !== 'html') {
-			return;
-		}
-		const start = node.position?.start.offset;
-		const end = (node as { position?: { end?: { offset?: number } } }).position?.end?.offset;
+	// Pass 1: raw HTML nodes get scanned via parse5 on the source range.
+	// (`mdast-util-to-hast` would route raw HTML into hast `raw` nodes, and
+	// running them through `hast-util-raw` strips source positions, so we
+	// keep parse5 invoked directly on the mdast `html` node's source.)
+	visitParents(mdast as Node, 'html', (node) => {
+		const html = node as WalkNode;
+		const start = html.position?.start.offset;
+		const end = html.position?.end.offset;
 		if (start === undefined || end === undefined) {
 			return;
 		}
@@ -356,21 +331,23 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	// syntax. Reference resolution, footnote skipping, info-string routing,
 	// and comment-vs-text discrimination are all handled by the rendering
 	// pipeline; we just inspect text-node values and visible attributes.
-	const hast = toHast(mdast as never, { allowDangerousHtml: true }) as unknown as WalkNode;
+	const hast = toHast(mdast, { allowDangerousHtml: true });
 
-	walk(hast, (node, ancestors) => {
-		if (node.type === 'text' && typeof node.value === 'string') {
-			leaks.push(...collectTextNodeLeaks(source, node, ancestors, classifyTextLeak(ancestors)));
+	visitParents(hast as Node, (node, ancestors) => {
+		const walkable = node as WalkNode;
+		if (walkable.type === 'text' && typeof walkable.value === 'string') {
+			const kind = classifyTextLeak(ancestors);
+			leaks.push(...collectTextNodeLeaks(source, walkable, ancestors, kind));
 			return;
 		}
-		if (node.type !== 'element' || !node.properties) {
+		if (walkable.type !== 'element' || !walkable.properties) {
 			return;
 		}
 		for (const attribute of ['alt', 'title']) {
-			const value = node.properties[attribute];
+			const value = walkable.properties[attribute];
 			if (typeof value === 'string') {
-				const kind = classifyAttributeLeak(node, attribute);
-				leaks.push(...collectAttributeLeaks(source, node, value, kind));
+				const kind = classifyAttributeLeak(walkable, attribute);
+				leaks.push(...collectAttributeLeaks(source, walkable, value, kind));
 			}
 		}
 	});
