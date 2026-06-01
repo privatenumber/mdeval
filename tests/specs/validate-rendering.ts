@@ -354,6 +354,15 @@ describe('validate-rendering', () => {
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
 
+	test('marker in raw HTML inside unreferenced footnote is not flagged', () => {
+		// Same rule, raw-HTML variant: `mdast-util-to-hast` drops the
+		// unreferenced footnote body during conversion, so the raw HTML
+		// never reaches the rendered hast tree and the marker isn't
+		// visible to readers.
+		const source = '[^a]: <img alt="<!--mdeval x-->old<!--/mdeval-->" src="x.png">';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
 	test('duplicate footnote definition uses the first; later marker-laden duplicate does not leak', () => {
 		// GFM renders only the FIRST body for any given footnote
 		// identifier, even when duplicates follow.

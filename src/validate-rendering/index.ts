@@ -54,32 +54,13 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	});
 	const leaks: RenderedLeak[] = [];
 
-	// Pass 1: raw HTML nodes get scanned via parse5 on the source range.
-	// (`mdast-util-to-hast` would route raw HTML into hast `raw` nodes, and
-	// running them through `hast-util-raw` strips source positions, so we
-	// keep parse5 invoked directly on the mdast `html` node's source.)
-	visitParents(mdast as Node, 'html', (node) => {
-		const html = node as WalkNode;
-		const start = html.position?.start.offset;
-		const end = html.position?.end.offset;
-		if (start === undefined || end === undefined) {
-			return;
-		}
-		for (const offset of findRawHtmlLeakOffsets(source, start, end)) {
-			const { line, column } = point(offset);
-			leaks.push({
-				kind: 'raw html',
-				line,
-				column,
-				offset,
-			});
-		}
-	});
-
-	// Pass 2: walk the hast tree for everything that came from markdown
-	// syntax. Reference resolution, footnote skipping, info-string routing,
-	// and comment-vs-text discrimination are all handled by the rendering
-	// pipeline; we just inspect text-node values and visible attributes.
+	// Single walk over the rendered hast tree. `toHast` with
+	// `allowDangerousHtml: true` preserves raw HTML mdast nodes as hast
+	// `raw` nodes — with positions — but only for nodes that survive into
+	// the rendered output. Unreferenced and duplicate-shadowed footnote
+	// bodies are pruned at this stage, so raw HTML inside them never
+	// reaches us. That's the right behavior: GitHub doesn't render those
+	// bodies either, and the markers inside aren't visible to readers.
 	const hast = toHast(mdast, { allowDangerousHtml: true });
 
 	visitParents(hast as Node, (node, ancestors) => {
@@ -87,6 +68,23 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		if (walkable.type === 'text' && typeof walkable.value === 'string') {
 			const kind = classifyTextLeak(ancestors);
 			leaks.push(...collectTextNodeLeaks(source, point, walkable, ancestors, kind));
+			return;
+		}
+		if (walkable.type === 'raw' && typeof walkable.value === 'string') {
+			const start = walkable.position?.start.offset;
+			const end = walkable.position?.end.offset;
+			if (start === undefined || end === undefined) {
+				return;
+			}
+			for (const offset of findRawHtmlLeakOffsets(source, start, end)) {
+				const { line, column } = point(offset);
+				leaks.push({
+					kind: 'raw html',
+					line,
+					column,
+					offset,
+				});
+			}
 			return;
 		}
 		if (walkable.type !== 'element' || !walkable.properties) {
