@@ -2,10 +2,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cli } from 'cleye';
 import { glob } from 'tinyglobby';
+import ansis from 'ansis';
 import './loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 import { findRenderedLeaks } from './validate-rendering.ts';
+
+const WARNING_PREFIX = ansis.yellow('Warning:');
 
 const argv = cli({
 	name: 'mdeval',
@@ -30,7 +33,7 @@ await Promise.all(files.map(async (file) => {
 		const parsed = parseMarkdown(source);
 
 		if (isOnlyMdeval(source, parsed)) {
-			console.warn(`Warning: ${file} has no markdown content outside of mdeval blocks`);
+			console.warn(`${WARNING_PREFIX} ${file} has no markdown content outside of mdeval blocks`);
 		}
 
 		const output = await processSource(source, resolvedPath);
@@ -46,7 +49,7 @@ await Promise.all(files.map(async (file) => {
 		// or accept it (e.g. an intentional documentation example).
 		for (const leak of findRenderedLeaks(output)) {
 			console.warn(
-				`Warning: ${file}:${leak.line}:${leak.column} mdeval marker leaks into rendered ${leak.kind}`,
+				`${WARNING_PREFIX} ${file}:${leak.line}:${leak.column} mdeval marker leaks into rendered ${leak.kind}`,
 			);
 		}
 	} catch (error) {

@@ -42,6 +42,7 @@
 	},
 	"dependencies": {
 		"@jridgewell/gen-mapping": "^0.3.13",
+		"ansis": "^4.3.0",
 		"cleye": "^2.3.0",
 		"mdast-util-from-markdown": "^2.0.3",
 		"mdast-util-gfm-footnote": "^2.1.0",
