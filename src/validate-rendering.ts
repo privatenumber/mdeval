@@ -1,7 +1,7 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
-import { visit } from 'unist-util-visit';
+import { visit, SKIP } from 'unist-util-visit';
 import { COMMENT_TAG } from './parse-markdown.ts';
 
 export type LeakKind =
@@ -176,6 +176,28 @@ const INSIDE_TAG_TRANSITIONS: Record<string, HtmlScanState | undefined> = {
 	'\'': 'attr_sq',
 };
 
+// Entity-encoded forms of `<` that decode to a literal `<` at render time.
+// When a marker opener uses one of these prefixes, the HTML parser sees the
+// entity (not a `<!--`), so the would-be comment is parsed as plain text;
+// at decode time it becomes visible `<!--mdeval ...` text in the output.
+const ENTITY_LT_OPENERS = ['&lt;!--mdeval', '&#x3C;!--mdeval', '&#x3c;!--mdeval', '&#60;!--mdeval'];
+
+const matchEntityMarkerOpening = (text: string, position: number): string | undefined => {
+	for (const opener of ENTITY_LT_OPENERS) {
+		if (!text.startsWith(opener, position)) {
+			continue;
+		}
+		const after = text[position + opener.length];
+		if (after === ' ' || after === '\n') {
+			return opener;
+		}
+		if (after === '\r' && text[position + opener.length + 1] === '\n') {
+			return opener;
+		}
+	}
+	return undefined;
+};
+
 const findRawHtmlAttributeLeaks = (
 	source: string,
 	rangeStart: number,
@@ -187,9 +209,20 @@ const findRawHtmlAttributeLeaks = (
 
 	while (cursor < rangeEnd) {
 		if (state === 'outside_tag') {
+			// Real HTML comments — including marker tags themselves — are
+			// stripped at render time. Skip the comment span entirely.
 			if (source.startsWith('<!--', cursor)) {
 				const end = source.indexOf('-->', cursor + 4);
 				cursor = end === -1 || end >= rangeEnd ? rangeEnd : end + 3;
+				continue;
+			}
+			// Entity-encoded openers in text content render as visible
+			// `<!--mdeval...` after entity decoding (the literal `<!--`
+			// recognition has already passed when entities are decoded).
+			const entityMatch = matchEntityMarkerOpening(source, cursor);
+			if (entityMatch) {
+				leaks.push(cursor);
+				cursor += entityMatch.length;
 				continue;
 			}
 			if (source[cursor] === '<') {
@@ -214,9 +247,17 @@ const findRawHtmlAttributeLeaks = (
 			cursor += 1;
 			continue;
 		}
+		// Attribute values aren't comment-parsed, so both literal and
+		// entity-encoded openers render visibly via the attribute.
 		if (source.startsWith(COMMENT_TAG, cursor) && isMarkerOpening(source, cursor)) {
 			leaks.push(cursor);
 			cursor += COMMENT_TAG.length;
+			continue;
+		}
+		const entityMatch = matchEntityMarkerOpening(source, cursor);
+		if (entityMatch) {
+			leaks.push(cursor);
+			cursor += entityMatch.length;
 			continue;
 		}
 		cursor += 1;
@@ -333,6 +374,14 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 
 	const tree = unified().use(remarkParse).use(remarkGfm).parse(source);
 
+	// Pre-pass: collect identifiers of referenced GFM footnotes. Unreferenced
+	// footnote definitions are not rendered by GitHub, so any marker inside
+	// their subtree is invisible — and warning on them is a false positive.
+	const referencedFootnotes = new Set<string>();
+	visit(tree, 'footnoteReference', (node) => {
+		referencedFootnotes.add((node as { identifier: string }).identifier);
+	});
+
 	// Pre-pass: index the FIRST reference definition's title by identifier.
 	// CommonMark resolves references against the first definition for any
 	// given label even if duplicates follow, so a later definition with a
@@ -357,6 +406,15 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	const leaks: RenderedLeak[] = [];
 
 	visit(tree, (node) => {
+		// Skip the entire subtree of unreferenced footnote definitions —
+		// nothing inside renders.
+		if (node.type === 'footnoteDefinition') {
+			const definition = node as { identifier: string };
+			if (!referencedFootnotes.has(definition.identifier)) {
+				return SKIP;
+			}
+		}
+
 		const startOffset = node.position?.start.offset;
 		const endOffset = node.position?.end.offset;
 		if (startOffset === undefined || endOffset === undefined) {

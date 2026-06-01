@@ -311,6 +311,54 @@ describe('validate-rendering', () => {
 		expect(leaks[0].kind).toBe('raw html');
 	});
 
+	test('entity-escaped marker in raw HTML attribute is flagged', () => {
+		// `&lt;!--mdeval ...` decodes to a visible `<!--mdeval ...` at
+		// render time because HTML entity decoding happens after comment
+		// recognition.
+		const source = '<img alt="&lt;!--mdeval cap-->old<!--/mdeval-->" src="x.png">';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('raw html');
+	});
+
+	test('entity-escaped marker in raw HTML text content is flagged', () => {
+		// `<div>&lt;!--...</div>` — same story for text content of raw HTML
+		// blocks. The entity-encoded form bypasses comment recognition.
+		const source = '<div>&lt;!--mdeval x-->old<!--/mdeval--></div>';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('raw html');
+	});
+
+	test('hex and decimal entity forms are also detected', () => {
+		const sources = [
+			'<img alt="&#x3C;!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<img alt="&#x3c;!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<img alt="&#60;!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+		];
+		for (const source of sources) {
+			const leaks = findRenderedLeaks(source);
+			expect(leaks).toHaveLength(1);
+			expect(leaks[0].kind).toBe('raw html');
+		}
+	});
+
+	test('marker inside referenced footnote definition is flagged', () => {
+		// `[^a]` references the definition, so its rendered content is
+		// reachable — markers inside leak.
+		const source = 'See [^a].\n\n[^a]: `<!--mdeval x-->old<!--/mdeval-->`';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('inline code');
+	});
+
+	test('marker inside unreferenced footnote definition is not flagged', () => {
+		// No `[^a]` reference exists; GitHub doesn't render the definition.
+		// Marker inside is invisible to readers.
+		const source = '[^a]: `<!--mdeval x-->old<!--/mdeval-->`';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
 	test('duplicate reference definition uses the first; later marker-laden duplicate does not leak', () => {
 		// CommonMark resolves `[x][ref]` against the FIRST `[ref]:` line.
 		// A marker on a later duplicate is unreachable at the use site.
