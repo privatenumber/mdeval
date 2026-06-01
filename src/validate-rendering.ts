@@ -2,6 +2,7 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfm } from 'micromark-extension-gfm';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { toHast } from 'mdast-util-to-hast';
+import { parseFragment } from 'parse5';
 import { COMMENT_TAG } from './parse-markdown.ts';
 
 export type LeakKind =
@@ -87,86 +88,23 @@ const offsetToLineColumn = (source: string, offset: number) => {
 	};
 };
 
-// HTML state machine for raw HTML mdast nodes. Tracks tag / attribute /
-// outside-tag context so we can distinguish text-content `<!--...-->`
-// (becomes a real HTML comment, stripped by GitHub) from attribute-value
-// `<!--...-->` (literal text inside an attribute, visible via alt/title
-// fallback). Entity-encoded openers (`&lt;!--mdeval`, `&LT;`, `&#x3C;`,
-// `&#60;`, all-case-variations and HTML5 semicolonless legacy forms) are
-// decoded inline because they leak the same way as literal openers in both
-// text content and attribute values of raw HTML.
-type HtmlScanState = 'outside_tag' | 'inside_tag' | 'attr_dq' | 'attr_sq';
-
-const INSIDE_TAG_TRANSITIONS: Record<string, HtmlScanState | undefined> = {
-	'>': 'outside_tag',
-	'"': 'attr_dq',
-	'\'': 'attr_sq',
-};
-
-const matchHtmlLessThan = (text: string, position: number): number => {
-	if (text.startsWith('&lt;', position) || text.startsWith('&LT;', position)) {
-		return 4;
-	}
-	if (text.startsWith('&lt', position) || text.startsWith('&LT', position)) {
-		const after = text[position + 3];
-		const extendsReference = after !== undefined
-			&& ((after >= 'a' && after <= 'z')
-				|| (after >= 'A' && after <= 'Z')
-				|| (after >= '0' && after <= '9')
-				|| after === '=');
-		if (!extendsReference && after !== undefined) {
-			return 3;
-		}
-	}
-	if (text[position] !== '&' || text[position + 1] !== '#') {
-		return 0;
-	}
-	let cursor = position + 2;
-	const hex = text[cursor] === 'x' || text[cursor] === 'X';
-	if (hex) {
-		cursor += 1;
-	}
-	const digitsStart = cursor;
-	while (cursor < text.length) {
-		const ch = text[cursor];
-		const isDigit = hex
-			? (ch >= '0' && ch <= '9')
-				|| (ch >= 'a' && ch <= 'f')
-				|| (ch >= 'A' && ch <= 'F')
-			: ch >= '0' && ch <= '9';
-		if (!isDigit) {
-			break;
-		}
-		cursor += 1;
-	}
-	if (cursor === digitsStart) {
-		return 0;
-	}
-	const codePoint = Number.parseInt(text.slice(digitsStart, cursor), hex ? 16 : 10);
-	if (codePoint !== 0x3C) {
-		return 0;
-	}
-	return cursor + (text[cursor] === ';' ? 1 : 0) - position;
-};
-
-const matchEntityMarkerOpening = (text: string, position: number): number => {
-	const ltLength = matchHtmlLessThan(text, position);
-	if (ltLength === 0) {
-		return 0;
-	}
-	const afterLt = position + ltLength;
-	if (!text.startsWith('!--mdeval', afterLt)) {
-		return 0;
-	}
-	const afterMdeval = afterLt + '!--mdeval'.length;
-	const next = text[afterMdeval];
-	if (next === ' ' || next === '\n') {
-		return afterMdeval - position;
-	}
-	if (next === '\r' && text[afterMdeval + 1] === '\n') {
-		return afterMdeval - position;
-	}
-	return 0;
+// Raw HTML scanning via parse5. parse5 is the WHATWG-spec HTML parser, so
+// it handles attribute value extraction, entity decoding (named `&lt;`,
+// hex `&#x3C;`, decimal `&#60;`, semicolonless legacy `&lt`), and the
+// distinction between comments and text content correctly. With
+// `sourceCodeLocationInfo: true` it preserves source positions on every
+// node and attribute, so we can point the user at the right line.
+type Parse5Node = {
+	nodeName: string;
+	tagName?: string;
+	value?: string;
+	attrs?: { name: string;
+		value: string; }[];
+	childNodes?: Parse5Node[];
+	sourceCodeLocation?: {
+		startOffset?: number;
+		attrs?: Record<string, { startOffset: number } | undefined>;
+	};
 };
 
 const findRawHtmlLeakOffsets = (
@@ -174,59 +112,36 @@ const findRawHtmlLeakOffsets = (
 	rangeStart: number,
 	rangeEnd: number,
 ): number[] => {
+	const fragment = source.slice(rangeStart, rangeEnd);
+	const tree = parseFragment(fragment, { sourceCodeLocationInfo: true }) as unknown as Parse5Node;
+
 	const offsets: number[] = [];
-	let state: HtmlScanState = 'outside_tag';
-	let cursor = rangeStart;
-
-	while (cursor < rangeEnd) {
-		if (state === 'outside_tag') {
-			if (source.startsWith('<!--', cursor)) {
-				const end = source.indexOf('-->', cursor + 4);
-				cursor = end === -1 || end >= rangeEnd ? rangeEnd : end + 3;
-				continue;
+	const visit = (node: Parse5Node): void => {
+		if (node.attrs && node.sourceCodeLocation?.attrs) {
+			for (const attribute of node.attrs) {
+				const location = node.sourceCodeLocation.attrs[attribute.name];
+				if (!location) {
+					continue;
+				}
+				for (const _ of findMarkerOpenings(attribute.value)) {
+					offsets.push(rangeStart + location.startOffset);
+				}
 			}
-			const entityLength = matchEntityMarkerOpening(source, cursor);
-			if (entityLength > 0) {
-				offsets.push(cursor);
-				cursor += entityLength;
-				continue;
+		}
+		if (
+			node.nodeName === '#text'
+			&& typeof node.value === 'string'
+			&& node.sourceCodeLocation?.startOffset !== undefined
+		) {
+			for (const _ of findMarkerOpenings(node.value)) {
+				offsets.push(rangeStart + node.sourceCodeLocation.startOffset);
 			}
-			if (source[cursor] === '<') {
-				state = 'inside_tag';
-			}
-			cursor += 1;
-			continue;
 		}
-
-		if (state === 'inside_tag') {
-			const transition = INSIDE_TAG_TRANSITIONS[source[cursor]];
-			if (transition) {
-				state = transition;
-			}
-			cursor += 1;
-			continue;
+		for (const child of node.childNodes ?? []) {
+			visit(child);
 		}
-
-		const closingQuote = state === 'attr_dq' ? '"' : '\'';
-		if (source[cursor] === closingQuote) {
-			state = 'inside_tag';
-			cursor += 1;
-			continue;
-		}
-		if (source.startsWith(COMMENT_TAG, cursor) && isMarkerOpening(source, cursor)) {
-			offsets.push(cursor);
-			cursor += COMMENT_TAG.length;
-			continue;
-		}
-		const entityLength = matchEntityMarkerOpening(source, cursor);
-		if (entityLength > 0) {
-			offsets.push(cursor);
-			cursor += entityLength;
-			continue;
-		}
-		cursor += 1;
-	}
-
+	};
+	visit(tree);
 	return offsets;
 };
 
@@ -305,7 +220,7 @@ type PositionRange = {
 };
 
 const positionRange = (node: WalkNode, ancestors: readonly WalkNode[]): PositionRange => {
-	const candidates = [node, ...[...ancestors].reverse()];
+	const candidates = [node, ...ancestors.toReversed()];
 	for (const candidate of candidates) {
 		const start = candidate.position?.start.offset;
 		const end = (candidate as { position?: { end?: { offset?: number } } }).position?.end?.offset;
