@@ -412,6 +412,22 @@ describe('validate-rendering', () => {
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
 
+	test('marker in link destination position is not a leak (markers become real HTML comments)', () => {
+		// `[text](<!--mdeval url-->...<!--/mdeval-->)` breaks link parsing,
+		// but the marker tags themselves are parsed as standalone HTML
+		// comments (`html` mdast nodes whose value starts with `<!--`).
+		// GitHub's sanitizer strips those — the visible result is just
+		// `[text](...)` text with the URL auto-linked. The marker syntax
+		// is NOT visible to readers, so no leak warning.
+		const source = '[text](<!--mdeval url-->https://example.com<!--/mdeval-->)';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
+	test('marker in image destination position is not a leak (same as link destination)', () => {
+		const source = '![alt](<!--mdeval src-->image.png<!--/mdeval-->)';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
 	test('duplicate reference definition uses the first; later marker-laden duplicate does not leak', () => {
 		// CommonMark resolves `[x][ref]` against the FIRST `[ref]:` line.
 		// A marker on a later duplicate is unreachable at the use site.
