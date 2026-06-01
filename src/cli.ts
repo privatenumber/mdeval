@@ -45,11 +45,8 @@ await Promise.all(files.map(async (file) => {
 		// still surface a warning so the user can decide whether to act on it
 		// or accept it (e.g. an intentional documentation example).
 		for (const leak of findRenderedLeaks(output)) {
-			const position = leak.offset === -1
-				? ''
-				: `:${leak.line}:${leak.column}`;
 			console.warn(
-				`Warning: ${file}${position} mdeval marker leaks into rendered ${leak.kind}`,
+				`Warning: ${file}:${leak.line}:${leak.column} mdeval marker leaks into rendered ${leak.kind}`,
 			);
 		}
 	} catch (error) {

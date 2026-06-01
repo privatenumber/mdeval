@@ -122,10 +122,10 @@ describe('validate-rendering', () => {
 		expect(leaks[0].offset).toBe(source.indexOf('<!--mdeval'));
 	});
 
-	test('AST walk and HTML backstop agree on count for known constructs', () => {
-		// Cross-checks that the MDAST walk doesn't miss anything the HTML
-		// stringification finds — i.e. no `unrecognized context` leaks
-		// surface for constructs we already understand.
+	test('known constructs together produce only known-kind leaks', () => {
+		// No `unrecognized context` should surface for constructs we already
+		// understand — this guards against the AST walk silently degrading
+		// into the fallback path.
 		const source = [
 			'`<!--mdeval a-->1<!--/mdeval-->`',
 			'```',
@@ -137,5 +137,52 @@ describe('validate-rendering', () => {
 		const leaks = findRenderedLeaks(source);
 		expect(leaks.every(leak => leak.kind !== 'unrecognized context')).toBe(true);
 		expect(leaks).toHaveLength(3);
+	});
+
+	test('non-marker prefix in code block is not a leak', () => {
+		// `<!--mdevaluation-->` and `<!--mdevalfoo-->` are not mdeval
+		// markers (parseMarkdown rejects them). Validation must use the
+		// same marker-opening predicate or it will false-positive on
+		// any code example that happens to contain the substring.
+		const sources = [
+			'`<!--mdevaluation-->`',
+			'`<!--mdevalfoo-->`',
+			'```\n<!--mdevaluation-->\n```',
+			'    <!--mdevaluation-->',
+		];
+		for (const source of sources) {
+			expect(findRenderedLeaks(source)).toStrictEqual([]);
+		}
+	});
+
+	test('marker followed by LF (no trailing space) inside fenced code still counts', () => {
+		// A real marker can open at end-of-line — the predicate accepts LF
+		// or CRLF after `<!--mdeval`, not just space.
+		const source = '```\n<!--mdeval\nconst x = 1;\n-->\n```';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('fenced code');
+	});
+
+	test('backslash-escaped opener in a paragraph is flagged as unrecognized context', () => {
+		// `\<` makes the `<` a literal text character in CommonMark, so the
+		// opener ends up in a text node rather than an html node. It still
+		// renders visibly on GitHub. Caught via the text-node branch.
+		const source = String.raw`\<!--mdeval x-->y<!--/mdeval-->`;
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('unrecognized context');
+		expect(leaks[0].line).toBe(1);
+	});
+
+	test('character-reference-escaped opener is flagged as unrecognized context', () => {
+		// `&lt;` decodes to a literal `<` in the rendered text. The mdast
+		// text node's value contains the decoded `<!--mdeval ...`, even
+		// though no `<!--mdeval` literal appears in source.
+		const source = '&lt;!--mdeval x-->y<!--/mdeval-->';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('unrecognized context');
+		expect(leaks[0].line).toBe(1);
 	});
 });

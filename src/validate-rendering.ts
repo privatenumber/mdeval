@@ -1,8 +1,6 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
-import remarkRehype from 'remark-rehype';
-import rehypeStringify from 'rehype-stringify';
 import { visit } from 'unist-util-visit';
 import { COMMENT_TAG } from './parse-markdown.ts';
 
@@ -14,13 +12,6 @@ export type RenderedLeak = {
 	column: number;
 	offset: number;
 };
-
-// CommonMark recognizes raw HTML comments in inline and block positions, so a
-// well-placed `<!--mdeval ... -->` renders as an HTML comment (and is stripped
-// by GitHub's sanitizer). But inline code, fenced code, and indented code
-// blocks treat their contents as verbatim text — anything that looks like a
-// comment in there ends up HTML-escaped and visible to the reader. Those are
-// the constructs we need to walk.
 
 type Position = {
 	line: number;
@@ -44,21 +35,22 @@ const offsetToLineColumn = (source: string, offset: number): Position => {
 	};
 };
 
-// MDAST uses a single `code` node type for both fenced and indented code
-// blocks. The source character distinguishes them: indented code always begins
-// with a space or tab (4-space or hard-tab indent), while fenced code begins
-// with `, ~, or — for an info-string-prefixed block — with whitespace before
-// the fence is impossible because mdast collapses leading indent into the node
-// span. We only need to look at the first character of the source range.
-const fencedOrIndented = (
-	source: string,
-	startOffset: number,
-): 'fenced code' | 'indented code' => {
-	const firstChar = source[startOffset];
-	return (firstChar === ' ' || firstChar === '\t') ? 'indented code' : 'fenced code';
+// Mirror parseMarkdown's marker-opening predicate (`<!--mdeval` followed by
+// space, LF, or CRLF). Strings like `<!--mdevaluation-->` or `<!--mdevalfoo`
+// are not markers and must not be flagged. Operates on either source or a
+// decoded text-node value — the rule is identical.
+const isMarkerOpening = (text: string, position: number): boolean => {
+	if (!text.startsWith(COMMENT_TAG, position)) {
+		return false;
+	}
+	const after = text[position + COMMENT_TAG.length];
+	if (after === ' ' || after === '\n') {
+		return true;
+	}
+	return after === '\r' && text[position + COMMENT_TAG.length + 1] === '\n';
 };
 
-const findCommentTagOffsets = (
+const findMarkerOpeningsInRange = (
 	source: string,
 	rangeStart: number,
 	rangeEnd: number,
@@ -70,18 +62,111 @@ const findCommentTagOffsets = (
 		if (found === -1 || found >= rangeEnd) {
 			break;
 		}
-		offsets.push(found);
+		if (isMarkerOpening(source, found)) {
+			offsets.push(found);
+		}
 		cursor = found + COMMENT_TAG.length;
 	}
 	return offsets;
 };
 
-// Find every `<!--mdeval` that ends up in a rendered-visible position on
-// GitHub. The MDAST walk catches the constructs we know about; the HTML
-// backstop catches anything we don't — that's the tripwire for the day GFM
-// grows a new escape context.
+// MDAST uses a single `code` node type for both fenced and indented blocks.
+// Indented blocks always start with a space or tab character at the node's
+// source offset; fenced blocks start with `` ` `` or `~`.
+const fencedOrIndented = (
+	source: string,
+	startOffset: number,
+): 'fenced code' | 'indented code' => {
+	const firstChar = source[startOffset];
+	return (firstChar === ' ' || firstChar === '\t') ? 'indented code' : 'fenced code';
+};
+
+const collectCodeLeaks = (
+	source: string,
+	startOffset: number,
+	endOffset: number,
+	kind: 'inline code' | 'fenced code' | 'indented code',
+): RenderedLeak[] => findMarkerOpeningsInRange(source, startOffset, endOffset)
+	.map((offset) => {
+		const { line, column } = offsetToLineColumn(source, offset);
+		return {
+			kind,
+			line,
+			column,
+			offset,
+		};
+	});
+
+// Text nodes contain visible-rendered content. A marker opening here means
+// some escape mechanism kept CommonMark from parsing the opener as inline
+// HTML (`\<!--mdeval` via backslash escape, `&lt;!--mdeval` via character
+// reference, or a future construct that yields verbatim text). The opener
+// still renders visibly to the reader and we surface it as `unrecognized
+// context`.
+//
+// Try source bytes first: when no escape mechanism is in play, source and
+// the text node's value byte-align and we get an exact source offset. The
+// fallback scans the (decoded) value — line-accurate, column points at the
+// text run start because the per-opener source position is shifted by an
+// unknown amount.
+const collectTextLeaks = (
+	source: string,
+	startOffset: number,
+	endOffset: number,
+	value: string,
+): RenderedLeak[] => {
+	const sourceOffsets = findMarkerOpeningsInRange(source, startOffset, endOffset);
+	if (sourceOffsets.length > 0) {
+		return sourceOffsets.map((offset) => {
+			const { line, column } = offsetToLineColumn(source, offset);
+			return {
+				kind: 'unrecognized context',
+				line,
+				column,
+				offset,
+			};
+		});
+	}
+
+	const leaks: RenderedLeak[] = [];
+	let cursor = 0;
+	while (cursor < value.length) {
+		const at = value.indexOf(COMMENT_TAG, cursor);
+		if (at === -1) {
+			break;
+		}
+		if (isMarkerOpening(value, at)) {
+			const { line, column } = offsetToLineColumn(source, startOffset);
+			leaks.push({
+				kind: 'unrecognized context',
+				line,
+				column,
+				offset: startOffset,
+			});
+		}
+		cursor = at + COMMENT_TAG.length;
+	}
+	return leaks;
+};
+
+// Find every `<!--mdeval` opening that ends up visible in the rendered output
+// on GitHub.
+//
+// CommonMark recognizes raw HTML comments in normal inline and block
+// positions, so a well-placed marker becomes an `html` node and is stripped
+// by GitHub's sanitizer — invisible. The cases where it leaks visibly:
+//
+// 1. `inlineCode` (`...`) — content is verbatim text; the marker chars are
+//    HTML-escaped and shown to the reader inside `<code>`.
+// 2. `code` (fenced or indented) — same verbatim treatment, wrapped in
+//    `<pre><code>`.
+// 3. `text` nodes containing `<!--mdeval ...` — see `collectTextLeaks`.
 export const findRenderedLeaks = (source: string): RenderedLeak[] => {
-	if (!source.includes(COMMENT_TAG)) {
+	// Broader predicate than `COMMENT_TAG` because encoded forms — `\<!--`
+	// (backslash escape) and `&lt;!--` (character reference) — won't contain
+	// the literal `<!--mdeval` substring but still produce visible markers
+	// in the rendered output via the text-node fallback path.
+	if (!source.includes('mdeval')) {
 		return [];
 	}
 
@@ -95,50 +180,25 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 			return;
 		}
 
-		let kind: LeakKind | undefined;
-		if (node.type === 'inlineCode') {
-			kind = 'inline code';
-		} else if (node.type === 'code') {
-			kind = fencedOrIndented(source, startOffset);
-		}
-		if (!kind) {
-			return;
-		}
-
-		for (const offset of findCommentTagOffsets(source, startOffset, endOffset)) {
-			const { line, column } = offsetToLineColumn(source, offset);
-			leaks.push({
-				kind,
-				line,
-				column,
-				offset,
-			});
+		switch (node.type) {
+			case 'inlineCode': {
+				leaks.push(...collectCodeLeaks(source, startOffset, endOffset, 'inline code'));
+				break;
+			}
+			case 'code': {
+				const kind = fencedOrIndented(source, startOffset);
+				leaks.push(...collectCodeLeaks(source, startOffset, endOffset, kind));
+				break;
+			}
+			case 'text': {
+				const { value } = node as { value: string };
+				leaks.push(...collectTextLeaks(source, startOffset, endOffset, value));
+				break;
+			}
+			// Other node types don't contribute to the leak surface.
+			default:
 		}
 	});
-
-	// Backstop: render the same source to HTML and count escaped `<!--mdeval`
-	// occurrences. Anything beyond what the AST walk found lives in a
-	// construct we don't yet recognize as an escape context. Surface those as
-	// `unrecognized context` so the user has a signal to file a bug — without
-	// this, a future GFM extension that escapes its content would silently
-	// pass validation.
-	const html = unified()
-		.use(remarkParse)
-		.use(remarkGfm)
-		.use(remarkRehype, { allowDangerousHtml: true })
-		.use(rehypeStringify, { allowDangerousHtml: true })
-		.processSync(source)
-		.toString();
-	const renderedCount = Array.from(html.matchAll(/&lt;!--mdeval\b/g)).length;
-	const unaccountedFor = renderedCount - leaks.length;
-	for (let index = 0; index < unaccountedFor; index += 1) {
-		leaks.push({
-			kind: 'unrecognized context',
-			line: 0,
-			column: 0,
-			offset: -1,
-		});
-	}
 
 	return leaks;
 };
