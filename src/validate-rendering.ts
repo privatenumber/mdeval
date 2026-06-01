@@ -1,6 +1,6 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
-import { gfm } from 'micromark-extension-gfm';
-import { gfmFromMarkdown } from 'mdast-util-gfm';
+import { gfmFootnote } from 'micromark-extension-gfm-footnote';
+import { gfmFootnoteFromMarkdown } from 'mdast-util-gfm-footnote';
 import { toHast } from 'mdast-util-to-hast';
 import { parseFragment } from 'parse5';
 import { visitParents } from 'unist-util-visit-parents';
@@ -73,20 +73,35 @@ const findMarkerOpenings = (text: string, start = 0, end = text.length): number[
 	return offsets;
 };
 
-const offsetToLineColumn = (source: string, offset: number) => {
-	let line = 1;
-	let column = 1;
-	for (let index = 0; index < offset; index += 1) {
+// Precompute newline positions so offset-to-line-column lookups are O(log n)
+// instead of O(offset). For a doc with many leaks this matters: every leak
+// triggers one lookup, and walking the whole source per lookup is O(n*leaks).
+const buildLineIndex = (source: string): number[] => {
+	const newlines: number[] = [];
+	for (let index = 0; index < source.length; index += 1) {
 		if (source[index] === '\n') {
-			line += 1;
-			column = 1;
-		} else {
-			column += 1;
+			newlines.push(index);
 		}
 	}
+	return newlines;
+};
+
+const offsetToLineColumn = (newlines: readonly number[], offset: number) => {
+	// Binary search for the largest newline index strictly before `offset`.
+	let lo = 0;
+	let hi = newlines.length;
+	while (lo < hi) {
+		const mid = Math.floor((lo + hi) / 2);
+		if (newlines[mid] < offset) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	const previousNewline = lo === 0 ? -1 : newlines[lo - 1];
 	return {
-		line,
-		column,
+		line: lo + 1,
+		column: offset - previousNewline,
 	};
 };
 
@@ -212,13 +227,23 @@ const positionRange = (node: WalkNode, ancestors: readonly Node[]): PositionRang
 	return {};
 };
 
+type Point = (offset: number) => { line: number;
+	column: number; };
+
 const collectTextNodeLeaks = (
 	source: string,
+	point: Point,
 	node: WalkNode,
 	ancestors: readonly WalkNode[],
 	kind: LeakKind,
 ): RenderedLeak[] => {
 	const value = node.value ?? '';
+	// Most text nodes don't contain marker text. A cheap substring check
+	// short-circuits before the heavier `findMarkerOpenings` scan + the
+	// position math.
+	if (!value.includes('mdeval')) {
+		return [];
+	}
 	const valueOpenings = findMarkerOpenings(value);
 	if (valueOpenings.length === 0) {
 		return [];
@@ -237,7 +262,7 @@ const collectTextNodeLeaks = (
 	// the rendered subset.
 	const visibleSourceOffsets = allSourceOffsets.slice(-valueOpenings.length);
 	for (const offset of visibleSourceOffsets) {
-		const { line, column } = offsetToLineColumn(source, offset);
+		const { line, column } = point(offset);
 		leaks.push({
 			kind,
 			line,
@@ -253,7 +278,7 @@ const collectTextNodeLeaks = (
 				line: range.startLine ?? 1,
 				column: range.startColumn ?? 1,
 			}
-			: offsetToLineColumn(source, fallbackOffset);
+			: point(fallbackOffset);
 		for (let index = 0; index < fallbackCount; index += 1) {
 			leaks.push({
 				kind,
@@ -270,11 +295,14 @@ const collectTextNodeLeaks = (
 // hast doesn't track per-character positions inside `properties`. Best-effort
 // pointer is the wrapping element's start position.
 const collectAttributeLeaks = (
-	source: string,
+	point: Point,
 	node: WalkNode,
 	value: string,
 	kind: LeakKind,
 ): RenderedLeak[] => {
+	if (!value.includes('mdeval')) {
+		return [];
+	}
 	const openings = findMarkerOpenings(value);
 	if (openings.length === 0) {
 		return [];
@@ -285,7 +313,7 @@ const collectAttributeLeaks = (
 			line: node.position?.start.line ?? 1,
 			column: node.position?.start.column ?? 1,
 		}
-		: offsetToLineColumn(source, offset);
+		: point(offset);
 	return openings.map(() => ({
 		kind,
 		line,
@@ -299,9 +327,18 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		return [];
 	}
 
+	const newlines = buildLineIndex(source);
+	const point: Point = offset => offsetToLineColumn(newlines, offset);
+
+	// Only the GFM footnote sub-extension is enabled. mdeval's leak detection
+	// doesn't care about tables, strikethrough, autolinks, or task lists —
+	// those constructs don't change which markers appear visible. Footnotes
+	// matter because we need `mdast-util-to-hast` to drop unreferenced and
+	// duplicate footnote bodies from the rendered hast. The full GFM bundle
+	// is ~50% more parse cost than just this one piece.
 	const mdast = fromMarkdown(source, {
-		extensions: [gfm()],
-		mdastExtensions: [gfmFromMarkdown()],
+		extensions: [gfmFootnote()],
+		mdastExtensions: [gfmFootnoteFromMarkdown()],
 	});
 	const leaks: RenderedLeak[] = [];
 
@@ -317,7 +354,7 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 			return;
 		}
 		for (const offset of findRawHtmlLeakOffsets(source, start, end)) {
-			const { line, column } = offsetToLineColumn(source, offset);
+			const { line, column } = point(offset);
 			leaks.push({
 				kind: 'raw html',
 				line,
@@ -337,7 +374,7 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		const walkable = node as WalkNode;
 		if (walkable.type === 'text' && typeof walkable.value === 'string') {
 			const kind = classifyTextLeak(ancestors);
-			leaks.push(...collectTextNodeLeaks(source, walkable, ancestors, kind));
+			leaks.push(...collectTextNodeLeaks(source, point, walkable, ancestors, kind));
 			return;
 		}
 		if (walkable.type !== 'element' || !walkable.properties) {
@@ -347,7 +384,7 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 			const value = walkable.properties[attribute];
 			if (typeof value === 'string') {
 				const kind = classifyAttributeLeak(walkable, attribute);
-				leaks.push(...collectAttributeLeaks(source, walkable, value, kind));
+				leaks.push(...collectAttributeLeaks(point, walkable, value, kind));
 			}
 		}
 	});

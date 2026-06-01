@@ -17,18 +17,18 @@ importers:
       mdast-util-from-markdown:
         specifier: ^2.0.3
         version: 2.0.3
-      mdast-util-gfm:
-        specifier: ^3.1.0
-        version: 3.1.0
+      mdast-util-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0
       mdast-util-to-hast:
         specifier: ^13.2.1
         version: 13.2.1
       micromark:
         specifier: ^4.0.2
         version: 4.0.2
-      micromark-extension-gfm:
-        specifier: ^3.0.0
-        version: 3.0.0
+      micromark-extension-gfm-footnote:
+        specifier: ^2.1.0
+        version: 2.1.0
       parse5:
         specifier: ^8.0.1
         version: 8.0.1
