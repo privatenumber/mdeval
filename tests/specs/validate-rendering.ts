@@ -185,4 +185,31 @@ describe('validate-rendering', () => {
 		expect(leaks[0].kind).toBe('unrecognized context');
 		expect(leaks[0].line).toBe(1);
 	});
+
+	test('marker in fenced-code info string is not a leak', () => {
+		// The opening fence line (lang + meta) is not part of the rendered
+		// code body. A marker-shaped substring there must not flag.
+		const source = '```js <!--mdeval foo-->bar\nconst x = 1;\n```';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
+	test('marker still flagged when present in both fence-info AND code body', () => {
+		// The info string is skipped, but markers in the actual code body
+		// are still caught.
+		const source = '```js <!--mdeval foo-->\n<!--mdeval x-->1<!--/mdeval-->\n```';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('fenced code');
+		expect(leaks[0].line).toBe(2);
+	});
+
+	test('text node with both source-visible and decoded openers reports both', () => {
+		// One leak's source bytes contain `<!--mdeval` literally (the
+		// backslash-escaped form); the other only appears after CommonMark
+		// decodes `&lt;` to `<`. Both render visibly, both must warn.
+		const source = String.raw`\<!--mdeval a-->y &lt;!--mdeval b-->z`;
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(2);
+		expect(leaks.every(leak => leak.kind === 'unrecognized context')).toBe(true);
+	});
 });

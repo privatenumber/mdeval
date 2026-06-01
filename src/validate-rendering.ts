@@ -81,13 +81,37 @@ const fencedOrIndented = (
 	return (firstChar === ' ' || firstChar === '\t') ? 'indented code' : 'fenced code';
 };
 
+// Fenced code blocks include the opening fence line in their source range,
+// but the info string after the fence (lang + meta) is not part of the
+// rendered code body. Skip past the first newline so the scan doesn't
+// false-positive on markers that appear only in the meta string (e.g.
+// ` ```js <!--mdeval foo` ).
+const renderedCodeRange = (
+	source: string,
+	startOffset: number,
+	endOffset: number,
+	kind: 'fenced code' | 'indented code',
+): [number, number] => {
+	if (kind !== 'fenced code') {
+		return [startOffset, endOffset];
+	}
+	const firstNewline = source.indexOf('\n', startOffset);
+	if (firstNewline === -1 || firstNewline >= endOffset) {
+		return [startOffset, endOffset];
+	}
+	return [firstNewline + 1, endOffset];
+};
+
 const collectCodeLeaks = (
 	source: string,
 	startOffset: number,
 	endOffset: number,
 	kind: 'inline code' | 'fenced code' | 'indented code',
-): RenderedLeak[] => findMarkerOpeningsInRange(source, startOffset, endOffset)
-	.map((offset) => {
+): RenderedLeak[] => {
+	const [scanStart, scanEnd] = kind === 'inline code'
+		? [startOffset, endOffset]
+		: renderedCodeRange(source, startOffset, endOffset, kind);
+	return findMarkerOpeningsInRange(source, scanStart, scanEnd).map((offset) => {
 		const { line, column } = offsetToLineColumn(source, offset);
 		return {
 			kind,
@@ -96,6 +120,23 @@ const collectCodeLeaks = (
 			offset,
 		};
 	});
+};
+
+const countMarkerOpeningsInValue = (value: string): number => {
+	let count = 0;
+	let cursor = 0;
+	while (cursor < value.length) {
+		const at = value.indexOf(COMMENT_TAG, cursor);
+		if (at === -1) {
+			break;
+		}
+		if (isMarkerOpening(value, at)) {
+			count += 1;
+		}
+		cursor = at + COMMENT_TAG.length;
+	}
+	return count;
+};
 
 // Text nodes contain visible-rendered content. A marker opening here means
 // some escape mechanism kept CommonMark from parsing the opener as inline
@@ -104,47 +145,45 @@ const collectCodeLeaks = (
 // still renders visibly to the reader and we surface it as `unrecognized
 // context`.
 //
-// Try source bytes first: when no escape mechanism is in play, source and
-// the text node's value byte-align and we get an exact source offset. The
-// fallback scans the (decoded) value — line-accurate, column points at the
-// text run start because the per-opener source position is shifted by an
-// unknown amount.
+// We need to report every opening that appears in the rendered output. Some
+// openings exist in source bytes (e.g. `\<!--mdeval` — the backslash escapes
+// the `<` but the literal `<!--mdeval` still appears in source); these get
+// exact source positions. Others exist only after decoding (e.g.
+// `&lt;!--mdeval` — the literal substring isn't in source); these get the
+// text node's start position as a best-effort pointer. A single text node
+// can contain both, so we count value openings independently of source
+// openings and emit one warning per value opening, attaching exact positions
+// to as many as source matched.
 const collectTextLeaks = (
 	source: string,
 	startOffset: number,
 	endOffset: number,
 	value: string,
 ): RenderedLeak[] => {
-	const sourceOffsets = findMarkerOpeningsInRange(source, startOffset, endOffset);
-	if (sourceOffsets.length > 0) {
-		return sourceOffsets.map((offset) => {
-			const { line, column } = offsetToLineColumn(source, offset);
-			return {
-				kind: 'unrecognized context',
-				line,
-				column,
-				offset,
-			};
-		});
+	const valueOpeningCount = countMarkerOpeningsInValue(value);
+	if (valueOpeningCount === 0) {
+		return [];
 	}
 
-	const leaks: RenderedLeak[] = [];
-	let cursor = 0;
-	while (cursor < value.length) {
-		const at = value.indexOf(COMMENT_TAG, cursor);
-		if (at === -1) {
-			break;
-		}
-		if (isMarkerOpening(value, at)) {
-			const { line, column } = offsetToLineColumn(source, startOffset);
-			leaks.push({
-				kind: 'unrecognized context',
-				line,
-				column,
-				offset: startOffset,
-			});
-		}
-		cursor = at + COMMENT_TAG.length;
+	const sourceOffsets = findMarkerOpeningsInRange(source, startOffset, endOffset);
+	const leaks: RenderedLeak[] = sourceOffsets.map((offset) => {
+		const { line, column } = offsetToLineColumn(source, offset);
+		return {
+			kind: 'unrecognized context',
+			line,
+			column,
+			offset,
+		};
+	});
+
+	const approximatePosition = offsetToLineColumn(source, startOffset);
+	for (let index = sourceOffsets.length; index < valueOpeningCount; index += 1) {
+		leaks.push({
+			kind: 'unrecognized context',
+			line: approximatePosition.line,
+			column: approximatePosition.column,
+			offset: startOffset,
+		});
 	}
 	return leaks;
 };
