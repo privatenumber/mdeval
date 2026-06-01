@@ -36,3 +36,31 @@ export const offsetToLineColumn = (
 		column: offset - previousNewline,
 	};
 };
+
+// Advance a starting (line, column) by walking `length` chars of `value`,
+// resetting column on every newline. For an entity-decoded marker at value
+// offset N inside a multi-line text node, this gives the marker's real
+// (line, column) when source-byte lookup can't (the source has `&lt;` etc
+// instead of a literal `<`, so the offset doesn't map back).
+export const advanceByValue = (
+	startLine: number,
+	startColumn: number,
+	value: string,
+	length: number,
+): { line: number;
+	column: number; } => {
+	let line = startLine;
+	let column = startColumn;
+	for (let index = 0; index < length; index += 1) {
+		if (value[index] === '\n') {
+			line += 1;
+			column = 1;
+		} else {
+			column += 1;
+		}
+	}
+	return {
+		line,
+		column,
+	};
+};

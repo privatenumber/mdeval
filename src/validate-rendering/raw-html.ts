@@ -1,6 +1,12 @@
 import { parseFragment } from 'parse5';
 import { findMarkerOpenings } from './marker.ts';
-import type { Point } from './line-index.ts';
+import { advanceByValue, type Point } from './line-index.ts';
+
+// HTML attributes whose values are visible to readers on GitHub: `alt` text
+// renders when the image is unavailable / for screen readers, `title` shows
+// in browser tooltips. Other attributes (`class`, `id`, `data-*`, `href`,
+// `src`) are not visible as text, so markers inside them aren't a leak.
+const VISIBLE_ATTRIBUTES = new Set(['alt', 'title']);
 
 // Raw HTML scanning via parse5. parse5 is the WHATWG-spec HTML parser, so
 // it handles attribute value extraction, entity decoding (named `&lt;`,
@@ -28,36 +34,6 @@ export type RawHtmlLeakPosition = {
 	offset: number;
 };
 
-// Advance a starting (line, column) by walking `length` chars of `value`,
-// resetting column on every newline. Used to map decoded text-node value
-// offsets back to a (line, column) that lines up with what the reader sees
-// — literal `<!--mdeval` in source would have been parsed as a real HTML
-// comment by parse5, so any opening that survives into a text node's value
-// got there through entity decoding, and a source-byte offset for it
-// doesn't exist.
-const advanceByValue = (
-	startLine: number,
-	startColumn: number,
-	value: string,
-	length: number,
-): { line: number;
-	column: number; } => {
-	let line = startLine;
-	let column = startColumn;
-	for (let index = 0; index < length; index += 1) {
-		if (value[index] === '\n') {
-			line += 1;
-			column = 1;
-		} else {
-			column += 1;
-		}
-	}
-	return {
-		line,
-		column,
-	};
-};
-
 export const findRawHtmlLeaks = (
 	source: string,
 	rangeStart: number,
@@ -73,6 +49,9 @@ export const findRawHtmlLeaks = (
 	const visit = (node: Parse5Node): void => {
 		if (node.attrs && node.sourceCodeLocation?.attrs) {
 			for (const attribute of node.attrs) {
+				if (!VISIBLE_ATTRIBUTES.has(attribute.name)) {
+					continue;
+				}
 				const location = node.sourceCodeLocation.attrs[attribute.name];
 				if (!location) {
 					continue;

@@ -1,6 +1,6 @@
 import type { Node } from 'unist';
 import type { LeakKind, RenderedLeak, WalkNode } from './types.ts';
-import type { Point } from './line-index.ts';
+import { type Point, advanceByValue } from './line-index.ts';
 import { findMarkerOpenings } from './marker.ts';
 
 // Hast text nodes inside fenced code lose position info during conversion,
@@ -77,14 +77,28 @@ export const collectTextNodeLeaks = (
 	}
 	const fallbackCount = valueOpenings.length - visibleSourceOffsets.length;
 	if (fallbackCount > 0) {
+		// These openings exist in the (decoded) value but not in source
+		// bytes — they got there via `&lt;`, `&#x3C;`, etc. We can't map
+		// back to a real source offset, but we CAN report the marker's
+		// line and column by counting newlines in `value` up to each
+		// opening, starting from the range's source position. Without
+		// this the warning lands on the text node's first line for every
+		// marker, even ones several lines deep.
 		const fallbackOffset = range.startOffset ?? -1;
-		const { line, column } = fallbackOffset === -1
+		const startPosition = fallbackOffset === -1
 			? {
 				line: range.startLine ?? 1,
 				column: range.startColumn ?? 1,
 			}
 			: point(fallbackOffset);
-		for (let index = 0; index < fallbackCount; index += 1) {
+		const fallbackOpenings = valueOpenings.slice(0, fallbackCount);
+		for (const valueOffset of fallbackOpenings) {
+			const { line, column } = advanceByValue(
+				startPosition.line,
+				startPosition.column,
+				value,
+				valueOffset,
+			);
 			leaks.push({
 				kind,
 				line,

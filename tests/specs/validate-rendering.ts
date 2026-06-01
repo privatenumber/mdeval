@@ -354,6 +354,24 @@ describe('validate-rendering', () => {
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
 
+	test('marker in a non-visible raw HTML attribute (e.g. class) is not flagged', () => {
+		// `class`, `data-*`, `href`, `src` etc are not visible as text to
+		// readers, so markers inside them aren't leaks. Only `alt` and
+		// `title` show up in the rendered output (alt fallback / screen
+		// readers; title tooltips).
+		const source = '<span class="<!--mdeval x-->old<!--/mdeval-->">text</span>';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
+	test('entity-encoded marker on a later line of markdown paragraph reports the marker line', () => {
+		// Same multi-line position-handling as raw HTML, but for plain
+		// markdown text where `&lt;!--mdeval` decodes to a visible marker.
+		const source = 'First line.\nSecond line: &lt;!--mdeval x-->old<!--/mdeval-->\n';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].line).toBe(2);
+	});
+
 	test('entity-encoded marker on a later line of raw HTML text reports the marker line', () => {
 		// `<div>\n&lt;!--mdeval x-->...\n</div>` — the marker only exists
 		// in the text-node value after entity decoding. parse5 gives us
