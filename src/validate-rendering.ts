@@ -148,6 +148,83 @@ const countMarkerOpeningsInValue = (value: string): number => {
 	return count;
 };
 
+// Raw HTML nodes pass through to the rendered DOM untouched. Markers inside
+// them only leak when they appear in a position the HTML parser treats as
+// verbatim text:
+//
+// - Inside an HTML comment (`<!--...-->`): the renderer strips the comment.
+//   NOT a leak. This includes mdeval marker tags themselves, which are
+//   syntactically valid HTML comments.
+// - In text content (between tags) where the marker takes the shape of a
+//   well-formed comment (`<!--mdeval x-->...<!--/mdeval-->`): also stripped
+//   by the renderer's HTML-comment recognition. NOT a leak.
+// - Inside a quoted attribute value (`="..."` or `='...'`): attribute values
+//   are not comment-parsed, so the marker characters become literal text
+//   visible in the rendered DOM via the attribute (alt text, title tooltip,
+//   etc). LEAK.
+//
+// A small state machine walks the raw HTML and returns positions of marker
+// openings that fall inside quoted attribute values. Unquoted attribute
+// values and HTML5 corner cases (CDATA, etc) aren't handled — those are
+// rare in mdeval-touched documents and a full HTML parser would be the
+// right answer if they show up in practice.
+type HtmlScanState = 'outside_tag' | 'inside_tag' | 'attr_dq' | 'attr_sq';
+
+const INSIDE_TAG_TRANSITIONS: Record<string, HtmlScanState | undefined> = {
+	'>': 'outside_tag',
+	'"': 'attr_dq',
+	'\'': 'attr_sq',
+};
+
+const findRawHtmlAttributeLeaks = (
+	source: string,
+	rangeStart: number,
+	rangeEnd: number,
+): number[] => {
+	const leaks: number[] = [];
+	let state: HtmlScanState = 'outside_tag';
+	let cursor = rangeStart;
+
+	while (cursor < rangeEnd) {
+		if (state === 'outside_tag') {
+			if (source.startsWith('<!--', cursor)) {
+				const end = source.indexOf('-->', cursor + 4);
+				cursor = end === -1 || end >= rangeEnd ? rangeEnd : end + 3;
+				continue;
+			}
+			if (source[cursor] === '<') {
+				state = 'inside_tag';
+			}
+			cursor += 1;
+			continue;
+		}
+
+		if (state === 'inside_tag') {
+			const transition = INSIDE_TAG_TRANSITIONS[source[cursor]];
+			if (transition) {
+				state = transition;
+			}
+			cursor += 1;
+			continue;
+		}
+
+		const closingQuote = state === 'attr_dq' ? '"' : '\'';
+		if (source[cursor] === closingQuote) {
+			state = 'inside_tag';
+			cursor += 1;
+			continue;
+		}
+		if (source.startsWith(COMMENT_TAG, cursor) && isMarkerOpening(source, cursor)) {
+			leaks.push(cursor);
+			cursor += COMMENT_TAG.length;
+			continue;
+		}
+		cursor += 1;
+	}
+
+	return leaks;
+};
+
 // HTML-attribute values (image alt, image title, link title) become literal
 // text in the rendered DOM — attribute values aren't HTML-comment-processed.
 // A marker in alt text is visible to screen readers and image-fallback
@@ -341,18 +418,10 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 				break;
 			}
 			case 'html': {
-				// Raw HTML blocks/inline spans pass through to the rendered
-				// DOM untouched. Real HTML comments — including mdeval
-				// marker tags themselves — are stripped by GitHub's
-				// sanitizer, so they're not leaks. Anything else (tag
-				// elements with attributes, text inside raw block content)
-				// renders visibly, and markers inside those attribute
-				// values or text contexts leak.
-				const { value } = node as { value: string };
-				if (value.startsWith('<!--')) {
-					break;
-				}
-				for (const offset of findMarkerOpeningsInRange(source, startOffset, endOffset)) {
+				// Raw HTML: only markers inside quoted attribute values
+				// leak. Comments and text-content markers are stripped or
+				// recognized-as-comments by the renderer.
+				for (const offset of findRawHtmlAttributeLeaks(source, startOffset, endOffset)) {
 					const { line, column } = offsetToLineColumn(source, offset);
 					leaks.push({
 						kind: 'raw html',

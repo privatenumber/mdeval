@@ -297,6 +297,20 @@ describe('validate-rendering', () => {
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
 
+	test('marker inside a raw HTML block as a real HTML comment is not a leak', () => {
+		// `<div>` wraps the marker but the marker delimiters are valid HTML
+		// comments; the renderer strips them. False positive guard.
+		const source = '<div>\n<!--mdeval x-->old<!--/mdeval-->\n</div>';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
+	test('marker in single-quoted raw HTML attribute is also a leak', () => {
+		const source = "<img alt='<!--mdeval cap-->old<!--/mdeval-->' src='x.png'>";
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('raw html');
+	});
+
 	test('duplicate reference definition uses the first; later marker-laden duplicate does not leak', () => {
 		// CommonMark resolves `[x][ref]` against the FIRST `[ref]:` line.
 		// A marker on a later duplicate is unreachable at the use site.
