@@ -388,6 +388,30 @@ describe('validate-rendering', () => {
 		}
 	});
 
+	test('semicolonless legacy entity forms are detected', () => {
+		// HTML5 parser still decodes `&lt`, `&LT`, `&#60`, `&#x3C` when
+		// they are not followed by a continuation character (alphanumeric
+		// or `=` for named; digit for numeric).
+		const sources = [
+			'<img alt="&lt!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<img alt="&LT!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<img alt="&#60!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<img alt="&#x3C!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+		];
+		for (const source of sources) {
+			const leaks = findRenderedLeaks(source);
+			expect(leaks).toHaveLength(1);
+			expect(leaks[0].kind).toBe('raw html');
+		}
+	});
+
+	test('semicolonless `&lt` followed by alphanumeric is NOT an entity (and not a leak)', () => {
+		// `&lta...` would be parsed as a different named reference attempt,
+		// not as `&lt`. So no marker opener exists here.
+		const source = '<img alt="&ltabc" src="x.png">';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
 	test('duplicate reference definition uses the first; later marker-laden duplicate does not leak', () => {
 		// CommonMark resolves `[x][ref]` against the FIRST `[ref]:` line.
 		// A marker on a later duplicate is unreachable at the use site.

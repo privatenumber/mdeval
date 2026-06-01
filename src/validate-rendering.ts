@@ -178,14 +178,33 @@ const INSIDE_TAG_TRANSITIONS: Record<string, HtmlScanState | undefined> = {
 
 // Match an HTML character reference at `position` that decodes to `<`,
 // returning its source length (or 0 if no such reference is present).
-// Handles every valid form:
-// - Named: `&lt;` and `&LT;` (HTML5 has both for backward compat with HTML4)
-// - Hex: `&#x3C;`, `&#X3c;`, `&#x003C;` (any case for the `x`/`X` and hex
-//   digit, any number of leading zeros)
-// - Decimal: `&#60;`, `&#060;`, `&#00060;` (any number of leading zeros)
+// Handles every valid form, including HTML5's legacy semicolonless variants:
+// - Named: `&lt;`, `&LT;`, and legacy `&lt` / `&LT` when not followed by an
+//   alphanumeric or `=` character (per the HTML5 parser's character
+//   reference state, which still decodes the legacy forms in those contexts
+//   for backward compatibility with pre-XML HTML).
+// - Hex: `&#x3C;`, `&#X3c;`, `&#x003C;`, and semicolonless `&#x3C` when
+//   followed by a non-hex-digit. Any case for the `x`/`X` and hex digits,
+//   any number of leading zeros.
+// - Decimal: `&#60;`, `&#0060;`, `&#00060;`, and semicolonless `&#60` when
+//   followed by a non-digit. Any number of leading zeros.
 const matchHtmlLessThan = (text: string, position: number): number => {
 	if (text.startsWith('&lt;', position) || text.startsWith('&LT;', position)) {
 		return 4;
+	}
+	// Legacy semicolonless `&lt` / `&LT` — valid when not followed by an
+	// alphanumeric or `=` character (which would extend the reference into
+	// a different named entity).
+	if (text.startsWith('&lt', position) || text.startsWith('&LT', position)) {
+		const after = text[position + 3];
+		const extendsReference = after !== undefined
+			&& ((after >= 'a' && after <= 'z')
+				|| (after >= 'A' && after <= 'Z')
+				|| (after >= '0' && after <= '9')
+				|| after === '=');
+		if (!extendsReference && after !== undefined) {
+			return 3;
+		}
 	}
 	if (text[position] !== '&' || text[position + 1] !== '#') {
 		return 0;
@@ -208,14 +227,17 @@ const matchHtmlLessThan = (text: string, position: number): number => {
 		}
 		cursor += 1;
 	}
-	if (cursor === digitsStart || text[cursor] !== ';') {
+	if (cursor === digitsStart) {
 		return 0;
 	}
 	const codePoint = Number.parseInt(text.slice(digitsStart, cursor), hex ? 16 : 10);
 	if (codePoint !== 0x3C) {
 		return 0;
 	}
-	return cursor + 1 - position;
+	// Semicolon is the terminator. Without it, the reference still decodes
+	// at parse time but emits an HTML parser error; browsers still produce
+	// the corresponding character.
+	return cursor + (text[cursor] === ';' ? 1 : 0) - position;
 };
 
 // When a marker opener is encoded via an HTML character reference (e.g.
