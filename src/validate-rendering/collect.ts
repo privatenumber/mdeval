@@ -75,15 +75,15 @@ export const collectTextNodeLeaks = (
 			offset,
 		});
 	}
-	const fallbackCount = valueOpenings.length - visibleSourceOffsets.length;
-	if (fallbackCount > 0) {
-		// These openings exist in the (decoded) value but not in source
-		// bytes — they got there via `&lt;`, `&#x3C;`, etc. We can't map
-		// back to a real source offset, but we CAN report the marker's
-		// line and column by counting newlines in `value` up to each
-		// opening, starting from the range's source position. Without
-		// this the warning lands on the text node's first line for every
-		// marker, even ones several lines deep.
+	if (visibleSourceOffsets.length < valueOpenings.length) {
+		// Openings beyond the literal source matches exist only in the
+		// decoded value — they got there via `&lt;`, `&#x3C;`, etc. We
+		// can't map back to a real source offset, but we CAN report each
+		// marker's line and column by counting newlines in `value` up to
+		// its opening, starting from the range's source position. The
+		// LEADING `visibleSourceOffsets.length` value openings align
+		// with the source matches (already emitted above); the TRAILING
+		// remainder are the unmatched, entity-decoded ones.
 		const fallbackOffset = range.startOffset ?? -1;
 		const startPosition = fallbackOffset === -1
 			? {
@@ -91,7 +91,7 @@ export const collectTextNodeLeaks = (
 				column: range.startColumn ?? 1,
 			}
 			: point(fallbackOffset);
-		const fallbackOpenings = valueOpenings.slice(0, fallbackCount);
+		const fallbackOpenings = valueOpenings.slice(visibleSourceOffsets.length);
 		for (const valueOffset of fallbackOpenings) {
 			const { line, column } = advanceByValue(
 				startPosition.line,

@@ -198,14 +198,18 @@ describe('validate-rendering', () => {
 		expect(leaks[0].line).toBe(2);
 	});
 
-	test('text node with both source-visible and decoded openers reports both', () => {
+	test('text node with both source-visible and decoded openers reports both at correct columns', () => {
 		// One leak's source bytes contain `<!--mdeval` literally (the
 		// backslash-escaped form); the other only appears after CommonMark
-		// decodes `&lt;` to `<`. Both render visibly, both must warn.
+		// decodes `&lt;` to `<`. Both render visibly, both must warn —
+		// and the decoded one must report a column AFTER the literal one,
+		// not at the text-node start.
 		const source = String.raw`\<!--mdeval a-->y &lt;!--mdeval b-->z`;
 		const leaks = findRenderedLeaks(source);
 		expect(leaks).toHaveLength(2);
 		expect(leaks.every(leak => leak.kind === 'text')).toBe(true);
+		const columns = leaks.map(leak => leak.column).sort((a, b) => a - b);
+		expect(columns[0]).toBeLessThan(columns[1]);
 	});
 
 	test('marker in image alt text is flagged as image alt leak', () => {
