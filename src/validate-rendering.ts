@@ -1,8 +1,32 @@
-import { unified } from 'unified';
-import remarkParse from 'remark-parse';
-import remarkGfm from 'remark-gfm';
-import { visit, SKIP } from 'unist-util-visit';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { gfm } from 'micromark-extension-gfm';
+import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { COMMENT_TAG } from './parse-markdown.ts';
+
+// Minimal tree walker, replacing unist-util-visit. Returns SKIP from the
+// callback to prune the subtree rooted at the current node. The callback
+// receives a structurally-typed node — concrete narrowing happens inside
+// per-`node.type` branches.
+const SKIP = Symbol('skip');
+
+type WalkNode = {
+	type: string;
+	children?: WalkNode[];
+};
+
+const walk = (
+	node: WalkNode,
+	callback: (node: WalkNode) => void | typeof SKIP,
+): void => {
+	if (callback(node) === SKIP) {
+		return;
+	}
+	if (node.children) {
+		for (const child of node.children) {
+			walk(child, callback);
+		}
+	}
+};
 
 export type LeakKind =
 	| 'inline code'
@@ -440,35 +464,36 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		return [];
 	}
 
-	const tree = unified().use(remarkParse).use(remarkGfm).parse(source);
-
-	// Pre-pass: collect identifiers of referenced GFM footnotes. Unreferenced
-	// footnote definitions are not rendered by GitHub, so any marker inside
-	// their subtree is invisible — and warning on them is a false positive.
-	const referencedFootnotes = new Set<string>();
-	visit(tree, 'footnoteReference', (node) => {
-		referencedFootnotes.add((node as { identifier: string }).identifier);
+	const tree = fromMarkdown(source, {
+		extensions: [gfm()],
+		mdastExtensions: [gfmFromMarkdown()],
 	});
 
-	// Pre-pass: index the FIRST reference definition's title by identifier.
-	// CommonMark resolves references against the first definition for any
-	// given label even if duplicates follow, so a later definition with a
-	// marker-laden title doesn't actually render anywhere. Empty-string
-	// entries are kept for first-seen definitions with no useful title, so
-	// a later duplicate doesn't overwrite the canonical first.
+	// Pre-pass: collect identifiers of referenced GFM footnotes, and the
+	// FIRST reference definition's title per identifier. Done in a single
+	// tree walk to avoid traversing the AST three times.
 	//
-	// Lets reference-style link/image leaks be reported at the reference's
-	// use site (where the tooltip / alt actually renders) rather than at
-	// the definition source. Unused definitions don't render anything and
-	// are never queried.
+	// Footnotes: unreferenced definitions are not rendered by GitHub, so
+	// markers inside them are invisible (false positives if we warned).
+	//
+	// Definitions: CommonMark resolves references against the first
+	// definition for any given label even if duplicates follow, so a later
+	// definition with a marker-laden title doesn't actually render anywhere.
+	// Empty-string entries are kept for first-seen definitions with no
+	// useful title, so a later duplicate doesn't overwrite the canonical
+	// first.
+	const referencedFootnotes = new Set<string>();
 	const definitionTitles = new Map<string, string>();
-	visit(tree, 'definition', (node) => {
-		const definition = node as { identifier: string;
-			title?: string | null; };
-		if (definitionTitles.has(definition.identifier)) {
-			return;
+	walk(tree, (node) => {
+		if (node.type === 'footnoteReference') {
+			referencedFootnotes.add((node as unknown as { identifier: string }).identifier);
+		} else if (node.type === 'definition') {
+			const definition = node as unknown as { identifier: string;
+				title?: string | null; };
+			if (!definitionTitles.has(definition.identifier)) {
+				definitionTitles.set(definition.identifier, definition.title ?? '');
+			}
 		}
-		definitionTitles.set(definition.identifier, definition.title ?? '');
 	});
 
 	const leaks: RenderedLeak[] = [];
@@ -478,12 +503,12 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	// even if duplicates follow — same rule as duplicate `[ref]:` lines.
 	const renderedFootnoteDefinitions = new Set<string>();
 
-	visit(tree, (node) => {
+	walk(tree, (node) => {
 		// Skip the subtree of any footnote definition that GitHub wouldn't
 		// render: unreferenced definitions, and duplicates of a referenced
 		// identifier whose first occurrence is the canonical body.
 		if (node.type === 'footnoteDefinition') {
-			const definition = node as { identifier: string };
+			const definition = node as unknown as { identifier: string };
 			if (!referencedFootnotes.has(definition.identifier)) {
 				return SKIP;
 			}
@@ -493,8 +518,12 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 			renderedFootnoteDefinitions.add(definition.identifier);
 		}
 
-		const startOffset = node.position?.start.offset;
-		const endOffset = node.position?.end.offset;
+		const positioned = node as unknown as {
+			position?: { start: { offset?: number };
+				end: { offset?: number }; };
+		};
+		const startOffset = positioned.position?.start.offset;
+		const endOffset = positioned.position?.end.offset;
 		if (startOffset === undefined || endOffset === undefined) {
 			return;
 		}
@@ -510,12 +539,12 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 				break;
 			}
 			case 'text': {
-				const { value } = node as { value: string };
+				const { value } = node as unknown as { value: string };
 				leaks.push(...collectTextLeaks(source, startOffset, endOffset, value));
 				break;
 			}
 			case 'image': {
-				const image = node as {
+				const image = node as unknown as {
 					alt: string | null;
 					title: string | null;
 				};
@@ -526,15 +555,17 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 				break;
 			}
 			case 'link': {
-				const link = node as { title: string | null };
+				const link = node as unknown as { title: string | null };
 				leaks.push(...collectAttributeLeaks(source, startOffset, link.title, 'link title'));
 				break;
 			}
 			case 'imageReference': {
 				// imageReference carries its own alt; the title (if any)
 				// comes from the referenced definition.
-				const reference = node as { alt: string | null;
-					identifier: string; };
+				const reference = node as unknown as {
+					alt: string | null;
+					identifier: string;
+				};
 				const referencedTitle = definitionTitles.get(reference.identifier);
 				leaks.push(
 					...collectAttributeLeaks(source, startOffset, reference.alt, 'image alt'),
@@ -546,7 +577,7 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 				// Link text comes from children (visited recursively, see
 				// case 4 in the docstring above for why link text is not a
 				// leak). The title comes from the referenced definition.
-				const reference = node as { identifier: string };
+				const reference = node as unknown as { identifier: string };
 				const referencedTitle = definitionTitles.get(reference.identifier);
 				leaks.push(
 					...collectAttributeLeaks(source, startOffset, referencedTitle, 'link title'),
