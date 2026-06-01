@@ -245,4 +245,37 @@ describe('validate-rendering', () => {
 		const source = '[<!--mdeval label-->Old<!--/mdeval-->](https://example.com)';
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
+
+	test('marker in reference-style image alt is flagged', () => {
+		// `![alt][ref]` + `[ref]: url` produces an `imageReference` node,
+		// not `image`. Same attribute-escape mechanism as inline images.
+		const source = '![<!--mdeval description-->Photo<!--/mdeval-->][img]\n\n[img]: photo.png';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('image alt');
+	});
+
+	test('marker in used reference definition title is flagged at the link reference', () => {
+		// Definition title becomes the `<a title>` attribute on whichever
+		// linkReference points at it. Reported at the reference (the
+		// rendered tooltip location), not the definition source.
+		const source = '[Click][ref]\n\n[ref]: https://example.com "<!--mdeval tooltip-->Hover<!--/mdeval-->"';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('link title');
+	});
+
+	test('marker in used reference definition title is flagged at the image reference', () => {
+		const source = '![Photo][img]\n\n[img]: photo.png "<!--mdeval caption-->A photo<!--/mdeval-->"';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('image title');
+	});
+
+	test('marker in unused reference definition title is not flagged', () => {
+		// Unused definitions render nothing, so a marker in the title is
+		// invisible to readers. Don't warn.
+		const source = 'No references here.\n\n[unused]: https://example.com "<!--mdeval tooltip-->Hover<!--/mdeval-->"';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
 });

@@ -235,10 +235,13 @@ const collectTextLeaks = (
 // 2. `code` (fenced or indented) — same verbatim treatment, wrapped in
 //    `<pre><code>`.
 // 3. `text` nodes containing `<!--mdeval ...` — see `collectTextLeaks`.
-// 4. `image.alt`, `image.title`, `link.title` — HTML attribute values, see
-//    `collectAttributeLeaks`. Link children (link text) are NOT a leak:
-//    inline HTML inside `<a>` is preserved as a real HTML comment and
-//    sanitized by GitHub.
+// 4. `image.alt`, `image.title`, `link.title` — inline link/image HTML
+//    attribute values, see `collectAttributeLeaks`. Link children (link
+//    text) are NOT a leak: inline HTML inside `<a>` is preserved as a real
+//    HTML comment and sanitized by GitHub.
+// 5. `imageReference.alt` and reference definition titles used by
+//    `linkReference` / `imageReference` — same attribute-escape mechanism
+//    as inline links/images, just via reference syntax.
 export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	// Broader predicate than `COMMENT_TAG` because encoded forms — `\<!--`
 	// (backslash escape) and `&lt;!--` (character reference) — won't contain
@@ -249,6 +252,22 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	}
 
 	const tree = unified().use(remarkParse).use(remarkGfm).parse(source);
+
+	// Pre-pass: index every reference definition's title by identifier, for
+	// definitions whose title contains marker openings. Lets reference-style
+	// link/image leaks be reported at the reference's use site (where the
+	// tooltip / alt actually renders) rather than at the definition source.
+	// Definitions with no markers — or unused ones — produce no entries here
+	// since unused definitions don't render anything.
+	const definitionTitles = new Map<string, string>();
+	visit(tree, 'definition', (node) => {
+		const definition = node as { identifier: string;
+			title?: string | null; };
+		if (definition.title && countMarkerOpeningsInValue(definition.title) > 0) {
+			definitionTitles.set(definition.identifier, definition.title);
+		}
+	});
+
 	const leaks: RenderedLeak[] = [];
 
 	visit(tree, (node) => {
@@ -289,7 +308,32 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 				leaks.push(...collectAttributeLeaks(source, startOffset, link.title, 'link title'));
 				break;
 			}
+			case 'imageReference': {
+				// imageReference carries its own alt; the title (if any)
+				// comes from the referenced definition.
+				const reference = node as { alt: string | null;
+					identifier: string; };
+				const referencedTitle = definitionTitles.get(reference.identifier);
+				leaks.push(
+					...collectAttributeLeaks(source, startOffset, reference.alt, 'image alt'),
+					...collectAttributeLeaks(source, startOffset, referencedTitle, 'image title'),
+				);
+				break;
+			}
+			case 'linkReference': {
+				// Link text comes from children (visited recursively, see
+				// case 4 in the docstring above for why link text is not a
+				// leak). The title comes from the referenced definition.
+				const reference = node as { identifier: string };
+				const referencedTitle = definitionTitles.get(reference.identifier);
+				leaks.push(
+					...collectAttributeLeaks(source, startOffset, referencedTitle, 'link title'),
+				);
+				break;
+			}
 			// Other node types don't contribute to the leak surface.
+			// `definition` nodes themselves don't render — their data only
+			// surfaces via linkReference/imageReference, handled above.
 			default:
 		}
 	});
