@@ -6,7 +6,7 @@ import { yellow } from 'ansis';
 import './loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
-import { findRenderedLeaks } from './validate-rendering.ts';
+import { findRenderedLeaks } from './validate-rendering/index.ts';
 
 const WARNING_PREFIX = yellow('Warning:');
 

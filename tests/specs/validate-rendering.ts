@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'manten';
-import { findRenderedLeaks } from '../../src/validate-rendering.ts';
+import { findRenderedLeaks } from '../../src/validate-rendering/index.ts';
 
 describe('validate-rendering', () => {
 	test('marker outside any code construct does not leak', () => {
