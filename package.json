@@ -44,7 +44,13 @@
 		"@jridgewell/gen-mapping": "^0.3.13",
 		"cleye": "^2.3.0",
 		"micromark": "^4.0.2",
+		"rehype-stringify": "^10.0.1",
+		"remark-gfm": "^4.0.1",
+		"remark-parse": "^11.0.0",
+		"remark-rehype": "^11.1.2",
 		"tinyglobby": "^0.2.15",
+		"unified": "^11.0.5",
+		"unist-util-visit": "^5.1.0",
 		"zx": "8.8.5-lite"
 	},
 	"devDependencies": {

@@ -5,6 +5,7 @@ import { glob } from 'tinyglobby';
 import './loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
+import { findRenderedLeaks } from './validate-rendering.ts';
 
 const argv = cli({
 	name: 'mdeval',
@@ -37,6 +38,19 @@ await Promise.all(files.map(async (file) => {
 		if (output !== source) {
 			await fs.writeFile(resolvedPath, output, 'utf8');
 			console.log(file);
+		}
+
+		// Validation runs on the post-rewrite content regardless of whether we
+		// touched the file — a leaky marker that was already on disk should
+		// still surface a warning so the user can decide whether to act on it
+		// or accept it (e.g. an intentional documentation example).
+		for (const leak of findRenderedLeaks(output)) {
+			const position = leak.offset === -1
+				? ''
+				: `:${leak.line}:${leak.column}`;
+			console.warn(
+				`Warning: ${file}${position} mdeval marker leaks into rendered ${leak.kind}`,
+			);
 		}
 	} catch (error) {
 		console.error(`Error processing ${file}:`, error instanceof Error ? error.message : error);
