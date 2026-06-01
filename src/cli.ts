@@ -2,13 +2,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { cli } from 'cleye';
 import { glob } from 'tinyglobby';
-import ansis from 'ansis';
+import { yellow } from 'ansis';
 import './loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 import { findRenderedLeaks } from './validate-rendering.ts';
 
-const WARNING_PREFIX = ansis.yellow('Warning:');
+const WARNING_PREFIX = yellow('Warning:');
 
 const argv = cli({
 	name: 'mdeval',
