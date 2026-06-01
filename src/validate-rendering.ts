@@ -176,26 +176,72 @@ const INSIDE_TAG_TRANSITIONS: Record<string, HtmlScanState | undefined> = {
 	'\'': 'attr_sq',
 };
 
-// Entity-encoded forms of `<` that decode to a literal `<` at render time.
-// When a marker opener uses one of these prefixes, the HTML parser sees the
-// entity (not a `<!--`), so the would-be comment is parsed as plain text;
-// at decode time it becomes visible `<!--mdeval ...` text in the output.
-const ENTITY_LT_OPENERS = ['&lt;!--mdeval', '&#x3C;!--mdeval', '&#x3c;!--mdeval', '&#60;!--mdeval'];
-
-const matchEntityMarkerOpening = (text: string, position: number): string | undefined => {
-	for (const opener of ENTITY_LT_OPENERS) {
-		if (!text.startsWith(opener, position)) {
-			continue;
-		}
-		const after = text[position + opener.length];
-		if (after === ' ' || after === '\n') {
-			return opener;
-		}
-		if (after === '\r' && text[position + opener.length + 1] === '\n') {
-			return opener;
-		}
+// Match an HTML character reference at `position` that decodes to `<`,
+// returning its source length (or 0 if no such reference is present).
+// Handles every valid form:
+// - Named: `&lt;` and `&LT;` (HTML5 has both for backward compat with HTML4)
+// - Hex: `&#x3C;`, `&#X3c;`, `&#x003C;` (any case for the `x`/`X` and hex
+//   digit, any number of leading zeros)
+// - Decimal: `&#60;`, `&#060;`, `&#00060;` (any number of leading zeros)
+const matchHtmlLessThan = (text: string, position: number): number => {
+	if (text.startsWith('&lt;', position) || text.startsWith('&LT;', position)) {
+		return 4;
 	}
-	return undefined;
+	if (text[position] !== '&' || text[position + 1] !== '#') {
+		return 0;
+	}
+	let cursor = position + 2;
+	const hex = text[cursor] === 'x' || text[cursor] === 'X';
+	if (hex) {
+		cursor += 1;
+	}
+	const digitsStart = cursor;
+	while (cursor < text.length) {
+		const ch = text[cursor];
+		const isDigit = hex
+			? (ch >= '0' && ch <= '9')
+				|| (ch >= 'a' && ch <= 'f')
+				|| (ch >= 'A' && ch <= 'F')
+			: ch >= '0' && ch <= '9';
+		if (!isDigit) {
+			break;
+		}
+		cursor += 1;
+	}
+	if (cursor === digitsStart || text[cursor] !== ';') {
+		return 0;
+	}
+	const codePoint = Number.parseInt(text.slice(digitsStart, cursor), hex ? 16 : 10);
+	if (codePoint !== 0x3C) {
+		return 0;
+	}
+	return cursor + 1 - position;
+};
+
+// When a marker opener is encoded via an HTML character reference (e.g.
+// `&lt;!--mdeval x-->`), the HTML parser sees the entity (not a `<!--`), so
+// the would-be comment is parsed as plain text; at decode time the entity
+// becomes a visible `<` and the marker text renders to the reader. Returns
+// the total source length of the entity + `!--mdeval` + predicate suffix,
+// or 0 if no encoded opener begins at `position`.
+const matchEntityMarkerOpening = (text: string, position: number): number => {
+	const ltLength = matchHtmlLessThan(text, position);
+	if (ltLength === 0) {
+		return 0;
+	}
+	const afterLt = position + ltLength;
+	if (!text.startsWith('!--mdeval', afterLt)) {
+		return 0;
+	}
+	const afterMdeval = afterLt + '!--mdeval'.length;
+	const next = text[afterMdeval];
+	if (next === ' ' || next === '\n') {
+		return afterMdeval - position;
+	}
+	if (next === '\r' && text[afterMdeval + 1] === '\n') {
+		return afterMdeval - position;
+	}
+	return 0;
 };
 
 const findRawHtmlAttributeLeaks = (
@@ -219,10 +265,10 @@ const findRawHtmlAttributeLeaks = (
 			// Entity-encoded openers in text content render as visible
 			// `<!--mdeval...` after entity decoding (the literal `<!--`
 			// recognition has already passed when entities are decoded).
-			const entityMatch = matchEntityMarkerOpening(source, cursor);
-			if (entityMatch) {
+			const entityLength = matchEntityMarkerOpening(source, cursor);
+			if (entityLength > 0) {
 				leaks.push(cursor);
-				cursor += entityMatch.length;
+				cursor += entityLength;
 				continue;
 			}
 			if (source[cursor] === '<') {
@@ -254,10 +300,10 @@ const findRawHtmlAttributeLeaks = (
 			cursor += COMMENT_TAG.length;
 			continue;
 		}
-		const entityMatch = matchEntityMarkerOpening(source, cursor);
-		if (entityMatch) {
+		const entityLength = matchEntityMarkerOpening(source, cursor);
+		if (entityLength > 0) {
 			leaks.push(cursor);
-			cursor += entityMatch.length;
+			cursor += entityLength;
 			continue;
 		}
 		cursor += 1;
@@ -405,14 +451,24 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 
 	const leaks: RenderedLeak[] = [];
 
+	// Track which referenced footnote definitions we've already walked into.
+	// GFM renders only the first body for any given footnote identifier,
+	// even if duplicates follow — same rule as duplicate `[ref]:` lines.
+	const renderedFootnoteDefinitions = new Set<string>();
+
 	visit(tree, (node) => {
-		// Skip the entire subtree of unreferenced footnote definitions —
-		// nothing inside renders.
+		// Skip the subtree of any footnote definition that GitHub wouldn't
+		// render: unreferenced definitions, and duplicates of a referenced
+		// identifier whose first occurrence is the canonical body.
 		if (node.type === 'footnoteDefinition') {
 			const definition = node as { identifier: string };
 			if (!referencedFootnotes.has(definition.identifier)) {
 				return SKIP;
 			}
+			if (renderedFootnoteDefinitions.has(definition.identifier)) {
+				return SKIP;
+			}
+			renderedFootnoteDefinitions.add(definition.identifier);
 		}
 
 		const startOffset = node.position?.start.offset;

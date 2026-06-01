@@ -359,6 +359,35 @@ describe('validate-rendering', () => {
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
 
+	test('duplicate footnote definition uses the first; later marker-laden duplicate does not leak', () => {
+		// GFM renders only the FIRST body for any given footnote
+		// identifier, even when duplicates follow.
+		const source = 'See [^a].\n\n[^a]: safe.\n[^a]: `<!--mdeval bad-->bad<!--/mdeval-->`';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
+	test('uppercase named less-than entity is detected', () => {
+		const source = '<img alt="&LT;!--mdeval x-->old<!--/mdeval-->" src="x.png">';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('raw html');
+	});
+
+	test('uppercase-X hex entity and zero-padded forms are detected', () => {
+		const sources = [
+			'<img alt="&#X3C;!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<img alt="&#X3c;!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<img alt="&#x003C;!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<img alt="&#00060;!--mdeval x-->old<!--/mdeval-->" src="x.png">',
+			'<div>&#X3C;!--mdeval x-->old<!--/mdeval--></div>',
+		];
+		for (const source of sources) {
+			const leaks = findRenderedLeaks(source);
+			expect(leaks).toHaveLength(1);
+			expect(leaks[0].kind).toBe('raw html');
+		}
+	});
+
 	test('duplicate reference definition uses the first; later marker-laden duplicate does not leak', () => {
 		// CommonMark resolves `[x][ref]` against the FIRST `[ref]:` line.
 		// A marker on a later duplicate is unreachable at the use site.
