@@ -1,42 +1,17 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfm } from 'micromark-extension-gfm';
 import { gfmFromMarkdown } from 'mdast-util-gfm';
+import { toHast } from 'mdast-util-to-hast';
 import { COMMENT_TAG } from './parse-markdown.ts';
-
-// Minimal tree walker, replacing unist-util-visit. Returns SKIP from the
-// callback to prune the subtree rooted at the current node. The callback
-// receives a structurally-typed node — concrete narrowing happens inside
-// per-`node.type` branches.
-const SKIP = Symbol('skip');
-
-type WalkNode = {
-	type: string;
-	children?: WalkNode[];
-};
-
-const walk = (
-	node: WalkNode,
-	callback: (node: WalkNode) => void | typeof SKIP,
-): void => {
-	if (callback(node) === SKIP) {
-		return;
-	}
-	if (node.children) {
-		for (const child of node.children) {
-			walk(child, callback);
-		}
-	}
-};
 
 export type LeakKind =
 	| 'inline code'
-	| 'fenced code'
-	| 'indented code'
+	| 'code block'
 	| 'image alt'
 	| 'image title'
 	| 'link title'
 	| 'raw html'
-	| 'unrecognized context';
+	| 'text';
 
 export type RenderedLeak = {
 	kind: LeakKind;
@@ -45,12 +20,57 @@ export type RenderedLeak = {
 	offset: number;
 };
 
-type Position = {
-	line: number;
-	column: number;
+// Find every `<!--mdeval` opening that ends up visible to a reader on GitHub.
+//
+// The principled definition of "visible": render the markdown the way GitHub
+// would and look at the DOM. Markers parsed as HTML comments are stripped
+// by GitHub's sanitizer (invisible). Markers as text content of any element,
+// or in a visible attribute (`alt` for image fallback / screen readers,
+// `title` for hover tooltips), survive.
+//
+// `mdast-util-to-hast` is the rendering pipeline that does the work that
+// would otherwise be special-cased per mdast node type:
+//
+// - Resolves linkReference / imageReference against definitions.
+// - Drops unused definitions and unreferenced or duplicate footnote bodies
+//   (only the rendered subset reaches the hast tree).
+// - Routes fenced-code info strings to `className`, not the body.
+// - Distinguishes comments from text content via dedicated `comment` nodes.
+//
+// We walk the resulting hast tree for text leaks and visible-attribute leaks.
+// Then a second pass over mdast `html` nodes catches raw HTML attribute and
+// text-content leaks (`<img alt="...">`, `<div>...</div>`), because
+// `hast-util-raw` would strip source positions and leave us unable to point
+// at the failing line.
+
+const isMarkerOpening = (text: string, position: number): boolean => {
+	if (!text.startsWith(COMMENT_TAG, position)) {
+		return false;
+	}
+	const after = text[position + COMMENT_TAG.length];
+	if (after === ' ' || after === '\n') {
+		return true;
+	}
+	return after === '\r' && text[position + COMMENT_TAG.length + 1] === '\n';
 };
 
-const offsetToLineColumn = (source: string, offset: number): Position => {
+const findMarkerOpenings = (text: string, start = 0, end = text.length): number[] => {
+	const offsets: number[] = [];
+	let cursor = start;
+	while (cursor < end) {
+		const found = text.indexOf(COMMENT_TAG, cursor);
+		if (found === -1 || found >= end) {
+			break;
+		}
+		if (isMarkerOpening(text, found)) {
+			offsets.push(found);
+		}
+		cursor = found + COMMENT_TAG.length;
+	}
+	return offsets;
+};
+
+const offsetToLineColumn = (source: string, offset: number) => {
 	let line = 1;
 	let column = 1;
 	for (let index = 0; index < offset; index += 1) {
@@ -67,131 +87,14 @@ const offsetToLineColumn = (source: string, offset: number): Position => {
 	};
 };
 
-// Mirror parseMarkdown's marker-opening predicate (`<!--mdeval` followed by
-// space, LF, or CRLF). Strings like `<!--mdevaluation-->` or `<!--mdevalfoo`
-// are not markers and must not be flagged. Operates on either source or a
-// decoded text-node value — the rule is identical.
-const isMarkerOpening = (text: string, position: number): boolean => {
-	if (!text.startsWith(COMMENT_TAG, position)) {
-		return false;
-	}
-	const after = text[position + COMMENT_TAG.length];
-	if (after === ' ' || after === '\n') {
-		return true;
-	}
-	return after === '\r' && text[position + COMMENT_TAG.length + 1] === '\n';
-};
-
-const findMarkerOpeningsInRange = (
-	source: string,
-	rangeStart: number,
-	rangeEnd: number,
-): number[] => {
-	const offsets: number[] = [];
-	let cursor = rangeStart;
-	while (cursor < rangeEnd) {
-		const found = source.indexOf(COMMENT_TAG, cursor);
-		if (found === -1 || found >= rangeEnd) {
-			break;
-		}
-		if (isMarkerOpening(source, found)) {
-			offsets.push(found);
-		}
-		cursor = found + COMMENT_TAG.length;
-	}
-	return offsets;
-};
-
-// MDAST uses a single `code` node type for both fenced and indented blocks.
-// Indented blocks always start with a space or tab character at the node's
-// source offset; fenced blocks start with `` ` `` or `~`.
-const fencedOrIndented = (
-	source: string,
-	startOffset: number,
-): 'fenced code' | 'indented code' => {
-	const firstChar = source[startOffset];
-	return (firstChar === ' ' || firstChar === '\t') ? 'indented code' : 'fenced code';
-};
-
-// Fenced code blocks include the opening fence line in their source range,
-// but the info string after the fence (lang + meta) is not part of the
-// rendered code body. Skip past the first newline so the scan doesn't
-// false-positive on markers that appear only in the meta string (e.g.
-// ` ```js <!--mdeval foo` ). When the fence has no newline before its end
-// — e.g. an unclosed empty fence at EOF — there's no rendered body at all,
-// so return an empty range.
-const renderedCodeRange = (
-	source: string,
-	startOffset: number,
-	endOffset: number,
-	kind: 'fenced code' | 'indented code',
-): [number, number] => {
-	if (kind !== 'fenced code') {
-		return [startOffset, endOffset];
-	}
-	const firstNewline = source.indexOf('\n', startOffset);
-	if (firstNewline === -1 || firstNewline >= endOffset) {
-		return [startOffset, startOffset];
-	}
-	return [firstNewline + 1, endOffset];
-};
-
-const collectCodeLeaks = (
-	source: string,
-	startOffset: number,
-	endOffset: number,
-	kind: 'inline code' | 'fenced code' | 'indented code',
-): RenderedLeak[] => {
-	const [scanStart, scanEnd] = kind === 'inline code'
-		? [startOffset, endOffset]
-		: renderedCodeRange(source, startOffset, endOffset, kind);
-	return findMarkerOpeningsInRange(source, scanStart, scanEnd).map((offset) => {
-		const { line, column } = offsetToLineColumn(source, offset);
-		return {
-			kind,
-			line,
-			column,
-			offset,
-		};
-	});
-};
-
-const countMarkerOpeningsInValue = (value: string): number => {
-	let count = 0;
-	let cursor = 0;
-	while (cursor < value.length) {
-		const at = value.indexOf(COMMENT_TAG, cursor);
-		if (at === -1) {
-			break;
-		}
-		if (isMarkerOpening(value, at)) {
-			count += 1;
-		}
-		cursor = at + COMMENT_TAG.length;
-	}
-	return count;
-};
-
-// Raw HTML nodes pass through to the rendered DOM untouched. Markers inside
-// them only leak when they appear in a position the HTML parser treats as
-// verbatim text:
-//
-// - Inside an HTML comment (`<!--...-->`): the renderer strips the comment.
-//   NOT a leak. This includes mdeval marker tags themselves, which are
-//   syntactically valid HTML comments.
-// - In text content (between tags) where the marker takes the shape of a
-//   well-formed comment (`<!--mdeval x-->...<!--/mdeval-->`): also stripped
-//   by the renderer's HTML-comment recognition. NOT a leak.
-// - Inside a quoted attribute value (`="..."` or `='...'`): attribute values
-//   are not comment-parsed, so the marker characters become literal text
-//   visible in the rendered DOM via the attribute (alt text, title tooltip,
-//   etc). LEAK.
-//
-// A small state machine walks the raw HTML and returns positions of marker
-// openings that fall inside quoted attribute values. Unquoted attribute
-// values and HTML5 corner cases (CDATA, etc) aren't handled — those are
-// rare in mdeval-touched documents and a full HTML parser would be the
-// right answer if they show up in practice.
+// HTML state machine for raw HTML mdast nodes. Tracks tag / attribute /
+// outside-tag context so we can distinguish text-content `<!--...-->`
+// (becomes a real HTML comment, stripped by GitHub) from attribute-value
+// `<!--...-->` (literal text inside an attribute, visible via alt/title
+// fallback). Entity-encoded openers (`&lt;!--mdeval`, `&LT;`, `&#x3C;`,
+// `&#60;`, all-case-variations and HTML5 semicolonless legacy forms) are
+// decoded inline because they leak the same way as literal openers in both
+// text content and attribute values of raw HTML.
 type HtmlScanState = 'outside_tag' | 'inside_tag' | 'attr_dq' | 'attr_sq';
 
 const INSIDE_TAG_TRANSITIONS: Record<string, HtmlScanState | undefined> = {
@@ -200,25 +103,10 @@ const INSIDE_TAG_TRANSITIONS: Record<string, HtmlScanState | undefined> = {
 	'\'': 'attr_sq',
 };
 
-// Match an HTML character reference at `position` that decodes to `<`,
-// returning its source length (or 0 if no such reference is present).
-// Handles every valid form, including HTML5's legacy semicolonless variants:
-// - Named: `&lt;`, `&LT;`, and legacy `&lt` / `&LT` when not followed by an
-//   alphanumeric or `=` character (per the HTML5 parser's character
-//   reference state, which still decodes the legacy forms in those contexts
-//   for backward compatibility with pre-XML HTML).
-// - Hex: `&#x3C;`, `&#X3c;`, `&#x003C;`, and semicolonless `&#x3C` when
-//   followed by a non-hex-digit. Any case for the `x`/`X` and hex digits,
-//   any number of leading zeros.
-// - Decimal: `&#60;`, `&#0060;`, `&#00060;`, and semicolonless `&#60` when
-//   followed by a non-digit. Any number of leading zeros.
 const matchHtmlLessThan = (text: string, position: number): number => {
 	if (text.startsWith('&lt;', position) || text.startsWith('&LT;', position)) {
 		return 4;
 	}
-	// Legacy semicolonless `&lt` / `&LT` — valid when not followed by an
-	// alphanumeric or `=` character (which would extend the reference into
-	// a different named entity).
 	if (text.startsWith('&lt', position) || text.startsWith('&LT', position)) {
 		const after = text[position + 3];
 		const extendsReference = after !== undefined
@@ -258,18 +146,9 @@ const matchHtmlLessThan = (text: string, position: number): number => {
 	if (codePoint !== 0x3C) {
 		return 0;
 	}
-	// Semicolon is the terminator. Without it, the reference still decodes
-	// at parse time but emits an HTML parser error; browsers still produce
-	// the corresponding character.
 	return cursor + (text[cursor] === ';' ? 1 : 0) - position;
 };
 
-// When a marker opener is encoded via an HTML character reference (e.g.
-// `&lt;!--mdeval x-->`), the HTML parser sees the entity (not a `<!--`), so
-// the would-be comment is parsed as plain text; at decode time the entity
-// becomes a visible `<` and the marker text renders to the reader. Returns
-// the total source length of the entity + `!--mdeval` + predicate suffix,
-// or 0 if no encoded opener begins at `position`.
 const matchEntityMarkerOpening = (text: string, position: number): number => {
 	const ltLength = matchHtmlLessThan(text, position);
 	if (ltLength === 0) {
@@ -290,30 +169,25 @@ const matchEntityMarkerOpening = (text: string, position: number): number => {
 	return 0;
 };
 
-const findRawHtmlAttributeLeaks = (
+const findRawHtmlLeakOffsets = (
 	source: string,
 	rangeStart: number,
 	rangeEnd: number,
 ): number[] => {
-	const leaks: number[] = [];
+	const offsets: number[] = [];
 	let state: HtmlScanState = 'outside_tag';
 	let cursor = rangeStart;
 
 	while (cursor < rangeEnd) {
 		if (state === 'outside_tag') {
-			// Real HTML comments — including marker tags themselves — are
-			// stripped at render time. Skip the comment span entirely.
 			if (source.startsWith('<!--', cursor)) {
 				const end = source.indexOf('-->', cursor + 4);
 				cursor = end === -1 || end >= rangeEnd ? rangeEnd : end + 3;
 				continue;
 			}
-			// Entity-encoded openers in text content render as visible
-			// `<!--mdeval...` after entity decoding (the literal `<!--`
-			// recognition has already passed when entities are decoded).
 			const entityLength = matchEntityMarkerOpening(source, cursor);
 			if (entityLength > 0) {
-				leaks.push(cursor);
+				offsets.push(cursor);
 				cursor += entityLength;
 				continue;
 			}
@@ -339,270 +213,250 @@ const findRawHtmlAttributeLeaks = (
 			cursor += 1;
 			continue;
 		}
-		// Attribute values aren't comment-parsed, so both literal and
-		// entity-encoded openers render visibly via the attribute.
 		if (source.startsWith(COMMENT_TAG, cursor) && isMarkerOpening(source, cursor)) {
-			leaks.push(cursor);
+			offsets.push(cursor);
 			cursor += COMMENT_TAG.length;
 			continue;
 		}
 		const entityLength = matchEntityMarkerOpening(source, cursor);
 		if (entityLength > 0) {
-			leaks.push(cursor);
+			offsets.push(cursor);
 			cursor += entityLength;
 			continue;
 		}
 		cursor += 1;
 	}
 
-	return leaks;
+	return offsets;
 };
 
-// HTML-attribute values (image alt, image title, link title) become literal
-// text in the rendered DOM — attribute values aren't HTML-comment-processed.
-// A marker in alt text is visible to screen readers and image-fallback
-// rendering; a title shows in browser tooltips. Source positions for
-// attribute leaks are approximate (the wrapping node's start) because mdast
-// stores attribute values as plain strings without per-character positions.
-const collectAttributeLeaks = (
+// Minimal tree walker. Returns SKIP from the callback to prune the subtree
+// rooted at the current node. Used for both mdast (one type) and hast
+// (another type) trees, hence the structural typing.
+const SKIP = Symbol('skip');
+
+type WalkNode = {
+	type: string;
+	tagName?: string;
+	value?: string;
+	properties?: Record<string, unknown>;
+	position?: {
+		start: { line: number;
+			column: number;
+			offset?: number; };
+	};
+	children?: WalkNode[];
+};
+
+type WalkCallback = (node: WalkNode, ancestors: readonly WalkNode[]) => void | typeof SKIP;
+
+const walk = (root: WalkNode, callback: WalkCallback): void => {
+	const ancestors: WalkNode[] = [];
+	const visit = (node: WalkNode): void => {
+		if (callback(node, ancestors) === SKIP) {
+			return;
+		}
+		if (!node.children) {
+			return;
+		}
+		ancestors.push(node);
+		for (const child of node.children) {
+			visit(child);
+		}
+		ancestors.pop();
+	};
+	visit(root);
+};
+
+const classifyTextLeak = (ancestors: readonly WalkNode[]): LeakKind => {
+	let inCode = false;
+	for (const ancestor of ancestors) {
+		if (ancestor.tagName === 'pre') {
+			return 'code block';
+		}
+		if (ancestor.tagName === 'code') {
+			inCode = true;
+		}
+	}
+	return inCode ? 'inline code' : 'text';
+};
+
+const classifyAttributeLeak = (node: WalkNode, attribute: string): LeakKind => {
+	if (attribute === 'alt') {
+		return 'image alt';
+	}
+	return node.tagName === 'a' ? 'link title' : 'image title';
+};
+
+// For a text-node leak, prefer the per-marker source offset (gives exact
+// `line:col` of each opener inside a code block or escape context). Fall
+// back to the node's start position for any leaks that exist only after
+// entity decoding (the source bytes don't contain a literal `<!--mdeval`
+// then, but the rendered text does).
+//
+// Hast text nodes inside fenced code lose position info during conversion,
+// so we walk ancestors to find the nearest element with a position to use
+// as the source-byte range for the scan.
+type PositionRange = {
+	startOffset?: number;
+	endOffset?: number;
+	startLine?: number;
+	startColumn?: number;
+};
+
+const positionRange = (node: WalkNode, ancestors: readonly WalkNode[]): PositionRange => {
+	const candidates = [node, ...[...ancestors].reverse()];
+	for (const candidate of candidates) {
+		const start = candidate.position?.start.offset;
+		const end = (candidate as { position?: { end?: { offset?: number } } }).position?.end?.offset;
+		if (start !== undefined && end !== undefined) {
+			return {
+				startOffset: start,
+				endOffset: end,
+				startLine: candidate.position?.start.line,
+				startColumn: candidate.position?.start.column,
+			};
+		}
+	}
+	return {};
+};
+
+const collectTextNodeLeaks = (
 	source: string,
-	startOffset: number,
-	attributeValue: string | null | undefined,
+	node: WalkNode,
+	ancestors: readonly WalkNode[],
 	kind: LeakKind,
 ): RenderedLeak[] => {
-	if (!attributeValue) {
+	const value = node.value ?? '';
+	const valueOpenings = findMarkerOpenings(value);
+	if (valueOpenings.length === 0) {
 		return [];
 	}
-	const count = countMarkerOpeningsInValue(attributeValue);
-	if (count === 0) {
-		return [];
-	}
-	const { line, column } = offsetToLineColumn(source, startOffset);
-	return Array.from({ length: count }, () => ({
-		kind,
-		line,
-		column,
-		offset: startOffset,
-	}));
-};
-
-// Text nodes contain visible-rendered content. A marker opening here means
-// some escape mechanism kept CommonMark from parsing the opener as inline
-// HTML (`\<!--mdeval` via backslash escape, `&lt;!--mdeval` via character
-// reference, or a future construct that yields verbatim text). The opener
-// still renders visibly to the reader and we surface it as `unrecognized
-// context`.
-//
-// We need to report every opening that appears in the rendered output. Some
-// openings exist in source bytes (e.g. `\<!--mdeval` — the backslash escapes
-// the `<` but the literal `<!--mdeval` still appears in source); these get
-// exact source positions. Others exist only after decoding (e.g.
-// `&lt;!--mdeval` — the literal substring isn't in source); these get the
-// text node's start position as a best-effort pointer. A single text node
-// can contain both, so we count value openings independently of source
-// openings and emit one warning per value opening, attaching exact positions
-// to as many as source matched.
-const collectTextLeaks = (
-	source: string,
-	startOffset: number,
-	endOffset: number,
-	value: string,
-): RenderedLeak[] => {
-	const valueOpeningCount = countMarkerOpeningsInValue(value);
-	if (valueOpeningCount === 0) {
-		return [];
-	}
-
-	const sourceOffsets = findMarkerOpeningsInRange(source, startOffset, endOffset);
-	const leaks: RenderedLeak[] = sourceOffsets.map((offset) => {
+	const range = positionRange(node, ancestors);
+	const leaks: RenderedLeak[] = [];
+	const allSourceOffsets = range.startOffset !== undefined && range.endOffset !== undefined
+		? findMarkerOpenings(source, range.startOffset, range.endOffset)
+		: [];
+	// `valueOpenings.length` is the count of markers that actually render
+	// (the text-node value is what GitHub will show). The source range may
+	// contain more openings — fenced-code info strings live in the same
+	// `<code>` source span but route to `className`, not the body — so we
+	// keep only the trailing `valueOpenings.length` source matches. Source
+	// order puts info-string markers first, body markers last; the tail is
+	// the rendered subset.
+	const visibleSourceOffsets = allSourceOffsets.slice(-valueOpenings.length);
+	for (const offset of visibleSourceOffsets) {
 		const { line, column } = offsetToLineColumn(source, offset);
-		return {
-			kind: 'unrecognized context',
+		leaks.push({
+			kind,
 			line,
 			column,
 			offset,
-		};
-	});
-
-	const approximatePosition = offsetToLineColumn(source, startOffset);
-	for (let index = sourceOffsets.length; index < valueOpeningCount; index += 1) {
-		leaks.push({
-			kind: 'unrecognized context',
-			line: approximatePosition.line,
-			column: approximatePosition.column,
-			offset: startOffset,
 		});
+	}
+	const fallbackCount = valueOpenings.length - visibleSourceOffsets.length;
+	if (fallbackCount > 0) {
+		const fallbackOffset = range.startOffset ?? -1;
+		const { line, column } = fallbackOffset === -1
+			? {
+				line: range.startLine ?? 1,
+				column: range.startColumn ?? 1,
+			}
+			: offsetToLineColumn(source, fallbackOffset);
+		for (let index = 0; index < fallbackCount; index += 1) {
+			leaks.push({
+				kind,
+				line,
+				column,
+				offset: fallbackOffset,
+			});
+		}
 	}
 	return leaks;
 };
 
-// Find every `<!--mdeval` opening that ends up visible in the rendered output
-// on GitHub.
-//
-// CommonMark recognizes raw HTML comments in normal inline and block
-// positions, so a well-placed marker becomes an `html` node and is stripped
-// by GitHub's sanitizer — invisible. The cases where it leaks visibly:
-//
-// 1. `inlineCode` (`...`) — content is verbatim text; the marker chars are
-//    HTML-escaped and shown to the reader inside `<code>`.
-// 2. `code` (fenced or indented) — same verbatim treatment, wrapped in
-//    `<pre><code>`.
-// 3. `text` nodes containing `<!--mdeval ...` — see `collectTextLeaks`.
-// 4. `image.alt`, `image.title`, `link.title` — inline link/image HTML
-//    attribute values, see `collectAttributeLeaks`. Link children (link
-//    text) are NOT a leak: inline HTML inside `<a>` is preserved as a real
-//    HTML comment and sanitized by GitHub.
-// 5. `imageReference.alt` and reference definition titles used by
-//    `linkReference` / `imageReference` — same attribute-escape mechanism
-//    as inline links/images, just via reference syntax.
+// Attribute values come from the rendering pipeline already decoded, and
+// hast doesn't track per-character positions inside `properties`. Best-effort
+// pointer is the wrapping element's start position.
+const collectAttributeLeaks = (
+	source: string,
+	node: WalkNode,
+	value: string,
+	kind: LeakKind,
+): RenderedLeak[] => {
+	const openings = findMarkerOpenings(value);
+	if (openings.length === 0) {
+		return [];
+	}
+	const offset = node.position?.start.offset ?? -1;
+	const { line, column } = offset === -1
+		? {
+			line: node.position?.start.line ?? 1,
+			column: node.position?.start.column ?? 1,
+		}
+		: offsetToLineColumn(source, offset);
+	return openings.map(() => ({
+		kind,
+		line,
+		column,
+		offset,
+	}));
+};
+
 export const findRenderedLeaks = (source: string): RenderedLeak[] => {
-	// Broader predicate than `COMMENT_TAG` because encoded forms — `\<!--`
-	// (backslash escape) and `&lt;!--` (character reference) — won't contain
-	// the literal `<!--mdeval` substring but still produce visible markers
-	// in the rendered output via the text-node fallback path.
 	if (!source.includes('mdeval')) {
 		return [];
 	}
 
-	const tree = fromMarkdown(source, {
+	const mdast = fromMarkdown(source, {
 		extensions: [gfm()],
 		mdastExtensions: [gfmFromMarkdown()],
-	});
-
-	// Pre-pass: collect identifiers of referenced GFM footnotes, and the
-	// FIRST reference definition's title per identifier. Done in a single
-	// tree walk to avoid traversing the AST three times.
-	//
-	// Footnotes: unreferenced definitions are not rendered by GitHub, so
-	// markers inside them are invisible (false positives if we warned).
-	//
-	// Definitions: CommonMark resolves references against the first
-	// definition for any given label even if duplicates follow, so a later
-	// definition with a marker-laden title doesn't actually render anywhere.
-	// Empty-string entries are kept for first-seen definitions with no
-	// useful title, so a later duplicate doesn't overwrite the canonical
-	// first.
-	const referencedFootnotes = new Set<string>();
-	const definitionTitles = new Map<string, string>();
-	walk(tree, (node) => {
-		if (node.type === 'footnoteReference') {
-			referencedFootnotes.add((node as unknown as { identifier: string }).identifier);
-		} else if (node.type === 'definition') {
-			const definition = node as unknown as { identifier: string;
-				title?: string | null; };
-			if (!definitionTitles.has(definition.identifier)) {
-				definitionTitles.set(definition.identifier, definition.title ?? '');
-			}
-		}
-	});
-
+	}) as unknown as WalkNode;
 	const leaks: RenderedLeak[] = [];
 
-	// Track which referenced footnote definitions we've already walked into.
-	// GFM renders only the first body for any given footnote identifier,
-	// even if duplicates follow — same rule as duplicate `[ref]:` lines.
-	const renderedFootnoteDefinitions = new Set<string>();
-
-	walk(tree, (node) => {
-		// Skip the subtree of any footnote definition that GitHub wouldn't
-		// render: unreferenced definitions, and duplicates of a referenced
-		// identifier whose first occurrence is the canonical body.
-		if (node.type === 'footnoteDefinition') {
-			const definition = node as unknown as { identifier: string };
-			if (!referencedFootnotes.has(definition.identifier)) {
-				return SKIP;
-			}
-			if (renderedFootnoteDefinitions.has(definition.identifier)) {
-				return SKIP;
-			}
-			renderedFootnoteDefinitions.add(definition.identifier);
-		}
-
-		const positioned = node as unknown as {
-			position?: { start: { offset?: number };
-				end: { offset?: number }; };
-		};
-		const startOffset = positioned.position?.start.offset;
-		const endOffset = positioned.position?.end.offset;
-		if (startOffset === undefined || endOffset === undefined) {
+	// Pass 1: raw HTML nodes need source-byte scanning because hast-util-raw
+	// would strip positions when re-parsing through parse5. The state machine
+	// over the mdast `html` node's source range gives us exact line:column.
+	walk(mdast, (node) => {
+		if (node.type !== 'html') {
 			return;
 		}
+		const start = node.position?.start.offset;
+		const end = (node as { position?: { end?: { offset?: number } } }).position?.end?.offset;
+		if (start === undefined || end === undefined) {
+			return;
+		}
+		for (const offset of findRawHtmlLeakOffsets(source, start, end)) {
+			const { line, column } = offsetToLineColumn(source, offset);
+			leaks.push({
+				kind: 'raw html',
+				line,
+				column,
+				offset,
+			});
+		}
+	});
 
-		switch (node.type) {
-			case 'inlineCode': {
-				leaks.push(...collectCodeLeaks(source, startOffset, endOffset, 'inline code'));
-				break;
+	// Pass 2: walk the hast tree for everything that came from markdown
+	// syntax. Reference resolution, footnote skipping, info-string routing,
+	// and comment-vs-text discrimination are all handled by the rendering
+	// pipeline; we just inspect text-node values and visible attributes.
+	const hast = toHast(mdast as never, { allowDangerousHtml: true }) as unknown as WalkNode;
+
+	walk(hast, (node, ancestors) => {
+		if (node.type === 'text' && typeof node.value === 'string') {
+			leaks.push(...collectTextNodeLeaks(source, node, ancestors, classifyTextLeak(ancestors)));
+			return;
+		}
+		if (node.type !== 'element' || !node.properties) {
+			return;
+		}
+		for (const attribute of ['alt', 'title']) {
+			const value = node.properties[attribute];
+			if (typeof value === 'string') {
+				const kind = classifyAttributeLeak(node, attribute);
+				leaks.push(...collectAttributeLeaks(source, node, value, kind));
 			}
-			case 'code': {
-				const kind = fencedOrIndented(source, startOffset);
-				leaks.push(...collectCodeLeaks(source, startOffset, endOffset, kind));
-				break;
-			}
-			case 'text': {
-				const { value } = node as unknown as { value: string };
-				leaks.push(...collectTextLeaks(source, startOffset, endOffset, value));
-				break;
-			}
-			case 'image': {
-				const image = node as unknown as {
-					alt: string | null;
-					title: string | null;
-				};
-				leaks.push(
-					...collectAttributeLeaks(source, startOffset, image.alt, 'image alt'),
-					...collectAttributeLeaks(source, startOffset, image.title, 'image title'),
-				);
-				break;
-			}
-			case 'link': {
-				const link = node as unknown as { title: string | null };
-				leaks.push(...collectAttributeLeaks(source, startOffset, link.title, 'link title'));
-				break;
-			}
-			case 'imageReference': {
-				// imageReference carries its own alt; the title (if any)
-				// comes from the referenced definition.
-				const reference = node as unknown as {
-					alt: string | null;
-					identifier: string;
-				};
-				const referencedTitle = definitionTitles.get(reference.identifier);
-				leaks.push(
-					...collectAttributeLeaks(source, startOffset, reference.alt, 'image alt'),
-					...collectAttributeLeaks(source, startOffset, referencedTitle, 'image title'),
-				);
-				break;
-			}
-			case 'linkReference': {
-				// Link text comes from children (visited recursively, see
-				// case 4 in the docstring above for why link text is not a
-				// leak). The title comes from the referenced definition.
-				const reference = node as unknown as { identifier: string };
-				const referencedTitle = definitionTitles.get(reference.identifier);
-				leaks.push(
-					...collectAttributeLeaks(source, startOffset, referencedTitle, 'link title'),
-				);
-				break;
-			}
-			case 'html': {
-				// Raw HTML: only markers inside quoted attribute values
-				// leak. Comments and text-content markers are stripped or
-				// recognized-as-comments by the renderer.
-				for (const offset of findRawHtmlAttributeLeaks(source, startOffset, endOffset)) {
-					const { line, column } = offsetToLineColumn(source, offset);
-					leaks.push({
-						kind: 'raw html',
-						line,
-						column,
-						offset,
-					});
-				}
-				break;
-			}
-			// Other node types don't contribute to the leak surface.
-			// `definition` nodes themselves don't render — their data only
-			// surfaces via linkReference/imageReference, handled above.
-			default:
 		}
 	});
 

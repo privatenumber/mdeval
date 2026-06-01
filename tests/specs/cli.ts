@@ -257,7 +257,7 @@ describe('cli', () => {
 		});
 		const result = await mdeval([fixture.getPath('test.md')]);
 		expect(result.stderr).not.toContain('no markdown content');
-		expect(result.stderr).toContain('leaks into rendered fenced code');
+		expect(result.stderr).toContain('leaks into rendered code block');
 	});
 
 	test('warns when a marker leaks into inline code', async () => {
@@ -273,7 +273,7 @@ describe('cli', () => {
 			'test.md': '# Title\n\n```\n<!--mdeval x-->old<!--/mdeval-->\n```',
 		});
 		const result = await mdeval([fixture.getPath('test.md')]);
-		expect(result.stderr).toContain('leaks into rendered fenced code');
+		expect(result.stderr).toContain('leaks into rendered code block');
 	});
 
 	test('does not warn when markers are outside any code construct', async () => {
