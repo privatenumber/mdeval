@@ -1,0 +1,1 @@
+var t=Object.defineProperty;var o=(r,s)=>t(r,"name",{value:s,configurable:!0});import{register as a}from"node:module";import{block as m}from"./runtime.mjs";import{$ as p}from"zx";const e=o(({cacheBust:r=!1}={})=>{Object.assign(globalThis,{block:m,$:p}),process.setSourceMapsEnabled(!0),a("#md-loader",import.meta.url,{data:{cacheBust:r}})},"setupLoader");e();export{e as s};

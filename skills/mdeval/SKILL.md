@@ -5,6 +5,13 @@ description: Evaluates JavaScript in markdown HTML comments and interpolates res
 
 # mdeval
 
+## When to use
+
+- Markdown contains values derived from code, files, APIs, or shell commands
+- README stats, version numbers, dependency counts, or computed tables
+- Any value where accuracy matters — counts, sizes, dates, calculations
+- Auditable content — the expression proves the value is correct, not just asserted
+
 ## Syntax
 
 Two types of HTML comments — invisible when rendered:
@@ -40,12 +47,41 @@ Duplicate expressions across markers are evaluated once and reused.
 | `Promise` | Auto-awaited, then coerced |
 | `undefined`, `null` | Error |
 
-## Globals
+## Helpers
 
-| Global | Description |
+| Helper | Description |
 |--------|-------------|
 | `block(value)` | Wraps value with newlines for block-level rendering |
 | `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates: `` $`git branch` `` |
+
+| File | Access |
+|------|--------|
+| `.md` | Globals — call directly: `block(x)`, `` $`cmd` `` |
+| `.js`, `.ts`, anything else | `import { block, $ } from 'mdeval'` |
+
+CLI (and `--import mdeval/loader`) seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import. `import { block, $ } from 'mdeval'` is side-effect-free.
+
+## Importing `.md` exports from a script
+
+Use when a Node script (validation, migration, agent tooling) needs to read exports from a `.md`. Run the script with `--import mdeval/loader`:
+
+```bash
+node --import mdeval/loader ./consumer.js
+```
+
+`consumer.js` can use ordinary static imports against `.md` files:
+
+```js
+import { todos } from './TODOS.md';
+
+console.log(todos);
+```
+
+- `--import mdeval/loader` is a side-effect-only entry — seeds `block`/`$` on `globalThis` and registers the Node ESM loader before any of the script's imports link.
+- Without it, static `import` of a `.md` fails — Node can't resolve `.md` until the loader is registered.
+- The plain `mdeval` import (`import { block, $ } from 'mdeval'`) stays pure — no globals, no loader. Use it when you only want the helpers.
+- Works on `.md` directly too: `node --import mdeval/loader ./TODOS.md`.
+- Runtime stack traces from a `.md` point at original lines and columns automatically.
 
 ## CLI
 
@@ -89,6 +125,15 @@ import { version } from './data.md';
 -->
 
 <!--mdeval version-->1.0.0<!--/mdeval-->
+````
+
+If the imported `.md` may not yet have mdeval content (stubs filled in over time), use a **namespace import** — named imports against an empty module are rejected by Node's ESM linker, but missing properties on a namespace resolve to `undefined`:
+
+````markdown
+<!--mdeval
+import * as data from './stub.md';
+const version = data.version ?? 'tbd';
+-->
 ````
 
 ### Generate Markdown with md-pen
@@ -141,7 +186,90 @@ const x = String.fromCharCode(45, 45, 62);
 
 **Place scripts at the top.** Order doesn't affect execution — scripts can appear after the markers that reference them — but top placement signals the file contains generated content.
 
-**Use IIFEs to co-locate logic.** In large docs, keep marker-specific computation inline instead of in a distant script block: `<!--mdeval (() => { ... })()-->`.
+**Markers can span multiple lines — use them to inline logic.** Don't cram expressions into one line. Co-locate marker-specific computation with its output:
+
+````markdown
+<!--mdeval block(table([
+  { name: 'cleye', version: '^2.3.0' },
+  { name: 'md-pen', version: '^0.0.2' },
+]))-->
+| Package | Version |
+| - | - |
+| cleye | ^2.3.0 |
+| md-pen | ^0.0.2 |
+<!--/mdeval-->
+````
+
+For statements or control flow, wrap in an IIFE: `<!--mdeval (() => { ... })()-->`. Reserve script blocks for shared imports or values referenced by multiple markers.
+
+**Standalone markers suppress inline markdown in the value.** When a marker opens a line — standalone paragraph, list item, or blockquote — GitHub treats the entire line as a raw HTML block. Inline markdown in the value (`` `code` ``, `**bold**`, `[link](url)`) is not processed and appears literally.
+
+````markdown
+<!-- ❌ backtick shows literally — line is an HTML block, not inline markdown -->
+<!--mdeval expr-->`value`<!--/mdeval-->
+````
+
+Use a multi-line marker so the value occupies its own lines, which are processed as normal markdown. Use [md-pen](https://github.com/privatenumber/md-pen) to generate formatted values:
+
+````markdown
+<!--mdeval
+import { code, bold, link } from 'md-pen';
+-->
+
+<!--mdeval code('asdf')-->
+`asdf`
+<!--/mdeval-->
+````
+
+Markers inside headings are always inline — markdown in the value always renders there.
+
+**Comments don't work in link URLs or image alt text.** GitHub escapes comment syntax in these positions:
+
+````markdown
+<!-- ❌ comment is URL-encoded as href -->
+[text](<!-- comment -->)
+
+<!-- ❌ comment appears as visible alt text -->
+![<!-- comment -->](image.png)
+````
+
+**`<details>` requires blank lines around the `</summary>` close.** Block-level Markdown inside a `<details>` only renders when blank lines surround the closing `</summary>` tag — otherwise lists, code fences, tables, and other block elements render as literal text. md-pen's `details(summary, content)` emits the correct shape:
+
+````markdown
+<!--mdeval
+import { details, ul } from 'md-pen';
+-->
+
+<!--mdeval block(details(
+  'Click me',
+  ul(['item one', 'item two']),
+))-->
+<details>
+<summary>Click me</summary>
+
+- item one
+- item two
+
+</details>
+<!--/mdeval-->
+````
+
+**Set up a git hook so values never go stale.** Use [Lefthook](https://github.com/evilmartians/lefthook) with this config:
+
+```yaml
+# lefthook.yml
+pre-commit:
+  jobs:
+    - name: mdeval
+      # lefthook's default `gobwas` matcher requires `**` to span 1+ dirs,
+      # so `**/*.md` alone misses root-level files like README.md
+      glob: ["*.md", "**/*.md"]
+      run: |
+        files=$(npx mdeval "**/*.md")
+        [ -z "$files" ] || git add $files
+```
+
+`git add $files` re-stages only the files mdeval actually rewrote. Assumes `.md` paths without spaces.
 
 **Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
 
