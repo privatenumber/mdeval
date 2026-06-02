@@ -12,8 +12,6 @@ import { findRawHtmlLeaks } from './raw-html.ts';
 import { classifyAttributeLeak, classifyTextLeak } from './classifiers.ts';
 import { collectAttributeLeaks, collectTextNodeLeaks } from './collect.ts';
 
-export type { LeakKind, RenderedLeak } from './types.ts';
-
 // The leak rule applied per hast node type. Each handler returns the leaks
 // for that node (empty for non-matching types), so the walk is a flat sum.
 
