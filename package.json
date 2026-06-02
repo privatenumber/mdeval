@@ -38,17 +38,27 @@
 		"prepare": "skills-npm"
 	},
 	"engines": {
-		"node": ">=20"
+		"node": ">=20.19"
 	},
 	"dependencies": {
 		"@jridgewell/gen-mapping": "^0.3.13",
+		"ansis": "^4.3.0",
 		"cleye": "^2.3.0",
+		"mdast-util-from-markdown": "^2.0.3",
+		"mdast-util-gfm-footnote": "^2.1.0",
+		"mdast-util-gfm-table": "^2.0.0",
+		"mdast-util-to-hast": "^13.2.1",
 		"micromark": "^4.0.2",
+		"micromark-extension-gfm-footnote": "^2.1.0",
+		"micromark-extension-gfm-table": "^2.1.1",
+		"parse5": "^8.0.1",
 		"tinyglobby": "^0.2.15",
+		"unist-util-visit-parents": "^6.0.2",
 		"zx": "8.8.5-lite"
 	},
 	"devDependencies": {
 		"@types/node": "^25.5.0",
+		"@types/unist": "^3.0.3",
 		"clean-pkg-json": "^1.4.1",
 		"fs-fixture": "^2.12.0",
 		"lintroll": "^1.30.0",
