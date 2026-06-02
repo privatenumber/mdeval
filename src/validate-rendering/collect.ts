@@ -75,11 +75,6 @@ const findContentStart = (
 	return range.startOffset;
 };
 
-// For each value opening, compute its rendered position by walking the
-// (decoded) value from the content-start position. This is uniformly
-// correct across literal markers, entity-decoded markers, mixed orderings,
-// and multi-line content, without trying to align source bytes against
-// value bytes (which is impossible without entity-aware decoding).
 export const collectTextNodeLeaks = (
 	source: string,
 	point: Point,
@@ -100,6 +95,37 @@ export const collectTextNodeLeaks = (
 	}
 	const range = positionRange(node, ancestors);
 	const contentOffset = findContentStart(source, range, kind);
+
+	// Code constructs (inline, fenced, indented) are verbatim source — no
+	// entity decoding or escape processing — so each marker exists literally
+	// in the source byte range. Scanning the source gives EXACT line:col,
+	// crucially for multi-line spans: inline code normalizes newlines to
+	// spaces in the rendered `value`, so value-walking would undercount
+	// lines. We only trust source-scan when its count matches the value's
+	// (a mismatch means our content-start guess was off — fall back).
+	if (
+		(kind === 'inline code' || kind === 'code block')
+		&& contentOffset !== undefined
+		&& range.endOffset !== undefined
+	) {
+		const sourceOpenings = findMarkerOpenings(source, contentOffset, range.endOffset);
+		if (sourceOpenings.length === valueOpenings.length) {
+			return sourceOpenings.map((offset) => {
+				const { line, column } = point(offset);
+				return {
+					kind,
+					line,
+					column,
+					offset,
+				};
+			});
+		}
+	}
+
+	// Plain text (and the rare code-construct fallback): the value may differ
+	// from source (entity decoding, escapes), so walk the decoded value from
+	// the content-start position. Uniformly correct across literal markers,
+	// entity-decoded markers, and mixed orderings.
 	const contentStart = contentOffset === undefined
 		? {
 			line: range.startLine ?? 1,

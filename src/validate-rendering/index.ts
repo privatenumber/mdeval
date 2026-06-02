@@ -1,6 +1,8 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfmFootnote } from 'micromark-extension-gfm-footnote';
 import { gfmFootnoteFromMarkdown } from 'mdast-util-gfm-footnote';
+import { gfmTable } from 'micromark-extension-gfm-table';
+import { gfmTableFromMarkdown } from 'mdast-util-gfm-table';
 import { toHast } from 'mdast-util-to-hast';
 import { visitParents } from 'unist-util-visit-parents';
 import type { Node } from 'unist';
@@ -42,15 +44,19 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	const newlines = buildLineIndex(source);
 	const point: Point = offset => offsetToLineColumn(newlines, offset);
 
-	// Only the GFM footnote sub-extension is enabled. mdeval's leak detection
-	// doesn't care about tables, strikethrough, autolinks, or task lists —
-	// those constructs don't change which markers appear visible. Footnotes
-	// matter because `mdast-util-to-hast` needs to drop unreferenced and
-	// duplicate footnote bodies from the rendered hast. The full GFM bundle
-	// is ~50% more parse cost than just this one piece.
+	// Two GFM sub-extensions, not the full bundle (which is ~50% more parse
+	// cost):
+	// - footnote: `mdast-util-to-hast` needs it to drop unreferenced and
+	//   duplicate footnote bodies from the rendered hast.
+	// - table: `|` is a cell separator that changes inline-code boundaries.
+	//   Without table parsing, backticks in adjacent cells can pair into a
+	//   phantom code span across the `|`, falsely capturing a marker that
+	//   GitHub would parse cell-locally and strip as a comment.
+	// Strikethrough, autolinks, and task lists are omitted: they don't move
+	// a marker between node types, so they can't change leak detection.
 	const mdast = fromMarkdown(source, {
-		extensions: [gfmFootnote()],
-		mdastExtensions: [gfmFootnoteFromMarkdown()],
+		extensions: [gfmFootnote(), gfmTable()],
+		mdastExtensions: [gfmFootnoteFromMarkdown(), gfmTableFromMarkdown()],
 	});
 	const leaks: RenderedLeak[] = [];
 

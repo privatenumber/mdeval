@@ -23,6 +23,9 @@ importers:
       mdast-util-gfm-footnote:
         specifier: ^2.1.0
         version: 2.1.0
+      mdast-util-gfm-table:
+        specifier: ^2.0.0
+        version: 2.0.0
       mdast-util-to-hast:
         specifier: ^13.2.1
         version: 13.2.1
@@ -32,6 +35,9 @@ importers:
       micromark-extension-gfm-footnote:
         specifier: ^2.1.0
         version: 2.1.0
+      micromark-extension-gfm-table:
+        specifier: ^2.1.1
+        version: 2.1.1
       parse5:
         specifier: ^8.0.1
         version: 8.0.1

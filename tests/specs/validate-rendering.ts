@@ -380,6 +380,37 @@ describe('validate-rendering', () => {
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
 
+	test('backticks in adjacent table cells do not form a phantom code span', () => {
+		// GFM parses cells separately, so a lone backtick in one cell and a
+		// marker-then-backtick in the next are NOT a single inline-code
+		// span. The marker is a comment in its own cell and is stripped.
+		// Without table parsing, the `|` would be swallowed into a phantom
+		// span and the marker falsely flagged.
+		const source = '| h1 | h2 |\n|---|---|\n| ` | <!--mdeval x-->old<!--/mdeval-->` |';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
+	test('marker in a real table cell code span is still flagged', () => {
+		// Sanity: table parsing doesn't suppress genuine leaks. A marker
+		// inside inline code within a single cell still leaks.
+		const source = '| h1 | h2 |\n|---|---|\n| a | `<!--mdeval x-->old<!--/mdeval-->` |';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('inline code');
+		expect(leaks[0].line).toBe(3);
+	});
+
+	test('marker on a later line of a multi-line inline code span reports the marker line', () => {
+		// Inline code normalizes source newlines to spaces in the rendered
+		// value, so position must come from the source, not the value. The
+		// marker is on source line 2.
+		const source = '`foo\nbar <!--mdeval x-->old<!--/mdeval-->`';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('inline code');
+		expect(leaks[0].line).toBe(2);
+	});
+
 	test('marker in href/src/class/data attributes are all flagged', () => {
 		// The leak rule is "didn't become a comment", not "is visible to a
 		// reader". A marker in any attribute is stranded literal text:
