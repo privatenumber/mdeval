@@ -14,21 +14,13 @@ const isMarkerOpening = (text: string, position: number): boolean => {
 	return after === '\r' && text[position + COMMENT_TAG.length + 1] === '\n';
 };
 
-// Scan `text` for visible mdeval delimiters within the optional `[start, end)`
-// range, returning the `<` offset of each leak.
-//
-// Both the opening (`<!--mdeval ...-->`) and closing (`<!--/mdeval-->`)
-// delimiters are mdeval syntax; either one rendered as non-comment text is a
-// leak. But a fully-leaked marker (e.g. inside a code span) has BOTH
-// delimiters visible in the same string, and we don't want to warn twice for
-// it. So we balance them: every opening is reported, and a closing is
-// reported only when it has no matching opening earlier in the same string.
-//
-// - `<!--mdeval x-->v<!--/mdeval-->` in one code span → 1 leak (the opening;
-//   the closing is matched).
-// - A lone `<!--/mdeval-->` whose opening rendered as a stripped comment
-//   elsewhere → 1 leak (the unmatched closing). This is the case backtick
-//   pairing can create.
+// Scan `text` for visible mdeval delimiters within `[start, end)`, returning
+// the `<` offset of each leak. Both the opening (`<!--mdeval ...-->`) and the
+// closing (`<!--/mdeval-->`) are mdeval syntax, so either rendered as
+// non-comment text leaks. To avoid double-counting a fully-leaked marker
+// (both delimiters in one string), we balance them: report every opening, but
+// a closing only when it has no matching opening earlier in the string (e.g.
+// a lone closing whose opening rendered as a stripped comment elsewhere).
 export const findMarkerLeaks = (
 	text: string,
 	start = 0,

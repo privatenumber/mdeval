@@ -2,26 +2,17 @@ import { parseFragment } from 'parse5';
 import { findMarkerLeaks } from './marker.ts';
 import { advanceByValue, type Point } from './line-index.ts';
 
-// Raw HTML scanning via parse5. parse5 is the WHATWG-spec HTML parser, so
-// it handles attribute value extraction, entity decoding (named `&lt;`,
-// hex `&#x3C;`, decimal `&#60;`, semicolonless legacy `&lt`), and the
-// distinction between comments and text content correctly. With
-// `sourceCodeLocationInfo: true` it preserves source positions on every
-// node and attribute, so we can point the user at the right line.
+// Raw HTML scanning via parse5 (the WHATWG-spec parser): it decodes entities
+// (`&lt;`, `&#x3C;`, `&#60;`, semicolonless `&lt`), distinguishes comments
+// from text, and with `sourceCodeLocationInfo` keeps source positions.
 //
-// The leak rule: a marker that does NOT become an HTML comment is a leak.
-// Inside raw HTML there are exactly two non-comment positions a marker can
-// land in — text content and attribute values — and we flag both:
-//
-// - Text content: parse5 gives `#comment` nodes for real `<!--...-->`
-//   comments and `#text` nodes for everything else, so scanning `#text`
-//   automatically skips legitimate comments.
-// - Attribute values: `<!--` is never comment syntax inside an attribute,
-//   so a marker there is always literal. We scan EVERY attribute, not an
-//   allowlist — `href`/`src` markers break the link/image, `class`/`data-*`
-//   markers pollute the value, `alt`/`title` markers show as text. There's
-//   no attribute where a stranded `<!--mdeval ...-->` is intended, and
-//   mdeval's delimiters are permanent, so this never false-positives.
+// A marker that doesn't become an HTML comment leaks. Inside raw HTML it can
+// only land in two non-comment places, and we flag both:
+// - Text content: parse5 emits `#comment` for real comments and `#text` for
+//   everything else, so scanning `#text` skips legitimate comments for free.
+// - Attribute values: `<!--` is never comment syntax in an attribute, so a
+//   marker there is always literal. We scan every attribute — there's no
+//   attribute where a stranded `<!--mdeval ...-->` is intended.
 type Parse5Node = {
 	nodeName: string;
 	tagName?: string;

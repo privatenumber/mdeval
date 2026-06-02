@@ -30,10 +30,8 @@ const textNodeLeaks = (
 };
 
 // `raw` nodes are unparsed HTML strings (kept verbatim by `toHast` with
-// `allowDangerousHtml`, with source positions). parse5 finds markers in their
-// attribute values and text content. Only raw nodes that survive into the
-// rendered tree reach us — unreferenced/duplicate footnote bodies are already
-// pruned by `toHast`.
+// `allowDangerousHtml`, with positions). parse5 finds markers in their
+// attribute values and text content.
 const rawNodeLeaks = (body: string, point: Point, node: WalkNode): RenderedLeak[] => {
 	if (node.type !== 'raw' || typeof node.value !== 'string') {
 		return [];
@@ -49,11 +47,10 @@ const rawNodeLeaks = (body: string, point: Point, node: WalkNode): RenderedLeak[
 	}));
 };
 
-// `element` nodes from markdown can only carry a marker in `alt` or `title`.
-// A marker in a link/image DESTINATION breaks parsing and becomes a comment
-// node rather than reaching `href`/`src`. Raw HTML (where a marker can land
-// in any attribute) arrives as a `raw` node, handled above — so this short
-// allowlist is complete, not a deviation from the "any attribute" rule.
+// Markdown `element` nodes can only carry a marker in `alt` or `title` — a
+// marker in a link/image destination breaks parsing and becomes a comment.
+// Raw HTML (any attribute) arrives as a `raw` node, handled above, so this
+// short allowlist is complete.
 const elementAttributeLeaks = (point: Point, node: WalkNode): RenderedLeak[] => {
 	if (node.type !== 'element' || !node.properties) {
 		return [];
@@ -69,26 +66,22 @@ const elementAttributeLeaks = (point: Point, node: WalkNode): RenderedLeak[] => 
 	return leaks;
 };
 
-// Find every `<!--mdeval` delimiter that ends up visible to a reader on
-// GitHub.
+// Find every `<!--mdeval` delimiter visible to a reader on GitHub.
 //
 // The rule: a marker that does NOT become an HTML comment node is a leak.
 // Well-placed markers in prose parse as comments and GitHub strips them; a
-// marker that lands in code, an attribute value, or escaped/entity text
-// survives as visible syntax.
+// marker in code, an attribute value, or escaped/entity text survives as
+// visible syntax.
 //
-// `mdast-util-to-hast` does the rendering work that would otherwise be
-// special-cased per node type: resolves link/image references against
-// definitions, drops unused/duplicate definitions and unreferenced footnote
-// bodies, routes fenced-code info strings to `className`, and distinguishes
-// comment nodes from text. We then walk the rendered hast once and sum the
-// per-node-type leaks.
+// `toHast` does the rendering work for us: resolves references, drops
+// unused/duplicate definitions and unreferenced footnotes, routes fenced-code
+// info strings to `className`, and marks comment nodes. We walk the hast once
+// and sum the per-node-type leaks.
 export const findRenderedLeaks = (source: string): RenderedLeak[] => {
-	// Fast-path: skip parsing files with no marker. The token is the bare
-	// word `mdeval`, NOT `<!--mdeval` — the `<` can be entity-encoded
-	// (`&lt;`, `&#60;`, ...) and the closing delimiter is `<!--/mdeval-->`
-	// (note the slash). `mdeval` is the only substring common to every form;
-	// tightening it would drop entity-encoded and lone-closing leaks.
+	// Fast-path: skip parsing markerless files. The token is the bare word
+	// `mdeval`, not `<!--mdeval` — the `<` can be entity-encoded and the
+	// closing is `<!--/mdeval-->`; `mdeval` is the only substring common to
+	// every form, so tightening it would miss entity-encoded/lone-closing leaks.
 	if (!source.includes('mdeval')) {
 		return [];
 	}
@@ -101,16 +94,12 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	const newlines = buildLineIndex(body);
 	const point: Point = offset => offsetToLineColumn(newlines, offset);
 
-	// Two GFM sub-extensions, not the full bundle (which is ~50% more parse
-	// cost):
-	// - footnote: `mdast-util-to-hast` needs it to drop unreferenced and
-	//   duplicate footnote bodies from the rendered hast.
-	// - table: `|` is a cell separator that changes inline-code boundaries.
-	//   Without table parsing, backticks in adjacent cells can pair into a
-	//   phantom code span across the `|`, falsely capturing a marker that
-	//   GitHub would parse cell-locally and strip as a comment.
-	// Strikethrough, autolinks, and task lists are omitted: they don't move
-	// a marker between node types, so they can't change leak detection.
+	// Two GFM sub-extensions, not the full bundle (~50% more parse cost):
+	// - footnote: lets `toHast` drop unreferenced/duplicate footnote bodies.
+	// - table: without it, backticks in adjacent cells can pair into a phantom
+	//   code span across the `|`, falsely capturing a marker GitHub would parse
+	//   cell-locally and strip. Other GFM features can't move a marker between
+	//   node types, so they don't affect detection.
 	const mdast = fromMarkdown(body, {
 		extensions: [gfmFootnote(), gfmTable()],
 		mdastExtensions: [gfmFootnoteFromMarkdown(), gfmTableFromMarkdown()],

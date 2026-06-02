@@ -28,8 +28,7 @@ const rangeOf = (node: WalkNode): PositionRange | undefined => {
 };
 
 // The node's own position is best; fall back to the nearest positioned
-// ancestor (hast text nodes inside fenced code lose their position during
-// conversion). Walks ancestors from innermost out without allocating.
+// ancestor. Walks ancestors innermost-out without allocating.
 const positionRange = (node: WalkNode, ancestors: readonly Node[]): PositionRange => {
 	const own = rangeOf(node);
 	if (own) {
@@ -44,13 +43,9 @@ const positionRange = (node: WalkNode, ancestors: readonly Node[]): PositionRang
 	return {};
 };
 
-// The text-node `value` is what the renderer will show. The node's source
-// range from the ancestor element often covers MORE than the rendered text
-// (a fenced-code `<code>` range includes the opening/closing fences and the
-// info-string line; an inline-code range includes the surrounding backticks;
-// an indented-code range starts at the indent characters). To map a value
-// offset back to a real source line/column, we need to find the source
-// offset where the rendered content actually starts.
+// The text-node `value` is what renders, but its source range (from an
+// ancestor element) often covers more — fence lines, surrounding backticks,
+// indent. Find the source offset where the rendered content actually starts.
 const findContentStart = (
 	source: string,
 	range: PositionRange,
@@ -60,11 +55,9 @@ const findContentStart = (
 		return undefined;
 	}
 	if (kind === 'code block') {
-		// Fenced code blocks start with a fence line (` ``` ` or `~~~`,
-		// possibly with an info string). The body content begins after
-		// the first newline. Indented code blocks have no fence — the
-		// indent characters are part of the rendered content range, but
-		// the text-node value has them stripped, so we skip them too.
+		// Fenced blocks open with a fence line (plus optional info string);
+		// the body starts after the first newline. Indented blocks have no
+		// fence, but their indent is stripped from the value, so skip it too.
 		const firstChar = source[range.startOffset];
 		if (firstChar === ' ' || firstChar === '\t') {
 			let cursor = range.startOffset;
@@ -162,15 +155,12 @@ export const collectTextNodeLeaks = (
 	const range = positionRange(node, ancestors);
 	const contentOffset = findContentStart(source, range, kind);
 
-	// Prefer exact source positions: scan the source content range for the
-	// same markers. When the count matches the rendered value's, each marker
-	// is literal in source (code spans are verbatim; backslash-escaped text
-	// keeps a literal `<!--mdeval`), so `point()` gives an exact line:col —
-	// including correct lines for multi-line spans, where inline code
-	// normalizes newlines to spaces in `value` and value-walking would
-	// undercount. A count mismatch means the value diverged from source
-	// (entity decoding like `&lt;!--mdeval`, or mixed escaped/decoded
-	// orderings) — fall back to walking the decoded value.
+	// Prefer exact source positions: scan the source range for the same
+	// markers. When the count matches the value's, each marker is literal in
+	// source (code spans are verbatim; `\<!--mdeval` keeps a literal `<`), so
+	// `point()` gives an exact line:col — including correct lines for
+	// multi-line inline code, whose `value` normalizes newlines to spaces. A
+	// mismatch means the value diverged (entity decoding) — walk the value.
 	if (contentOffset !== undefined && range.endOffset !== undefined) {
 		const sourceLeaks = findMarkerLeaks(source, contentOffset, range.endOffset);
 		if (sourceLeaks.length === valueLeaks.length) {

@@ -41,11 +41,10 @@ export const offsetToLineColumn = (
 	};
 };
 
-// Advance a starting (line, column) by walking `length` chars of `value`,
-// resetting column on every newline. For an entity-decoded marker at value
-// offset N inside a multi-line text node, this gives the marker's real
-// (line, column) when source-byte lookup can't (the source has `&lt;` etc
-// instead of a literal `<`, so the offset doesn't map back).
+// Advance a (line, column) by walking `length` chars of `value`, resetting
+// column on each newline. Used when source-byte lookup can't map a marker —
+// e.g. an entity-decoded `&lt;!--mdeval` whose `value` offset has no literal
+// `<` in source.
 export const advanceByValue = (
 	startLine: number,
 	startColumn: number,
