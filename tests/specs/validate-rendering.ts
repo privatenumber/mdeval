@@ -210,12 +210,14 @@ describe('validate-rendering', () => {
 		expect(columns[0]).toBeLessThan(columns[1]);
 	});
 
-	test('marker in raw HTML alt attribute on a non-image element is not flagged', () => {
-		// `alt` is only visible on `<img>` (and `<area>`/`<input>`). On a
-		// `<span>` or `<div>`, it's a no-op — markers inside don't render
-		// to readers and shouldn't warn.
+	test('marker in a raw HTML attribute on any element is flagged', () => {
+		// A marker in an attribute value can never become an HTML comment
+		// (`<!--` isn't comment syntax inside an attribute), so it's always
+		// a leak — regardless of tag or whether the attribute is visible.
 		const source = '<span alt="<!--mdeval x-->old<!--/mdeval-->">text</span>';
-		expect(findRenderedLeaks(source)).toStrictEqual([]);
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('raw html');
 	});
 
 	test('text node with both source-visible and decoded openers reports both at correct columns', () => {
@@ -378,13 +380,22 @@ describe('validate-rendering', () => {
 		expect(findRenderedLeaks(source)).toStrictEqual([]);
 	});
 
-	test('marker in a non-visible raw HTML attribute (e.g. class) is not flagged', () => {
-		// `class`, `data-*`, `href`, `src` etc are not visible as text to
-		// readers, so markers inside them aren't leaks. Only `alt` and
-		// `title` show up in the rendered output (alt fallback / screen
-		// readers; title tooltips).
-		const source = '<span class="<!--mdeval x-->old<!--/mdeval-->">text</span>';
-		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	test('marker in href/src/class/data attributes are all flagged', () => {
+		// The leak rule is "didn't become a comment", not "is visible to a
+		// reader". A marker in any attribute is stranded literal text:
+		// `href`/`src` break the link/image, `class`/`data-*` pollute the
+		// value. All leak.
+		const sources = [
+			'<a href="<!--mdeval url-->https://example.com<!--/mdeval-->">link</a>',
+			'<img src="<!--mdeval path-->x.png<!--/mdeval-->">',
+			'<span class="<!--mdeval x-->old<!--/mdeval-->">text</span>',
+			'<div data-value="<!--mdeval x-->old<!--/mdeval-->">text</div>',
+		];
+		for (const source of sources) {
+			const leaks = findRenderedLeaks(source);
+			expect(leaks).toHaveLength(1);
+			expect(leaks[0].kind).toBe('raw html');
+		}
 	});
 
 	test('entity-encoded marker on a later line of markdown paragraph reports the marker line', () => {

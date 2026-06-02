@@ -87,6 +87,13 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		if (walkable.type !== 'element' || !walkable.properties) {
 			return;
 		}
+		// Markdown-derived elements can only carry a marker in `alt` or
+		// `title`. A marker in a link/image DESTINATION breaks parsing and
+		// becomes a comment node instead of reaching `href`/`src` (so it's
+		// not a leak). Raw HTML — where a marker can land in any attribute
+		// (`href`, `src`, `class`, ...) — is a `raw` node handled above via
+		// parse5, not here. So this short allowlist is complete, not a
+		// deviation from the "any attribute leaks" rule.
 		for (const attribute of ['alt', 'title']) {
 			const value = walkable.properties[attribute];
 			if (typeof value === 'string') {
