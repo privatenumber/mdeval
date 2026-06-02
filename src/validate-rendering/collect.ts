@@ -1,7 +1,7 @@
 import type { Node } from 'unist';
 import type { LeakKind, RenderedLeak, WalkNode } from './types.ts';
 import { type Point, advanceByValue } from './line-index.ts';
-import { findMarkerOpenings } from './marker.ts';
+import { findMarkerLeaks } from './marker.ts';
 
 // Hast text nodes inside fenced code lose position info during conversion,
 // so we walk ancestors to find the nearest element with a position to use
@@ -84,13 +84,13 @@ export const collectTextNodeLeaks = (
 ): RenderedLeak[] => {
 	const value = node.value ?? '';
 	// Most text nodes don't contain marker text. A cheap substring check
-	// short-circuits before the heavier `findMarkerOpenings` scan + the
+	// short-circuits before the heavier `findMarkerLeaks` scan + the
 	// position math.
 	if (!value.includes('mdeval')) {
 		return [];
 	}
-	const valueOpenings = findMarkerOpenings(value);
-	if (valueOpenings.length === 0) {
+	const valueLeaks = findMarkerLeaks(value);
+	if (valueLeaks.length === 0) {
 		return [];
 	}
 	const range = positionRange(node, ancestors);
@@ -108,9 +108,9 @@ export const collectTextNodeLeaks = (
 		&& contentOffset !== undefined
 		&& range.endOffset !== undefined
 	) {
-		const sourceOpenings = findMarkerOpenings(source, contentOffset, range.endOffset);
-		if (sourceOpenings.length === valueOpenings.length) {
-			return sourceOpenings.map((offset) => {
+		const sourceLeaks = findMarkerLeaks(source, contentOffset, range.endOffset);
+		if (sourceLeaks.length === valueLeaks.length) {
+			return sourceLeaks.map((offset) => {
 				const { line, column } = point(offset);
 				return {
 					kind,
@@ -133,7 +133,7 @@ export const collectTextNodeLeaks = (
 		}
 		: point(contentOffset);
 	const reportedOffset = contentOffset ?? -1;
-	return valueOpenings.map((valueOffset) => {
+	return valueLeaks.map((valueOffset) => {
 		const { line, column } = advanceByValue(
 			contentStart.line,
 			contentStart.column,
@@ -161,8 +161,8 @@ export const collectAttributeLeaks = (
 	if (!value.includes('mdeval')) {
 		return [];
 	}
-	const openings = findMarkerOpenings(value);
-	if (openings.length === 0) {
+	const leakOffsets = findMarkerLeaks(value);
+	if (leakOffsets.length === 0) {
 		return [];
 	}
 	const offset = node.position?.start.offset ?? -1;
@@ -172,7 +172,7 @@ export const collectAttributeLeaks = (
 			column: node.position?.start.column ?? 1,
 		}
 		: point(offset);
-	return openings.map(() => ({
+	return leakOffsets.map(() => ({
 		kind,
 		line,
 		column,

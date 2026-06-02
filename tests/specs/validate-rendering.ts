@@ -98,12 +98,22 @@ describe('validate-rendering', () => {
 		expect(leaks[0].line).toBe(2);
 	});
 
-	test('closing tag alone is not counted as a leak', () => {
-		// Only the opening `<!--mdeval` prefix counts. A stray closing tag
-		// is malformed and would have been caught by parse-markdown earlier;
-		// we don't double-warn.
+	test('a lone closing delimiter visible in code is a leak', () => {
+		// Both delimiters are mdeval syntax; either one rendered as
+		// non-comment text leaks. A closing tag stranded inside inline code
+		// (no matching opening in the same span) shows `<!--/mdeval-->`
+		// verbatim to the reader.
 		const source = '`<!--/mdeval-->`';
-		expect(findRenderedLeaks(source)).toStrictEqual([]);
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('inline code');
+	});
+
+	test('a fully-leaked marker (both delimiters in one code span) warns once', () => {
+		// Open + close in the same span: the opening is reported and the
+		// closing is matched to it, so we don't double-warn for one marker.
+		const source = '`<!--mdeval x-->old<!--/mdeval-->`';
+		expect(findRenderedLeaks(source)).toHaveLength(1);
 	});
 
 	test('source positions point at the construct containing the marker', () => {
@@ -398,6 +408,17 @@ describe('validate-rendering', () => {
 		expect(leaks).toHaveLength(1);
 		expect(leaks[0].kind).toBe('inline code');
 		expect(leaks[0].line).toBe(3);
+	});
+
+	test('closing delimiter leaks into a code span while its opening stays a comment', () => {
+		// A value ending in a backtick pairs with a later backtick: the
+		// opening `<!--mdeval x-->` renders as a (stripped) HTML comment,
+		// but `<!--/mdeval-->` lands inside the resulting inline-code span
+		// and shows verbatim. The closing alone must be flagged.
+		const source = 'Text <!--mdeval x-->a`<!--/mdeval--> b `c`';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('inline code');
 	});
 
 	test('marker on a later line of a multi-line inline code span reports the marker line', () => {

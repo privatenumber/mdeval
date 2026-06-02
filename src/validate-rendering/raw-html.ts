@@ -1,5 +1,5 @@
 import { parseFragment } from 'parse5';
-import { findMarkerOpenings } from './marker.ts';
+import { findMarkerLeaks } from './marker.ts';
 import { advanceByValue, type Point } from './line-index.ts';
 
 // Raw HTML scanning via parse5. parse5 is the WHATWG-spec HTML parser, so
@@ -64,7 +64,7 @@ export const findRawHtmlLeaks = (
 				const attributeOffset = rangeStart + location.startOffset;
 				// Attribute values don't have per-character source
 				// positions; best-effort pointer is the attribute's start.
-				for (const _ of findMarkerOpenings(attribute.value)) {
+				for (const _ of findMarkerLeaks(attribute.value)) {
 					const { line, column } = point(attributeOffset);
 					leaks.push({
 						line,
@@ -79,13 +79,13 @@ export const findRawHtmlLeaks = (
 			&& typeof node.value === 'string'
 			&& node.sourceCodeLocation?.startOffset !== undefined
 		) {
-			const valueOpenings = findMarkerOpenings(node.value);
-			if (valueOpenings.length === 0) {
+			const valueLeaks = findMarkerLeaks(node.value);
+			if (valueLeaks.length === 0) {
 				return;
 			}
 			const textStartOffset = rangeStart + node.sourceCodeLocation.startOffset;
 			const textStart = point(textStartOffset);
-			for (const valueOffset of valueOpenings) {
+			for (const valueOffset of valueLeaks) {
 				const { line, column } = advanceByValue(
 					textStart.line,
 					textStart.column,
