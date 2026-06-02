@@ -432,6 +432,17 @@ describe('validate-rendering', () => {
 		expect(leaks[0].line).toBe(2);
 	});
 
+	test('raw HTML leak in a BOM-prefixed file is still flagged at the right place', () => {
+		// micromark strips a leading BOM and reports positions against the
+		// stripped stream. The validator must account for that, or the
+		// source slice is off by one and parse5 fails to recover the tag.
+		const source = '\uFEFF<img alt="<!--mdeval x-->old<!--/mdeval-->">';
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(1);
+		expect(leaks[0].kind).toBe('raw html');
+		expect(leaks[0].line).toBe(1);
+	});
+
 	test('marker in href/src/class/data attributes are all flagged', () => {
 		// The leak rule is "didn't become a comment", not "is visible to a
 		// reader". A marker in any attribute is stranded literal text:

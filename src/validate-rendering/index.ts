@@ -41,7 +41,12 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		return [];
 	}
 
-	const newlines = buildLineIndex(source);
+	// micromark (and thus mdast/hast) positions are relative to the
+	// BOM-stripped stream. Strip a leading BOM so the source we slice, the
+	// line index, and every reported offset all share one coordinate space.
+	const body = source.codePointAt(0) === 0xFE_FF ? source.slice(1) : source;
+
+	const newlines = buildLineIndex(body);
 	const point: Point = offset => offsetToLineColumn(newlines, offset);
 
 	// Two GFM sub-extensions, not the full bundle (which is ~50% more parse
@@ -54,7 +59,7 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	//   GitHub would parse cell-locally and strip as a comment.
 	// Strikethrough, autolinks, and task lists are omitted: they don't move
 	// a marker between node types, so they can't change leak detection.
-	const mdast = fromMarkdown(source, {
+	const mdast = fromMarkdown(body, {
 		extensions: [gfmFootnote(), gfmTable()],
 		mdastExtensions: [gfmFootnoteFromMarkdown(), gfmTableFromMarkdown()],
 	});
@@ -73,7 +78,7 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		const walkable = node as WalkNode;
 		if (walkable.type === 'text' && typeof walkable.value === 'string') {
 			const kind = classifyTextLeak(ancestors);
-			leaks.push(...collectTextNodeLeaks(source, point, walkable, ancestors, kind));
+			leaks.push(...collectTextNodeLeaks(body, point, walkable, ancestors, kind));
 			return;
 		}
 		if (walkable.type === 'raw' && typeof walkable.value === 'string') {
@@ -82,7 +87,7 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 			if (start === undefined || end === undefined) {
 				return;
 			}
-			for (const leak of findRawHtmlLeaks(source, start, end, point)) {
+			for (const leak of findRawHtmlLeaks(body, start, end, point)) {
 				leaks.push({
 					kind: 'raw html',
 					...leak,
