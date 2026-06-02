@@ -1,6 +1,6 @@
 import type { Node } from 'unist';
 import type { LeakKind, RenderedLeak, WalkNode } from './types.ts';
-import { type Point, advanceByValue } from './line-index.ts';
+import { type Point, type Position, advanceByValue } from './line-index.ts';
 import { findMarkerLeaks } from './marker.ts';
 
 // Hast text nodes inside fenced code lose position info during conversion,
@@ -89,6 +89,57 @@ const findContentStart = (
 	return range.startOffset;
 };
 
+// Source-scan strategy: each offset is a real source-byte position, so
+// `point()` resolves it to an exact line:column.
+const mapOffsetsToLeaks = (
+	offsets: readonly number[],
+	point: Point,
+	kind: LeakKind,
+): RenderedLeak[] => offsets.map((offset) => {
+	const { line, column } = point(offset);
+	return {
+		kind,
+		line,
+		column,
+	};
+});
+
+// Where the rendered content begins, as a (line, column). Falls back to the
+// node's own start when there's no usable content offset (position-less nodes).
+const resolveContentStart = (
+	range: PositionRange,
+	contentOffset: number | undefined,
+	point: Point,
+): Position => (
+	contentOffset === undefined
+		? {
+			line: range.startLine ?? 1,
+			column: range.startColumn ?? 1,
+		}
+		: point(contentOffset)
+);
+
+// Value-walk strategy: the decoded value is what renders, but it has no
+// per-character source map, so walk it from the content start.
+const valueWalkLeaks = (
+	value: string,
+	valueLeaks: readonly number[],
+	contentStart: Position,
+	kind: LeakKind,
+): RenderedLeak[] => valueLeaks.map((valueOffset) => {
+	const { line, column } = advanceByValue(
+		contentStart.line,
+		contentStart.column,
+		value,
+		valueOffset,
+	);
+	return {
+		kind,
+		line,
+		column,
+	};
+});
+
 export const collectTextNodeLeaks = (
 	source: string,
 	point: Point,
@@ -123,42 +174,15 @@ export const collectTextNodeLeaks = (
 	if (contentOffset !== undefined && range.endOffset !== undefined) {
 		const sourceLeaks = findMarkerLeaks(source, contentOffset, range.endOffset);
 		if (sourceLeaks.length === valueLeaks.length) {
-			return sourceLeaks.map((offset) => {
-				const { line, column } = point(offset);
-				return {
-					kind,
-					line,
-					column,
-					offset,
-				};
-			});
+			return mapOffsetsToLeaks(sourceLeaks, point, kind);
 		}
 	}
 
 	// Fallback: walk the decoded value from the content-start position.
 	// Uniformly correct across entity-decoded markers and mixed orderings,
 	// at the cost of approximate columns.
-	const contentStart = contentOffset === undefined
-		? {
-			line: range.startLine ?? 1,
-			column: range.startColumn ?? 1,
-		}
-		: point(contentOffset);
-	const reportedOffset = contentOffset ?? -1;
-	return valueLeaks.map((valueOffset) => {
-		const { line, column } = advanceByValue(
-			contentStart.line,
-			contentStart.column,
-			value,
-			valueOffset,
-		);
-		return {
-			kind,
-			line,
-			column,
-			offset: reportedOffset,
-		};
-	});
+	const contentStart = resolveContentStart(range, contentOffset, point);
+	return valueWalkLeaks(value, valueLeaks, contentStart, kind);
 };
 
 // Attribute values come from the rendering pipeline already decoded, and
@@ -189,6 +213,5 @@ export const collectAttributeLeaks = (
 		kind,
 		line,
 		column,
-		offset,
 	}));
 };

@@ -13,7 +13,6 @@ export type RenderedLeak = {
 	kind: LeakKind;
 	line: number;
 	column: number;
-	offset: number;
 };
 
 // Structural type covering both mdast and hast nodes. Fields that exist on

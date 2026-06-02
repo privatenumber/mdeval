@@ -39,7 +39,6 @@ type Parse5Node = {
 type RawHtmlLeakPosition = {
 	line: number;
 	column: number;
-	offset: number;
 };
 
 // Markers in attribute values. Attribute values have no per-character source
@@ -64,7 +63,6 @@ const attributeLeaks = (
 			leaks.push({
 				line,
 				column,
-				offset,
 			});
 		}
 	}
@@ -95,7 +93,6 @@ const textLeaks = (
 		return {
 			line,
 			column,
-			offset: textStartOffset,
 		};
 	});
 };
