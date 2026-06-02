@@ -271,7 +271,7 @@ pre-commit:
       glob: ["*.md", "**/*.md"]
       run: |
         files=$(npx mdeval "**/*.md")
-        [ -n "$files" ] && git add $files
+        [ -z "$files" ] || git add $files
 ```
 
 `glob` makes the hook a no-op when no Markdown files are staged. mdeval prints the path of each file it rewrites to stdout, so `git add $files` re-stages only the files it actually updated. Note: `$files` relies on shell word-splitting, so this assumes `.md` paths without spaces.
