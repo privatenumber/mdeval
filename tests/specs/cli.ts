@@ -260,22 +260,6 @@ describe('cli', () => {
 		expect(result.stderr).toContain('leaks into rendered code block');
 	});
 
-	test('warns when a marker leaks into inline code', async () => {
-		await using fixture = await createFixture({
-			'test.md': '# Title\n\n`<!--mdeval x-->old<!--/mdeval-->`',
-		});
-		const result = await mdeval([fixture.getPath('test.md')]);
-		expect(result.stderr).toContain('leaks into rendered inline code');
-	});
-
-	test('warns when a marker leaks into a fenced code block', async () => {
-		await using fixture = await createFixture({
-			'test.md': '# Title\n\n```\n<!--mdeval x-->old<!--/mdeval-->\n```',
-		});
-		const result = await mdeval([fixture.getPath('test.md')]);
-		expect(result.stderr).toContain('leaks into rendered code block');
-	});
-
 	test('does not warn when markers are outside any code construct', async () => {
 		await using fixture = await createFixture({
 			'test.md': '# Title\n\n<!--mdeval\nconst x = 42;\n-->\n\nValue: <!--mdeval x-->old<!--/mdeval-->',
