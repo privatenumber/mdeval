@@ -42,6 +42,64 @@ type RawHtmlLeakPosition = {
 	offset: number;
 };
 
+// Markers in attribute values. Attribute values have no per-character source
+// positions, so the best-effort pointer is the attribute's start offset.
+const attributeLeaks = (
+	node: Parse5Node,
+	rangeStart: number,
+	point: Point,
+): RawHtmlLeakPosition[] => {
+	if (!node.attrs || !node.sourceCodeLocation?.attrs) {
+		return [];
+	}
+	const leaks: RawHtmlLeakPosition[] = [];
+	for (const attribute of node.attrs) {
+		const location = node.sourceCodeLocation.attrs[attribute.name];
+		if (!location) {
+			continue;
+		}
+		const offset = rangeStart + location.startOffset;
+		const { line, column } = point(offset);
+		for (const _ of findMarkerLeaks(attribute.value)) {
+			leaks.push({
+				line,
+				column,
+				offset,
+			});
+		}
+	}
+	return leaks;
+};
+
+// Markers in text content. parse5 emits `#comment` for real comments and
+// `#text` for everything else, so legitimate comments are skipped for free.
+// The text value is already entity-decoded, so positions come from walking
+// the value (see `advanceByValue`).
+const textLeaks = (
+	node: Parse5Node,
+	rangeStart: number,
+	point: Point,
+): RawHtmlLeakPosition[] => {
+	const { value } = node;
+	if (
+		node.nodeName !== '#text'
+		|| typeof value !== 'string'
+		|| node.sourceCodeLocation?.startOffset === undefined
+	) {
+		return [];
+	}
+	const textStartOffset = rangeStart + node.sourceCodeLocation.startOffset;
+	const textStart = point(textStartOffset);
+	return findMarkerLeaks(value).map((valueOffset) => {
+		const { line, column } = advanceByValue(textStart.line, textStart.column, value, valueOffset);
+		return {
+			line,
+			column,
+			offset: textStartOffset,
+		};
+	});
+};
+
 export const findRawHtmlLeaks = (
 	source: string,
 	rangeStart: number,
@@ -55,50 +113,10 @@ export const findRawHtmlLeaks = (
 
 	const leaks: RawHtmlLeakPosition[] = [];
 	const visit = (node: Parse5Node): void => {
-		if (node.attrs && node.sourceCodeLocation?.attrs) {
-			for (const attribute of node.attrs) {
-				const location = node.sourceCodeLocation.attrs[attribute.name];
-				if (!location) {
-					continue;
-				}
-				const attributeOffset = rangeStart + location.startOffset;
-				// Attribute values don't have per-character source
-				// positions; best-effort pointer is the attribute's start.
-				for (const _ of findMarkerLeaks(attribute.value)) {
-					const { line, column } = point(attributeOffset);
-					leaks.push({
-						line,
-						column,
-						offset: attributeOffset,
-					});
-				}
-			}
-		}
-		if (
-			node.nodeName === '#text'
-			&& typeof node.value === 'string'
-			&& node.sourceCodeLocation?.startOffset !== undefined
-		) {
-			const valueLeaks = findMarkerLeaks(node.value);
-			if (valueLeaks.length === 0) {
-				return;
-			}
-			const textStartOffset = rangeStart + node.sourceCodeLocation.startOffset;
-			const textStart = point(textStartOffset);
-			for (const valueOffset of valueLeaks) {
-				const { line, column } = advanceByValue(
-					textStart.line,
-					textStart.column,
-					node.value,
-					valueOffset,
-				);
-				leaks.push({
-					line,
-					column,
-					offset: textStartOffset,
-				});
-			}
-		}
+		leaks.push(
+			...attributeLeaks(node, rangeStart, point),
+			...textLeaks(node, rangeStart, point),
+		);
 		for (const child of node.childNodes ?? []) {
 			visit(child);
 		}
