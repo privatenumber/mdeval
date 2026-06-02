@@ -86,6 +86,11 @@ const elementAttributeLeaks = (point: Point, node: WalkNode): RenderedLeak[] => 
 // comment nodes from text. We then walk the rendered hast once and sum the
 // per-node-type leaks.
 export const findRenderedLeaks = (source: string): RenderedLeak[] => {
+	// Fast-path: skip parsing files with no marker. The token is the bare
+	// word `mdeval`, NOT `<!--mdeval` — the `<` can be entity-encoded
+	// (`&lt;`, `&#60;`, ...) and the closing delimiter is `<!--/mdeval-->`
+	// (note the slash). `mdeval` is the only substring common to every form;
+	// tightening it would drop entity-encoded and lone-closing leaks.
 	if (!source.includes('mdeval')) {
 		return [];
 	}

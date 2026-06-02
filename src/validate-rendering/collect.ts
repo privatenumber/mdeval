@@ -99,7 +99,8 @@ export const collectTextNodeLeaks = (
 	const value = node.value ?? '';
 	// Most text nodes don't contain marker text. A cheap substring check
 	// short-circuits before the heavier `findMarkerLeaks` scan + the
-	// position math.
+	// position math. Token is the bare word `mdeval` — see the rationale on
+	// the gate in `findRenderedLeaks`.
 	if (!value.includes('mdeval')) {
 		return [];
 	}
@@ -169,6 +170,7 @@ export const collectAttributeLeaks = (
 	value: string,
 	kind: LeakKind,
 ): RenderedLeak[] => {
+	// Bare-word `mdeval` token — same rationale as `findRenderedLeaks`.
 	if (!value.includes('mdeval')) {
 		return [];
 	}
