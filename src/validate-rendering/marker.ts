@@ -3,7 +3,7 @@ import { COMMENT_TAG, MARKER_CLOSE } from '../parse-markdown.ts';
 // `<!--mdeval` followed by space, LF, or CRLF is a real marker opening.
 // Strings like `<!--mdevalfoo` are not markers and must not be flagged.
 // Matches the predicate in `parse-markdown.ts`.
-export const isMarkerOpening = (text: string, position: number): boolean => {
+const isMarkerOpening = (text: string, position: number): boolean => {
 	if (!text.startsWith(COMMENT_TAG, position)) {
 		return false;
 	}

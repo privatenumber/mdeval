@@ -36,7 +36,7 @@ type Parse5Node = {
 	};
 };
 
-export type RawHtmlLeakPosition = {
+type RawHtmlLeakPosition = {
 	line: number;
 	column: number;
 	offset: number;
