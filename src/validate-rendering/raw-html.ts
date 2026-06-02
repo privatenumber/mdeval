@@ -2,11 +2,20 @@ import { parseFragment } from 'parse5';
 import { findMarkerOpenings } from './marker.ts';
 import { advanceByValue, type Point } from './line-index.ts';
 
-// HTML attributes whose values are visible to readers on GitHub: `alt` text
-// renders when the image is unavailable / for screen readers, `title` shows
-// in browser tooltips. Other attributes (`class`, `id`, `data-*`, `href`,
-// `src`) are not visible as text, so markers inside them aren't a leak.
-const VISIBLE_ATTRIBUTES = new Set(['alt', 'title']);
+// HTML attributes whose values render visibly. `title` is a global tooltip
+// attribute (visible on hover for any element). `alt` is only visible when
+// it lives on an `<img>` — on other tags it's a no-op (or, on `<input>` and
+// `<area>`, also visible, but those are rarer). Anything else (`class`,
+// `id`, `data-*`, `href`, `src`) is not visible as text and isn't a leak.
+const isVisibleAttribute = (tagName: string | undefined, attributeName: string): boolean => {
+	if (attributeName === 'title') {
+		return true;
+	}
+	if (attributeName === 'alt') {
+		return tagName === 'img' || tagName === 'area' || tagName === 'input';
+	}
+	return false;
+};
 
 // Raw HTML scanning via parse5. parse5 is the WHATWG-spec HTML parser, so
 // it handles attribute value extraction, entity decoding (named `&lt;`,
@@ -49,7 +58,7 @@ export const findRawHtmlLeaks = (
 	const visit = (node: Parse5Node): void => {
 		if (node.attrs && node.sourceCodeLocation?.attrs) {
 			for (const attribute of node.attrs) {
-				if (!VISIBLE_ATTRIBUTES.has(attribute.name)) {
+				if (!isVisibleAttribute(node.tagName, attribute.name)) {
 					continue;
 				}
 				const location = node.sourceCodeLocation.attrs[attribute.name];

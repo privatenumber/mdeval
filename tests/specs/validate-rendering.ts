@@ -198,6 +198,26 @@ describe('validate-rendering', () => {
 		expect(leaks[0].line).toBe(2);
 	});
 
+	test('text node with decoded-then-literal openers reports both at correct columns', () => {
+		// Inverse ordering: entity-encoded marker FIRST, then literal
+		// backslash-escaped one. The decoded `a` opener is at column 1,
+		// the literal `b` opener is later. Both must warn at their actual
+		// columns — pure value-walk handles this regardless of order.
+		const source = String.raw`&lt;!--mdeval a-->y \<!--mdeval b-->z`;
+		const leaks = findRenderedLeaks(source);
+		expect(leaks).toHaveLength(2);
+		const columns = leaks.map(leak => leak.column).sort((a, b) => a - b);
+		expect(columns[0]).toBeLessThan(columns[1]);
+	});
+
+	test('marker in raw HTML alt attribute on a non-image element is not flagged', () => {
+		// `alt` is only visible on `<img>` (and `<area>`/`<input>`). On a
+		// `<span>` or `<div>`, it's a no-op — markers inside don't render
+		// to readers and shouldn't warn.
+		const source = '<span alt="<!--mdeval x-->old<!--/mdeval-->">text</span>';
+		expect(findRenderedLeaks(source)).toStrictEqual([]);
+	});
+
 	test('text node with both source-visible and decoded openers reports both at correct columns', () => {
 		// One leak's source bytes contain `<!--mdeval` literally (the
 		// backslash-escaped form); the other only appears after CommonMark

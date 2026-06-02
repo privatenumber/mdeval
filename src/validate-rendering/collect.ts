@@ -30,11 +30,56 @@ const positionRange = (node: WalkNode, ancestors: readonly Node[]): PositionRang
 	return {};
 };
 
-// For a text-node leak, prefer the per-marker source offset (gives exact
-// `line:col` of each opener inside a code block or escape context). Fall
-// back to the node's start position for any leaks that exist only after
-// entity decoding (the source bytes don't contain a literal `<!--mdeval`
-// then, but the rendered text does).
+// The text-node `value` is what the renderer will show. The node's source
+// range from the ancestor element often covers MORE than the rendered text
+// (a fenced-code `<code>` range includes the opening/closing fences and the
+// info-string line; an inline-code range includes the surrounding backticks;
+// an indented-code range starts at the indent characters). To map a value
+// offset back to a real source line/column, we need to find the source
+// offset where the rendered content actually starts.
+const findContentStart = (
+	source: string,
+	range: PositionRange,
+	kind: LeakKind,
+): number | undefined => {
+	if (range.startOffset === undefined) {
+		return undefined;
+	}
+	if (kind === 'code block') {
+		// Fenced code blocks start with a fence line (` ``` ` or `~~~`,
+		// possibly with an info string). The body content begins after
+		// the first newline. Indented code blocks have no fence — the
+		// indent characters are part of the rendered content range, but
+		// the text-node value has them stripped, so we skip them too.
+		const firstChar = source[range.startOffset];
+		if (firstChar === ' ' || firstChar === '\t') {
+			let cursor = range.startOffset;
+			while (source[cursor] === ' ' || source[cursor] === '\t') {
+				cursor += 1;
+			}
+			return cursor;
+		}
+		const newlineIndex = source.indexOf('\n', range.startOffset);
+		return newlineIndex === -1 ? range.startOffset : newlineIndex + 1;
+	}
+	if (kind === 'inline code') {
+		// Skip the opening backtick run.
+		let cursor = range.startOffset;
+		while (source[cursor] === '`') {
+			cursor += 1;
+		}
+		return cursor;
+	}
+	// Plain text content (escaped paragraph text, etc): the text node's
+	// own start IS the content start.
+	return range.startOffset;
+};
+
+// For each value opening, compute its rendered position by walking the
+// (decoded) value from the content-start position. This is uniformly
+// correct across literal markers, entity-decoded markers, mixed orderings,
+// and multi-line content, without trying to align source bytes against
+// value bytes (which is impossible without entity-aware decoding).
 export const collectTextNodeLeaks = (
 	source: string,
 	point: Point,
@@ -54,60 +99,28 @@ export const collectTextNodeLeaks = (
 		return [];
 	}
 	const range = positionRange(node, ancestors);
-	const leaks: RenderedLeak[] = [];
-	const allSourceOffsets = range.startOffset !== undefined && range.endOffset !== undefined
-		? findMarkerOpenings(source, range.startOffset, range.endOffset)
-		: [];
-	// `valueOpenings.length` is the count of markers that actually render
-	// (the text-node value is what GitHub will show). The source range may
-	// contain more openings — fenced-code info strings live in the same
-	// `<code>` source span but route to `className`, not the body — so we
-	// keep only the trailing `valueOpenings.length` source matches. Source
-	// order puts info-string markers first, body markers last; the tail is
-	// the rendered subset.
-	const visibleSourceOffsets = allSourceOffsets.slice(-valueOpenings.length);
-	for (const offset of visibleSourceOffsets) {
-		const { line, column } = point(offset);
-		leaks.push({
+	const contentOffset = findContentStart(source, range, kind);
+	const contentStart = contentOffset === undefined
+		? {
+			line: range.startLine ?? 1,
+			column: range.startColumn ?? 1,
+		}
+		: point(contentOffset);
+	const reportedOffset = contentOffset ?? -1;
+	return valueOpenings.map((valueOffset) => {
+		const { line, column } = advanceByValue(
+			contentStart.line,
+			contentStart.column,
+			value,
+			valueOffset,
+		);
+		return {
 			kind,
 			line,
 			column,
-			offset,
-		});
-	}
-	if (visibleSourceOffsets.length < valueOpenings.length) {
-		// Openings beyond the literal source matches exist only in the
-		// decoded value — they got there via `&lt;`, `&#x3C;`, etc. We
-		// can't map back to a real source offset, but we CAN report each
-		// marker's line and column by counting newlines in `value` up to
-		// its opening, starting from the range's source position. The
-		// LEADING `visibleSourceOffsets.length` value openings align
-		// with the source matches (already emitted above); the TRAILING
-		// remainder are the unmatched, entity-decoded ones.
-		const fallbackOffset = range.startOffset ?? -1;
-		const startPosition = fallbackOffset === -1
-			? {
-				line: range.startLine ?? 1,
-				column: range.startColumn ?? 1,
-			}
-			: point(fallbackOffset);
-		const fallbackOpenings = valueOpenings.slice(visibleSourceOffsets.length);
-		for (const valueOffset of fallbackOpenings) {
-			const { line, column } = advanceByValue(
-				startPosition.line,
-				startPosition.column,
-				value,
-				valueOffset,
-			);
-			leaks.push({
-				kind,
-				line,
-				column,
-				offset: fallbackOffset,
-			});
-		}
-	}
-	return leaks;
+			offset: reportedOffset,
+		};
+	});
 };
 
 // Attribute values come from the rendering pipeline already decoded, and
