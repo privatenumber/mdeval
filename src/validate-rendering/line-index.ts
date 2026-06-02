@@ -2,8 +2,12 @@
 // instead of O(offset). For a doc with many leaks this matters: every leak
 // triggers one lookup, and walking the whole source per lookup is O(n*leaks).
 
-export type Point = (offset: number) => { line: number;
-	column: number; };
+export type Position = {
+	line: number;
+	column: number;
+};
+
+export type Point = (offset: number) => Position;
 
 export const buildLineIndex = (source: string): number[] => {
 	const newlines: number[] = [];
@@ -47,8 +51,7 @@ export const advanceByValue = (
 	startColumn: number,
 	value: string,
 	length: number,
-): { line: number;
-	column: number; } => {
+): Position => {
 	let line = startLine;
 	let column = startColumn;
 	for (let index = 0; index < length; index += 1) {
