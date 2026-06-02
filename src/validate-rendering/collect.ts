@@ -13,18 +13,32 @@ type PositionRange = {
 	startColumn?: number;
 };
 
+const rangeOf = (node: WalkNode): PositionRange | undefined => {
+	const start = node.position?.start.offset;
+	const end = node.position?.end.offset;
+	if (start === undefined || end === undefined) {
+		return undefined;
+	}
+	return {
+		startOffset: start,
+		endOffset: end,
+		startLine: node.position?.start.line,
+		startColumn: node.position?.start.column,
+	};
+};
+
+// The node's own position is best; fall back to the nearest positioned
+// ancestor (hast text nodes inside fenced code lose their position during
+// conversion). Walks ancestors from innermost out without allocating.
 const positionRange = (node: WalkNode, ancestors: readonly Node[]): PositionRange => {
-	const candidates: readonly WalkNode[] = [node, ...(ancestors.toReversed() as WalkNode[])];
-	for (const candidate of candidates) {
-		const start = candidate.position?.start.offset;
-		const end = candidate.position?.end.offset;
-		if (start !== undefined && end !== undefined) {
-			return {
-				startOffset: start,
-				endOffset: end,
-				startLine: candidate.position?.start.line,
-				startColumn: candidate.position?.start.column,
-			};
+	const own = rangeOf(node);
+	if (own) {
+		return own;
+	}
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		const fromAncestor = rangeOf(ancestors[index] as WalkNode);
+		if (fromAncestor) {
+			return fromAncestor;
 		}
 	}
 	return {};
@@ -96,18 +110,16 @@ export const collectTextNodeLeaks = (
 	const range = positionRange(node, ancestors);
 	const contentOffset = findContentStart(source, range, kind);
 
-	// Code constructs (inline, fenced, indented) are verbatim source — no
-	// entity decoding or escape processing — so each marker exists literally
-	// in the source byte range. Scanning the source gives EXACT line:col,
-	// crucially for multi-line spans: inline code normalizes newlines to
-	// spaces in the rendered `value`, so value-walking would undercount
-	// lines. We only trust source-scan when its count matches the value's
-	// (a mismatch means our content-start guess was off — fall back).
-	if (
-		(kind === 'inline code' || kind === 'code block')
-		&& contentOffset !== undefined
-		&& range.endOffset !== undefined
-	) {
+	// Prefer exact source positions: scan the source content range for the
+	// same markers. When the count matches the rendered value's, each marker
+	// is literal in source (code spans are verbatim; backslash-escaped text
+	// keeps a literal `<!--mdeval`), so `point()` gives an exact line:col —
+	// including correct lines for multi-line spans, where inline code
+	// normalizes newlines to spaces in `value` and value-walking would
+	// undercount. A count mismatch means the value diverged from source
+	// (entity decoding like `&lt;!--mdeval`, or mixed escaped/decoded
+	// orderings) — fall back to walking the decoded value.
+	if (contentOffset !== undefined && range.endOffset !== undefined) {
 		const sourceLeaks = findMarkerLeaks(source, contentOffset, range.endOffset);
 		if (sourceLeaks.length === valueLeaks.length) {
 			return sourceLeaks.map((offset) => {
@@ -122,10 +134,9 @@ export const collectTextNodeLeaks = (
 		}
 	}
 
-	// Plain text (and the rare code-construct fallback): the value may differ
-	// from source (entity decoding, escapes), so walk the decoded value from
-	// the content-start position. Uniformly correct across literal markers,
-	// entity-decoded markers, and mixed orderings.
+	// Fallback: walk the decoded value from the content-start position.
+	// Uniformly correct across entity-decoded markers and mixed orderings,
+	// at the cost of approximate columns.
 	const contentStart = contentOffset === undefined
 		? {
 			line: range.startLine ?? 1,
