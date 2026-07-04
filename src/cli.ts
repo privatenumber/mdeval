@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { once } from 'node:events';
-import { setImmediate, setTimeout } from 'node:timers/promises';
+import { setTimeout } from 'node:timers/promises';
 import { cli } from 'cleye';
 import chokidar from 'chokidar';
 import picomatch from 'picomatch';
 import { glob } from 'tinyglobby';
+import { createFileWatcher } from 'node-watcher-hook/watcher';
 import { setupLoader } from './setup-loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
@@ -123,9 +124,10 @@ if (argv.flags.watch) {
 		const cacheBust = Date.now();
 		const files = await expandPatterns();
 		await Promise.all(files.map(file => processFile(file, cacheBust)));
-		// Drain any in-flight loader-hook port messages so loadedFiles reflects
-		// what was actually imported during this pass.
-		await setImmediate();
+		graphWatcher.clear();
+		for (const filePath of loadedFiles) {
+			graphWatcher.add(filePath);
+		}
 	};
 
 	const isInputMatch = picomatch(patterns, { dot: false });
@@ -141,6 +143,11 @@ if (argv.flags.watch) {
 	// Polling sidesteps macOS FSEvents quirks for tmpdir-style paths at a
 	// small constant CPU cost. 200ms is below human-perceptible save → eval
 	// latency.
+	const graphWatcher = createFileWatcher({
+		debounce: false,
+		poll: 200,
+	});
+
 	const watcher = chokidar.watch('.', {
 		ignored,
 		ignoreInitial: true,
@@ -162,14 +169,23 @@ if (argv.flags.watch) {
 
 	const debouncedProcess = createDebounced(50, processAll);
 
+	(async () => {
+		for await (const events of graphWatcher) {
+			for (const event of events) {
+				if (await selfWrites.isSelfWrite(event.path)) { continue; }
+				debouncedProcess();
+			}
+		}
+	})().catch(() => undefined);
+
 	const onEvent = async (eventPath: string) => {
 		const absolute = path.resolve(eventPath);
 
 		if (await selfWrites.isSelfWrite(absolute)) { return; }
 
-		// Precision filter: react only to files in the .md import graph or
-		// new files matching the input pattern. Everything else is ignored.
-		if (!loadedFiles.has(absolute) && !isInputMatch(eventPath)) { return; }
+		// Chokidar owns new input-file discovery. The explicit import graph is
+		// watched by graphWatcher so arbitrary out-of-cwd dependencies work too.
+		if (!isInputMatch(eventPath)) { return; }
 
 		debouncedProcess();
 	};
@@ -178,6 +194,7 @@ if (argv.flags.watch) {
 	watcher.on('change', onEvent);
 
 	const shutdown = async () => {
+		graphWatcher.close();
 		await watcher.close();
 		process.exit(process.exitCode ?? 0);
 	};
