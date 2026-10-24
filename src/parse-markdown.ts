@@ -6,6 +6,15 @@ export type Marker = {
 	end: number;
 };
 
+export class MarkdownParseError extends Error {
+	readonly offset: number;
+
+	constructor(message: string, offset: number) {
+		super(message);
+		this.offset = offset;
+	}
+}
+
 const NAME = 'mdeval';
 export const COMMENT_TAG = `<!--${NAME}`;
 export const MARKER_OPEN = `${COMMENT_TAG} `;
@@ -150,10 +159,11 @@ export const parseMarkdown = (source: string): ParseResult => {
 			);
 			if (closeStart === -1 || interveningOpen) {
 				if (!isInCode(start)) {
-					throw new Error(
+					throw new MarkdownParseError(
 						interveningOpen
 							? `mdeval: unclosed script block at offset ${start} (another mdeval opening found before \`-->\`)`
 							: `mdeval: unclosed script block at offset ${start} (missing \`-->\`)`,
+						start,
 					);
 				}
 				if (closeStart === -1) {
@@ -183,8 +193,9 @@ export const parseMarkdown = (source: string): ParseResult => {
 				if (isInCode(start)) {
 					break;
 				}
-				throw new Error(
+				throw new MarkdownParseError(
 					`mdeval: unclosed marker open at offset ${start} (missing \`-->\` on the marker open)`,
+					start,
 				);
 			}
 			const contentStart = exprEnd + COMMENT_CLOSE.length;
@@ -199,8 +210,9 @@ export const parseMarkdown = (source: string): ParseResult => {
 					searchFrom = contentStart;
 					continue;
 				}
-				throw new Error(
+				throw new MarkdownParseError(
 					`mdeval: unclosed marker open at offset ${start} (missing \`<!--/mdeval-->\`)`,
+					start,
 				);
 			}
 			const markerEnd = closeStart + MARKER_CLOSE.length;
