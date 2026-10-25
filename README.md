@@ -278,7 +278,7 @@ pre-commit:
 
 ## Agent Skills
 
-This package ships with a built-in [agent skill](./skills/mdeval/SKILL.md) for AI coding assistants. Set up [`skills-npm`](https://github.com/antfu/skills-npm) to automatically discover it.
+This package ships with a built-in [agent skill](./skills/mdeval/SKILL.md) for AI coding assistants.
 
 ## Related
 
