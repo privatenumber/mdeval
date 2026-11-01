@@ -58,12 +58,12 @@
 	"devDependencies": {
 		"@types/node": "^25.5.0",
 		"@types/unist": "^3.0.3",
-		"clean-pkg-json": "^1.4.1",
+		"clean-pkg-json": "^2.0.0",
 		"fs-fixture": "^2.12.0",
 		"lintroll": "^1.30.0",
 		"manten": "^2.0.0",
 		"nano-spawn": "^2.1.0",
-		"pkgroll": "^2.27.0",
+		"pkgroll": "^2.29.0",
 		"typescript": "^6.0.2"
 	}
 }
