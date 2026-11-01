@@ -33,23 +33,6 @@ The [quiet-output CLI test](../../tests/specs/cli.ts) asserts empty stderr, so i
 | `module.register()` only (before the fix) | `204 passed`, `1 failed`: stderr received `[DEP0205] DeprecationWarning` |
 | Capability selection (current) | `205 passed` |
 
-The TypeScript test entry point does not run on Node.js 20, so the fallback path was checked against the built artifacts instead. Save this synthetic input as `data.md` in a disposable directory:
+The test suite cannot run on the versions that use the fallback: Node.js 20 cannot strip types, and Node.js 22.14 cannot parse `await using`. Instead, [`tests/fallback-smoke.mjs`](../../tests/fallback-smoke.mjs) checks the built artifacts with Node.js built-ins only. It imports a synthetic `.md` file through `dist/loader.mjs`, runs `dist/cli.mjs` on it, and requires empty stderr and the rewritten marker. The [test workflow](../../.github/workflows/test.yml) runs it on Node.js 20.19.0 and 22.14.0 after the main suite. To run it locally, build first, then run `node tests/fallback-smoke.mjs` with the target Node.js version selected.
 
-```markdown
-# Data
-
-<!--mdeval
-export const value = 42;
--->
-
-<!--mdeval value-->old<!--/mdeval-->
-```
-
-After `pnpm build`, run these from that directory with the target Node.js version selected, replacing `<repo>` with the repository path:
-
-```sh
-node --import <repo>/dist/loader.mjs --input-type=module -e 'const { value } = await import("./data.md"); console.log(value)'
-node <repo>/dist/cli.mjs ./data.md
-```
-
-On Node.js 20.19.0, 22.14.0, and 26.13.0, the import printed `42`, the CLI exited 0 with empty stderr, and the marker was rewritten to `<!--mdeval value-->42<!--/mdeval-->`. Use a disposable copy, because the CLI rewrites the file.
+The script passed on Node.js 20.19.0, 22.14.0, and 26.13.0. With the capability check disabled so that Node.js 26.13.0 used `module.register()`, it failed on the `[DEP0205]` stderr output, so the check also catches this regression.

@@ -35,3 +35,20 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # The loader falls back to module.register() below Node.js 22.15
+      - name: Setup Node.js 20.19 (engines minimum)
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
+        with:
+          node-version: 20.19.0
+
+      - name: Smoke test on Node.js 20.19
+        run: node tests/fallback-smoke.mjs
+
+      - name: Setup Node.js 22.14 (before registerHooks)
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
+        with:
+          node-version: 22.14.0
+
+      - name: Smoke test on Node.js 22.14
+        run: node tests/fallback-smoke.mjs
