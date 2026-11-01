@@ -32,14 +32,13 @@
 		"#md-loader": "./dist/md-loader.mjs",
 		"#content-mapper": "./dist/content-mapper.mjs"
 	},
-	"packageManager": "pnpm@10.20.0",
+	"packageManager": "pnpm@12.15.0",
 	"scripts": {
 		"build": "pkgroll --minify --export-condition=node --license=dist/LICENSE",
 		"test": "pnpm build && node tests/index.ts",
 		"type-check": "node node_modules/typescript/bin/tsc",
 		"lint": "lintroll --cache --git .",
-		"prepack": "pnpm build && clean-pkg-json --keep typescript",
-		"prepare": "skills-npm"
+		"prepack": "pnpm build && clean-pkg-json --keep typescript"
 	},
 	"engines": {
 		"node": ">=20.19"
@@ -47,7 +46,7 @@
 	"dependencies": {
 		"@jridgewell/gen-mapping": "^0.3.13",
 		"@types/fs-extra": "^11.0.4",
-		"ansis": "^4.3.0",
+		"ansis": "^4.4.0",
 		"cleye": "^2.3.0",
 		"mdast-util-from-markdown": "^2.0.3",
 		"mdast-util-gfm-footnote": "^2.1.0",
@@ -57,7 +56,7 @@
 		"micromark-extension-gfm-footnote": "^2.1.0",
 		"micromark-extension-gfm-table": "^2.1.1",
 		"parse5": "^8.0.1",
-		"tinyglobby": "^0.2.15",
+		"tinyglobby": "^0.2.17",
 		"unist-util-visit-parents": "^6.0.2",
 		"zx": "8.8.5-lite"
 	},
@@ -70,15 +69,10 @@
 		"manten": "^2.0.0",
 		"nano-spawn": "^2.1.0",
 		"pkgroll": "^2.27.0",
-		"skills-npm": "^1.2.0",
 		"ts-content-mapper": "0.1.0",
+		"tsx": "^4.23.15",
 		"typescript": "^6.0.2",
 		"typescript-mapper-tests": "npm:typescript@7.1.0-beta"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"esbuild"
-		]
 	},
 	"typescript": {
 		"contentMapper": {
