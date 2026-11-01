@@ -31,7 +31,8 @@ const checkMarkdown = async (files: FileTree) => {
 	try {
 		const result = await spawn(process.execPath, [compiler, '--runExternalCode', '--pretty', 'false'], {
 			cwd: fixture.path,
-			timeout: 15_000,
+			// About 1s alone, but over 12s on Node.js 20 under full-suite load
+			timeout: 60_000,
 		});
 		return {
 			output: result.output,
