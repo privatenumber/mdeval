@@ -11,14 +11,7 @@ type Position = {
 const LF = 10;
 const CR = 13;
 
-const isWhitespaceCode = (code: number) => (
-	code === 9
-	|| code === LF
-	|| code === 11
-	|| code === 12
-	|| code === CR
-	|| code === 32
-);
+const isWhitespaceCode = (code: number) => [9, LF, 11, 12, CR, 32].includes(code);
 
 const isIdentifierCode = (code: number) => (
 	(code >= 48 && code <= 57)

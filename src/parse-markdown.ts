@@ -53,11 +53,7 @@ const findCodeRanges = (source: string): CodeRange[] => {
 		if (phase !== 'enter') {
 			continue;
 		}
-		if (
-			token.type === 'codeFenced'
-			|| token.type === 'codeIndented'
-			|| token.type === 'codeText'
-		) {
+		if (['codeFenced', 'codeIndented', 'codeText'].includes(token.type)) {
 			ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
 		}
 	}
