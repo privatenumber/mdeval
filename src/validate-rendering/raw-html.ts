@@ -17,8 +17,10 @@ type Parse5Node = {
 	nodeName: string;
 	tagName?: string;
 	value?: string;
-	attrs?: { name: string;
-		value: string; }[];
+	attrs?: {
+		name: string;
+		value: string;
+	}[];
 	childNodes?: Parse5Node[];
 	sourceCodeLocation?: {
 		startOffset?: number;

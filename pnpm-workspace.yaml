@@ -2,6 +2,10 @@ skills:
   dirs:
     - .agents/skills
 
+# lintroll is published by this project's maintainer, so its releases skip the age delay
+minimumReleaseAgeExclude:
+  - lintroll
+
 allowBuilds:
   esbuild: true
   unrs-resolver: false

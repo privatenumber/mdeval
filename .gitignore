@@ -26,5 +26,4 @@ lerna-debug.log*
 .eslintcache
 
 # Agent skill links from dependencies (managed by pnpm)
-**/skills/pnpm-*
-**/skills/.gitignore
+/.agents/skills/
