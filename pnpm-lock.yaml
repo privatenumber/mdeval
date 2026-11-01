@@ -203,8 +203,8 @@ importers:
         specifier: ^0.2.17
         version: 0.2.17
       unist-util-visit-parents:
-        specifier: ^6.0.2
-        version: 6.0.2
+        specifier: ^6.1.0
+        version: 6.1.0
       zx:
         specifier: 8.8.5-lite
         version: 8.8.5-lite
@@ -219,14 +219,14 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       fs-fixture:
-        specifier: ^2.12.0
-        version: 2.12.0
+        specifier: ^2.16.0
+        version: 2.16.0
       lintroll:
         specifier: ^1.30.0
         version: 1.30.0(@types/estree@1.0.8)(jiti@2.6.1)(jsonc-eslint-parser@2.4.2)(supports-color@7.2.0)(typescript@6.0.2)
       manten:
-        specifier: ^2.0.0
-        version: 2.0.0
+        specifier: ^2.0.2
+        version: 2.0.2
       nano-spawn:
         specifier: ^2.1.0
         version: 2.1.0
@@ -1826,8 +1826,8 @@ packages:
     resolution: {integrity: sha512-wzsgA6WOq+09wrU1tsJ09udeR/YZRaeArL9e1wPbFg3GG2yDnC2ldKpxs4xunpFF9DgqCqOIra3bc1HWrJ37Ww==}
     engines: {node: '>=0.4.x'}
 
-  fs-fixture@2.12.0:
-    resolution: {integrity: sha512-TdAthKWT+B4uE/Ssw+0YqYtMz0FumfmO5stHUKFd2TJL2axFizorJO4vwZ5V65gRNvI+IgLf8w5HlI6l5xIvxg==}
+  fs-fixture@2.16.0:
+    resolution: {integrity: sha512-wLgUrK+xH81K9shOMrQATJKbZTCPDxtmlt8s9iyE7vy0/H5KSXgKm9UPFzz7D08VCAYFvqw6JNnlFmJ/ukVWnQ==}
     engines: {node: '>=18.0.0'}
 
   fsevents@2.3.3:
@@ -2238,8 +2238,8 @@ packages:
   magic-string@1.4.5:
     resolution: {integrity: sha512-oLLC2+YvQUfAa+vxoufE/yc1icb87M9iXIRqAoR/2EhE/8cb3SF/+Gi0c2By1B+5Vz2e2vQtUvHiu1+63Znh+w==}
 
-  manten@2.0.0:
-    resolution: {integrity: sha512-JjNQq4uObh4oAYvibb8j2IPzg/6Sy8ynvVVQ2rIlOKEF5eCL74bh0uu2pA/nZ36V9ihErgGZgJPE9IaeQhXW5A==}
+  manten@2.0.2:
+    resolution: {integrity: sha512-gmqvUV+nlWOyP6ZwqnHPzpCfrlhn9gPA/eJOgUJfy2JTPiEF9jKmUHFd8cSRhadpl0b23Odp2ejfeFL77FRG0Q==}
     engines: {node: '>=20.20.0'}
 
   markdown-table@3.0.4:
@@ -2856,8 +2856,8 @@ packages:
   unist-util-stringify-position@4.0.0:
     resolution: {integrity: sha512-0ASV06AAoKCDkS2+xw5RXJywruurpbC4JZSm7nr7MOt1ojAzvyyaO+UxZf18j8FCF6kmzCZKcAgN/yu2gm2XgQ==}
 
-  unist-util-visit-parents@6.0.2:
-    resolution: {integrity: sha512-goh1s1TBrqSqukSc8wrjwWhL0hiJxgA8m4kFxGlQ+8FYQ3C/m11FcTs4YYem7V664AhHVvgoQLk890Ssdsr2IQ==}
+  unist-util-visit-parents@6.1.0:
+    resolution: {integrity: sha512-vKXxz6O38sKDj1mtx/k2cWvkkFBuYGx6uGrlzBkVeWCRF/F8sdI0j3Wbkz/5rVNRRuVc8UrgRdbCxNhmYXgP3w==}
 
   unist-util-visit@5.1.0:
     resolution: {integrity: sha512-m+vIdyeCOpdr/QeQCu2EzxX/ohgS8KbnPDgFni4dQsfSCtpz8UqDyY5GjRru8PDKuYn7Fq19j1CQ+nJSsGKOzg==}
@@ -4593,7 +4593,7 @@ snapshots:
 
   format@0.2.2: {}
 
-  fs-fixture@2.12.0: {}
+  fs-fixture@2.16.0: {}
 
   fsevents@2.3.3:
     optional: true
@@ -5045,7 +5045,7 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  manten@2.0.0:
+  manten@2.0.2:
     dependencies:
       expect: 30.3.0
 
@@ -5058,7 +5058,7 @@ snapshots:
       '@types/mdast': 4.0.4
       escape-string-regexp: 5.0.0
       unist-util-is: 6.0.1
-      unist-util-visit-parents: 6.0.2
+      unist-util-visit-parents: 6.1.0
 
   mdast-util-from-markdown@2.1.0(supports-color@7.2.0):
     dependencies:
@@ -5956,7 +5956,7 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
 
-  unist-util-visit-parents@6.0.2:
+  unist-util-visit-parents@6.1.0:
     dependencies:
       '@types/unist': 3.0.3
       unist-util-is: 6.0.1
@@ -5965,7 +5965,7 @@ snapshots:
     dependencies:
       '@types/unist': 3.0.3
       unist-util-is: 6.0.1
-      unist-util-visit-parents: 6.0.2
+      unist-util-visit-parents: 6.1.0
 
   unrs-resolver@1.11.1:
     dependencies:
