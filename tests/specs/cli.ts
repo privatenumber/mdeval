@@ -218,6 +218,31 @@ describe('cli', () => {
 		expect(content).toBe(md.replace('old', 'found'));
 	});
 
+	test('ignores hidden directories by default', async () => {
+		const md = '<!--mdeval\nconst x = "found";\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'README.md': md,
+			'.hidden/README.md': md,
+		});
+		await mdeval(['**/*.md'], { cwd: fixture.path });
+
+		const content = await fixture.readFile('README.md', 'utf8');
+		const hiddenContent = await fixture.readFile('.hidden/README.md', 'utf8');
+		expect(content).toBe(md.replace('old', 'found'));
+		expect(hiddenContent).toBe(md);
+	});
+
+	test('glob targeting a hidden directory opts in', async () => {
+		const md = '<!--mdeval\nconst x = "found";\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'.hidden/README.md': md,
+		});
+		await mdeval(['.hidden/**/*.md'], { cwd: fixture.path });
+
+		const content = await fixture.readFile('.hidden/README.md', 'utf8');
+		expect(content).toBe(md.replace('old', 'found'));
+	});
+
 	test('no matches exits 1', async () => {
 		const error = await mdeval(['*.nonexistent']).catch((error_: unknown) => error_);
 		expect((error as { exitCode: number }).exitCode).toBe(1);
