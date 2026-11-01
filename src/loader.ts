@@ -1,5 +1,6 @@
-import { register } from 'node:module';
+import module from 'node:module';
 import { block, $ } from './runtime.ts';
+import { load } from './md-loader.ts';
 
 // Side-effect-only entry: seeds the helpers `.md` modules expect on
 // `globalThis` and installs the Node ESM loader so `.md` files resolve as
@@ -17,4 +18,9 @@ Object.assign(globalThis, {
 // single `--import mdeval/loader`.
 process.setSourceMapsEnabled(true);
 
-register('#md-loader', import.meta.url);
+if (module.registerHooks) {
+	module.registerHooks({ load });
+} else {
+	// Node 20 and Node 22 before 22.15 only support off-thread hooks.
+	module.register('#md-loader', import.meta.url);
+}
