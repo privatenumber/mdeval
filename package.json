@@ -28,7 +28,7 @@
 	"imports": {
 		"#md-loader": "./dist/md-loader.mjs"
 	},
-	"packageManager": "pnpm@10.20.0",
+	"packageManager": "pnpm@12.16.1",
 	"scripts": {
 		"build": "pkgroll --minify",
 		"test": "pnpm build && node tests/index.ts",
@@ -67,10 +67,5 @@
 		"pkgroll": "^2.27.0",
 		"skills-npm": "^1.2.0",
 		"typescript": "^6.0.2"
-	},
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"esbuild"
-		]
 	}
 }
