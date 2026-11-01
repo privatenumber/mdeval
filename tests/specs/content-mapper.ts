@@ -6,7 +6,33 @@ import spawn, { SubprocessError } from 'nano-spawn';
 const projectRoot = path.resolve(import.meta.dirname, '../..');
 const compiler = path.join(projectRoot, 'node_modules/typescript-mapper-tests/bin/tsc');
 
-const checkMarkdown = async (files: FileTree) => {
+const tsc = async (
+	args: string[],
+	cwd: string,
+) => {
+	try {
+		const result = await spawn(process.execPath, [compiler, ...args], {
+			cwd,
+			// About 1s alone, but over 12s on Node.js 20 under full-suite load
+			timeout: 60_000,
+		});
+		return {
+			output: result.output,
+			exitCode: 0,
+		};
+	} catch (error) {
+		// A non-zero exit code means tsc reported errors; anything else is a spawn failure
+		if (!(error instanceof SubprocessError) || error.exitCode === undefined) {
+			throw error;
+		}
+		return {
+			output: error.output,
+			exitCode: error.exitCode,
+		};
+	}
+};
+
+const typecheckMdeval = async (files: FileTree) => {
 	await using fixture = await createFixture({
 		'package.json': JSON.stringify({ type: 'module' }),
 		'tsconfig.json': JSON.stringify({
@@ -28,30 +54,13 @@ const checkMarkdown = async (files: FileTree) => {
 		'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
 		...files,
 	});
-	try {
-		const result = await spawn(process.execPath, [compiler, '--runExternalCode', '--pretty', 'false'], {
-			cwd: fixture.path,
-			// About 1s alone, but over 12s on Node.js 20 under full-suite load
-			timeout: 60_000,
-		});
-		return {
-			output: result.output,
-			exitCode: 0,
-		};
-	} catch (error) {
-		if (!(error instanceof SubprocessError) || error.exitCode === undefined) {
-			throw error;
-		}
-		return {
-			output: error.output,
-			exitCode: error.exitCode,
-		};
-	}
+	// Await before `fixture` is disposed at scope exit
+	return await tsc(['--runExternalCode', '--pretty', 'false'], fixture.path);
 };
 
 describe('content mapper', () => {
 	test('reports original positions in scripts and markers, with Unicode and CRLF', async () => {
-		const result = await checkMarkdown({
+		const result = await typecheckMdeval({
 			'example.md': [
 				'\uFEFF# 日本語 😀',
 				'<!--mdeval',
@@ -72,7 +81,7 @@ describe('content mapper', () => {
 	});
 
 	test('checks imports and shared script scope without executing Markdown', async () => {
-		const result = await checkMarkdown({
+		const result = await typecheckMdeval({
 			'docs/example.md': [
 				'<!--mdeval answer.toFixed()-->old<!--/mdeval-->',
 				'<!--mdeval',
@@ -98,7 +107,7 @@ describe('content mapper', () => {
 	});
 
 	test('checks the types of exports imported from Markdown', async () => {
-		const result = await checkMarkdown({
+		const result = await typecheckMdeval({
 			'example.md': '<!--mdeval\nimport { answer } from "./data.md";\nanswer.trim();\n-->',
 			'data.md': '<!--mdeval\nexport const answer = 42;\n-->',
 		});
@@ -109,7 +118,7 @@ describe('content mapper', () => {
 	});
 
 	test('ignores literal examples in code fences and inline code', async () => {
-		const result = await checkMarkdown({
+		const result = await typecheckMdeval({
 			'example.md': [
 				'```md',
 				'<!--mdeval missing()-->old<!--/mdeval-->',
@@ -125,7 +134,7 @@ describe('content mapper', () => {
 	});
 
 	test('uses published types for mdeval runtime helpers', async () => {
-		const result = await checkMarkdown({
+		const result = await typecheckMdeval({
 			'example.md': '<!--mdeval\nimport { block } from "mdeval";\nblock("hello").toFixed();\n-->',
 		});
 		expect(result).toStrictEqual({
@@ -135,7 +144,7 @@ describe('content mapper', () => {
 	});
 
 	test('preserves evaluate-once control flow for repeated expressions', async () => {
-		const result = await checkMarkdown({
+		const result = await typecheckMdeval({
 			'example.md': [
 				'<!--mdeval',
 				'/** @type {number | string} */',
@@ -154,7 +163,7 @@ describe('content mapper', () => {
 	});
 
 	test('reports malformed comments as Markdown diagnostics', async () => {
-		const result = await checkMarkdown({
+		const result = await typecheckMdeval({
 			'example.md': '# Heading\n\n<!--mdeval\nconst value = 42;\n',
 		});
 		expect(result).toStrictEqual({
