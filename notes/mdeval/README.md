@@ -1,4 +1,5 @@
 # mdeval integration references
 
 - [Runtime compatibility](./runtime-compatibility.md): development runtime versus consumer support, module-hook selection, and verification boundaries.
-- [Dependency upgrades](./dependency-upgrades.md): what parser, color, and TypeScript upgrades deliver to users, and why cleye and TypeScript stay on their current lines.
+- [cleye](./cleye.md): why the cleye minimum stays at `^2.3.0`, and the separate ansis copy that renders `--help`.
+- [TypeScript](./typescript.md): why TypeScript stays on 6.x while lint needs the compiler API.
