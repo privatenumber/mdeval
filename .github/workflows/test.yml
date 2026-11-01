@@ -35,3 +35,11 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # The loader falls back to module.register() below Node.js 22.15. tsx runs
+      # the TypeScript suite on versions that cannot strip types or parse `await using`.
+      - name: Test on Node.js 20.19 (engines minimum)
+        run: pnpm dlx node@20.19.0 --import tsx tests/index.ts
+
+      - name: Test on Node.js 22.14 (before registerHooks)
+        run: pnpm dlx node@22.14.0 --import tsx tests/index.ts

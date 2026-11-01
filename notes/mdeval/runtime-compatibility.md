@@ -33,23 +33,12 @@ The [quiet-output CLI test](../../tests/specs/cli.ts) asserts empty stderr, so i
 | `module.register()` only (before the fix) | `204 passed`, `1 failed`: stderr received `[DEP0205] DeprecationWarning` |
 | Capability selection (current) | `205 passed` |
 
-The TypeScript test entry point does not run on Node.js 20, so the fallback path was checked against the built artifacts instead. Save this synthetic input as `data.md` in a disposable directory:
-
-```markdown
-# Data
-
-<!--mdeval
-export const value = 42;
--->
-
-<!--mdeval value-->old<!--/mdeval-->
-```
-
-After `pnpm build`, run these from that directory with the target Node.js version selected, replacing `<repo>` with the repository path:
+Plain Node.js cannot run the TypeScript suite on the versions that use the fallback: Node.js 20 cannot strip types, and Node.js 22.14 cannot parse `await using`. The [test workflow](../../.github/workflows/test.yml) runs the suite on Node.js 20.19.0 (the `engines.node` minimum) and 22.14.0 (the last 22.x without `registerHooks()`) through [tsx](https://tsx.is), after installing and building on the development runtime:
 
 ```sh
-node --import <repo>/dist/loader.mjs --input-type=module -e 'const { value } = await import("./data.md"); console.log(value)'
-node <repo>/dist/cli.mjs ./data.md
+pnpm dlx node@20.19.0 --import tsx tests/index.ts
 ```
 
-On Node.js 20.19.0, 22.14.0, and 26.13.0, the import printed `42`, the CLI exited 0 with empty stderr, and the marker was rewritten to `<!--mdeval value-->42<!--/mdeval-->`. Use a disposable copy, because the CLI rewrites the file.
+The CLI, recipe, and source-map specs spawn `process.execPath` with the built loader, so on these versions they run the real `module.register()` path, including the empty-stderr assertion. With the fallback replaced by a no-op hook, Node.js 20.19.0 reported `139 passed` and `66 failed`.
+
+The `process-source` fixtures that import a relative `.js` or `.ts` module include `{"type": "module"}`. Without it, tsx on Node.js 20.19–22.22 and 24.0–24.11 parses an ESM `.js` file in a directory without a package type as CommonJS, while Node.js itself detects it as ESM ([privatenumber/tsx#867](https://github.com/privatenumber/tsx/issues/867)). Remove the field from those fixtures when tsx fixes that issue.
