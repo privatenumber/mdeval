@@ -11,15 +11,6 @@ type Position = {
 const LF = 10;
 const CR = 13;
 
-const isWhitespaceCode = (code: number) => (
-	code === 9
-	|| code === LF
-	|| code === 11
-	|| code === 12
-	|| code === CR
-	|| code === 32
-);
-
 const isIdentifierCode = (code: number) => (
 	(code >= 48 && code <= 57)
 	|| (code >= 65 && code <= 90)
@@ -91,7 +82,8 @@ export const createSourceBuilder = (
 			offset += 1
 		) {
 			const code = text.codePointAt(offset)!;
-			const isWhitespace = isWhitespaceCode(code);
+			// Space, or tab through CR (9-13). Compares beat Set.has() here, which does a hash lookup
+			const isWhitespace = code === 32 || (code >= 9 && code <= CR);
 			const isIdentifier = isIdentifierCode(code);
 			const isSegmentBoundary = (
 				!isWhitespace
@@ -149,10 +141,10 @@ export const createSourceBuilder = (
 	return {
 		// Append source text copied verbatim into the output. Segments are emitted
 		// at likely token boundaries so maps stay compact without a JS parser.
-		appendSource(text: string, sourceOffset: number) {
+		appendSource: (text: string, sourceOffset: number) => {
 			appendSourceText(text, sourceOffset);
 		},
-		appendSynthetic(text: string) {
+		appendSynthetic: (text: string) => {
 			appendSyntheticText(text);
 		},
 		toModuleSource: () => {
