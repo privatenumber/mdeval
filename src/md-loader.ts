@@ -1,5 +1,5 @@
-import type { LoadHook } from 'node:module';
-import fs from 'node:fs/promises';
+import type { LoadHookSync } from 'node:module';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
 	parseMarkdown, EXPORT_PREFIX, MARKER_OPEN, type ScriptBlock, type Marker,
@@ -48,13 +48,13 @@ const generateModule = (
 	return out.toModuleSource();
 };
 
-export const load: LoadHook = async (url, context, nextLoad) => {
+export const load: LoadHookSync = (url, context, nextLoad) => {
 	if (!url.endsWith('.md')) {
 		return nextLoad(url, context);
 	}
 
 	const filePath = fileURLToPath(url);
-	const source = await fs.readFile(filePath, 'utf8');
+	const source = fs.readFileSync(filePath, 'utf8');
 	const { scriptBlocks, markers } = parseMarkdown(source);
 
 	// Stub `.md` files (no mdeval content yet) must stay importable so consumers
