@@ -13,8 +13,6 @@ const CR = 13;
 
 const whitespaceCodes = new Set([9, LF, 11, 12, CR, 32]);
 
-const isWhitespaceCode = (code: number) => whitespaceCodes.has(code);
-
 const isIdentifierCode = (code: number) => (
 	(code >= 48 && code <= 57)
 	|| (code >= 65 && code <= 90)
@@ -86,7 +84,7 @@ export const createSourceBuilder = (
 			offset += 1
 		) {
 			const code = text.codePointAt(offset)!;
-			const isWhitespace = isWhitespaceCode(code);
+			const isWhitespace = whitespaceCodes.has(code);
 			const isIdentifier = isIdentifierCode(code);
 			const isSegmentBoundary = (
 				!isWhitespace
