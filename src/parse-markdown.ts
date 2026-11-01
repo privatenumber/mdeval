@@ -34,14 +34,14 @@ export type ScriptBlock = {
 
 type CodeRange = [number, number];
 
+const codeTokenTypes = new Set(['codeFenced', 'codeIndented', 'codeText']);
+
 // Collect the byte ranges of all code constructs via micromark — the CommonMark
 // reference parser. Fenced code, inline code, and indented code blocks are the
 // regions where mdeval patterns are treated as literal content (part of a docs
 // example) rather than active syntax.
 //
 // micromark emits events in document order, so the ranges come out sorted.
-const codeTokenTypes = new Set(['codeFenced', 'codeIndented', 'codeText']);
-
 // micromark's preprocess() strips a leading BOM; we shift offsets back so the
 // ranges align with positions in the original source that our mdeval scanners
 // also operate on.
