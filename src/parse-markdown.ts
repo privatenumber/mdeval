@@ -40,6 +40,8 @@ type CodeRange = [number, number];
 // example) rather than active syntax.
 //
 // micromark emits events in document order, so the ranges come out sorted.
+const codeTokenTypes = new Set(['codeFenced', 'codeIndented', 'codeText']);
+
 // micromark's preprocess() strips a leading BOM; we shift offsets back so the
 // ranges align with positions in the original source that our mdeval scanners
 // also operate on.
@@ -53,11 +55,7 @@ const findCodeRanges = (source: string): CodeRange[] => {
 		if (phase !== 'enter') {
 			continue;
 		}
-		if (
-			token.type === 'codeFenced'
-			|| token.type === 'codeIndented'
-			|| token.type === 'codeText'
-		) {
+		if (codeTokenTypes.has(token.type)) {
 			ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
 		}
 	}

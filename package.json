@@ -60,7 +60,7 @@
 		"@types/unist": "^3.0.3",
 		"clean-pkg-json": "^1.4.1",
 		"fs-fixture": "^2.12.0",
-		"lintroll": "^1.30.0",
+		"lintroll": "^1.33.0",
 		"manten": "^2.0.0",
 		"nano-spawn": "^2.1.0",
 		"pkgroll": "^2.27.0",
