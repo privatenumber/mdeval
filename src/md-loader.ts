@@ -1,4 +1,4 @@
-import type { LoadHookSync } from 'node:module';
+import type { LoadFnOutput, LoadHook, LoadHookSync } from 'node:module';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -48,13 +48,8 @@ const generateModule = (
 	return out.toModuleSource();
 };
 
-export const load: LoadHookSync = (url, context, nextLoad) => {
-	if (!url.endsWith('.md')) {
-		return nextLoad(url, context);
-	}
-
+const toModule = (url: string, source: string): LoadFnOutput => {
 	const filePath = fileURLToPath(url);
-	const source = fs.readFileSync(filePath, 'utf8');
 	const { scriptBlocks, markers } = parseMarkdown(source);
 
 	// Stub `.md` files (no mdeval content yet) must stay importable so consumers
@@ -72,4 +67,21 @@ export const load: LoadHookSync = (url, context, nextLoad) => {
 		source: generateModule(source, filePath, scriptBlocks, markers),
 		shortCircuit: true,
 	};
+};
+
+// For module.register(), which runs hooks on a separate thread. Async reads let
+// that thread overlap I/O across concurrent imports.
+export const load: LoadHook = async (url, context, nextLoad) => {
+	if (!url.endsWith('.md')) {
+		return nextLoad(url, context);
+	}
+	return toModule(url, await fs.promises.readFile(fileURLToPath(url), 'utf8'));
+};
+
+// For module.registerHooks(), which runs hooks synchronously in-thread
+export const loadSync: LoadHookSync = (url, context, nextLoad) => {
+	if (!url.endsWith('.md')) {
+		return nextLoad(url, context);
+	}
+	return toModule(url, fs.readFileSync(fileURLToPath(url), 'utf8'));
 };

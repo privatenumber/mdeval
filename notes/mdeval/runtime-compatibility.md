@@ -1,34 +1,39 @@
 # Runtime compatibility
 
-Verified 2026-11-01 against implementation commit `53f1b1dc241ad6adc5b1769eadbafaceac4e0ec9`, Node.js 26.13.0, and a Node.js 20.19.0 consumer smoke check.
+Verified 2026-11-01 on Node.js 26.13.0, 22.14.0, and 20.19.0.
 
 ## Development runtime and consumer minimum serve different purposes
 
-[`.nvmrc`](../../.nvmrc) selects the development runtime, and both [test](../../.github/workflows/test.yml) and [release](../../.github/workflows/release.yml) workflows read it. Raising this version also changes the runtime used to build release artifacts. [`engines.node`](../../package.json) remains the consumer contract at `>=20.19`; changing the development pin does not justify raising that minimum.
+[`.nvmrc`](../../.nvmrc) selects the development runtime, and both [test](../../.github/workflows/test.yml) and [release](../../.github/workflows/release.yml) workflows read it. Raising it also changes the runtime that builds release artifacts. [`engines.node`](../../package.json) is the consumer contract at `>=20.19`; changing the development pin does not justify raising it.
 
 ## Loader selection preserves older consumers
 
-[The loader](../../src/loader.ts) seeds the Markdown helpers, enables source maps, and selects the registration API by capability. It uses synchronous hooks when `module.registerHooks` exists and otherwise registers `#md-loader` through the older API. The shared [load hook](../../src/md-loader.ts) reads Markdown synchronously, so it satisfies the synchronous API while remaining callable by the older loader.
+Node.js 26 deprecates `module.register()` at runtime: "`module.register()` is deprecated. Use `module.registerHooks()` instead." ([DEP0205 at v26.13.0](https://github.com/nodejs/node/blob/v26.13.0/doc/api/deprecations.md#L4574-L4597)). Every process that calls it prints a `DeprecationWarning` to stderr, which breaks mdeval's quiet CLI output. The replacement, `module.registerHooks()`, exists only from Node.js 22.15.0 and 23.5.0 ([history at v26.13.0](https://github.com/nodejs/node/blob/v26.13.0/doc/api/module.md#L227-L241)).
 
-**Decision:** retain the older registration path while the consumer contract includes Node.js 20.19 and Node.js 22 releases before 22.15. The [upstream API boundaries](../node/module-hooks.md) explain why selecting only by the development runtime would break supported consumers. Re-evaluate the fallback when the consumer minimum changes.
+[The loader](../../src/loader.ts) selects the API by capability. It uses synchronous hooks when `module.registerHooks` exists and otherwise registers `#md-loader` through `module.register()`. [`md-loader.ts`](../../src/md-loader.ts) exports a hook for each API around one shared transform: `loadSync` reads with `readFileSync` for `registerHooks()`, and `load` reads with `fs.promises.readFile` for `module.register()`.
 
-**Observed regression:** before the hook migration, `pnpm test` on Node.js 26.13.0 reported `204 passed` and `1 failed`. The failing [quiet-output CLI test](../../tests/specs/cli.ts) expected empty stderr but received DEP0205. After the migration, the same suite reported `205 passed`. The assertion was retained; no warning filter was added.
+**Performance:** `loader.ts` imports `loadSync` dynamically, inside the `registerHooks` branch. On the fallback path the hooks run on the loader thread, so a top-level import would load the Markdown parser on the main thread for nothing. The fallback also keeps an async read, because the loader thread can overlap reads across concurrent imports. Measured with 50 interleaved fresh processes per build, importing 200 `.md` files (median ms):
 
-## Verification boundaries
+| Node.js | Before (`register()` only) | Sync hook, top-level import | Current |
+| --- | --- | --- | --- |
+| 26.13.0 | 116 | 86 | 87 |
+| 22.14.0 | 122 | 177 | 120 |
+| 20.19.0 | 174 | 256 | 175 |
 
-On Node.js 26.13.0, the following checks passed:
+Importing a single `.md` file showed the same direction: the top-level import alone added about 15-20 ms per process on Node.js 22.14 and 20.19.
 
-```sh
-pnpm test
-pnpm type-check
-pnpm lint
-```
+**Decision:** keep the `module.register()` fallback while `engines.node` includes Node.js 20 and Node.js 22 releases before 22.15. Selecting by the development runtime alone would break those consumers. Remove the fallback when the consumer minimum reaches 22.15.
 
-The suite covers static Markdown imports through the [consumer recipe](../../tests/specs/recipe.ts), [source-map remapping](../../tests/specs/source-map.ts), and CLI output. Lint retained six pre-existing warnings and reported no errors.
+## Verification
 
-On Node.js 20.19.0, a separate smoke check used a synthetic `data.md` exporting `value = 42`, a consumer importing that value through `--import ./dist/loader.mjs`, and the built CLI rewriting `<!--mdeval value-->old<!--/mdeval-->`. The imported value was 42, the rewritten marker contained 42, and CLI stderr was empty. This establishes those built-artifact paths, not full-suite coverage on Node.js 20.19. The TypeScript test entry point was not run on that runtime.
+The [quiet-output CLI test](../../tests/specs/cli.ts) asserts empty stderr, so it is the regression test for this warning. With `pnpm test` on Node.js 26.13.0:
 
-For a manual consumer check, use this Markdown input:
+| Loader | Result |
+| --- | --- |
+| `module.register()` only (before the fix) | `204 passed`, `1 failed`: stderr received `[DEP0205] DeprecationWarning` |
+| Capability selection (current) | `205 passed` |
+
+The TypeScript test entry point does not run on Node.js 20, so the fallback path was checked against the built artifacts instead. Save this synthetic input as `data.md` in a disposable directory:
 
 ```markdown
 # Data
@@ -40,11 +45,11 @@ export const value = 42;
 <!--mdeval value-->old<!--/mdeval-->
 ```
 
-Save it as `data.md` in a disposable directory. With the desired Node version selected, run the built loader and CLI from the repository root:
+After `pnpm build`, run these from that directory with the target Node.js version selected, replacing `<repo>` with the repository path:
 
 ```sh
-node --import ./dist/loader.mjs --input-type=module -e 'import assert from "node:assert/strict"; const { value } = await import("./data.md"); assert.equal(value, 42);'
-node ./dist/cli.mjs ./data.md
+node --import <repo>/dist/loader.mjs --input-type=module -e 'const { value } = await import("./data.md"); console.log(value)'
+node <repo>/dist/cli.mjs ./data.md
 ```
 
-Adjust the input path if the disposable directory is not the repository root. Inspect stderr as well as the exit status. Do not use a real document for a rewrite smoke check.
+On Node.js 20.19.0, 22.14.0, and 26.13.0, the import printed `42`, the CLI exited 0 with empty stderr, and the marker was rewritten to `<!--mdeval value-->42<!--/mdeval-->`. Use a disposable copy, because the CLI rewrites the file.
