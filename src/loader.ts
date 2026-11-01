@@ -1,4 +1,4 @@
-import { register } from 'node:module';
+import module from 'node:module';
 import { block, $ } from './runtime.ts';
 
 // Side-effect-only entry: seeds the helpers `.md` modules expect on
@@ -17,4 +17,12 @@ Object.assign(globalThis, {
 // single `--import mdeval/loader`.
 process.setSourceMapsEnabled(true);
 
-register('#md-loader', import.meta.url);
+if (module.registerHooks) {
+	// Imported here, not at the top: on the fallback path the hooks run on the
+	// loader thread, so loading the Markdown parser here too would be wasted
+	const { loadSync } = await import('./md-loader.ts');
+	module.registerHooks({ load: loadSync });
+} else {
+	// Node 20 and Node 22 before 22.15 only support off-thread hooks.
+	module.register('#md-loader', import.meta.url);
+}
