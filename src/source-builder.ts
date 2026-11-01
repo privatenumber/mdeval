@@ -141,10 +141,10 @@ export const createSourceBuilder = (
 	return {
 		// Append source text copied verbatim into the output. Segments are emitted
 		// at likely token boundaries so maps stay compact without a JS parser.
-		appendSource(text: string, sourceOffset: number) {
+		appendSource: (text: string, sourceOffset: number) => {
 			appendSourceText(text, sourceOffset);
 		},
-		appendSynthetic(text: string) {
+		appendSynthetic: (text: string) => {
 			appendSyntheticText(text);
 		},
 		toModuleSource: () => {
