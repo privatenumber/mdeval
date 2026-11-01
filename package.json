@@ -28,7 +28,7 @@
 	"imports": {
 		"#md-loader": "./dist/md-loader.mjs"
 	},
-	"packageManager": "pnpm@12.15.0",
+	"packageManager": "pnpm@12.16.1",
 	"scripts": {
 		"build": "pkgroll --minify",
 		"test": "pnpm build && node tests/index.ts",
