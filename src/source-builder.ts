@@ -11,8 +11,6 @@ type Position = {
 const LF = 10;
 const CR = 13;
 
-const whitespaceCodes = new Set([9, LF, 11, 12, CR, 32]);
-
 const isIdentifierCode = (code: number) => (
 	(code >= 48 && code <= 57)
 	|| (code >= 65 && code <= 90)
@@ -84,7 +82,8 @@ export const createSourceBuilder = (
 			offset += 1
 		) {
 			const code = text.codePointAt(offset)!;
-			const isWhitespace = whitespaceCodes.has(code);
+			// Space, or tab through CR (9-13). Compares beat Set.has() here, which does a hash lookup
+			const isWhitespace = code === 32 || (code >= 9 && code <= CR);
 			const isIdentifier = isIdentifierCode(code);
 			const isSegmentBoundary = (
 				!isWhitespace
