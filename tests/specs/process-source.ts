@@ -2,6 +2,11 @@ import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
 import { processSource } from '../../src/process-source.ts';
 
+// Fixtures that import a relative module declare their module type. The suite also
+// runs under tsx on older Node.js, which parses an ESM `.js` file without a package
+// type as CommonJS, unlike Node.js itself (https://github.com/privatenumber/tsx/issues/867)
+const esmPackageJson = JSON.stringify({ type: 'module' });
+
 const processMarkdown = async (source: string) => {
 	await using fixture = await createFixture({ 'test.md': source });
 	const output = await processSource(source, fixture.getPath('test.md'));
@@ -91,6 +96,7 @@ describe('processSource', () => {
 		const helperJs = 'export const block = (x) => `IMPORTED:${x}`;';
 		const md = '<!--mdeval\nimport { block } from \'./helpers.js\';\nconst value = "test";\n-->\n\n<!--mdeval block(value)-->old<!--/mdeval-->';
 		await using fixture = await createFixture({
+			'package.json': esmPackageJson,
 			'helpers.js': helperJs,
 			'test.md': md,
 		});
@@ -102,6 +108,7 @@ describe('processSource', () => {
 		const helperJs = 'export const $ = "jQuery-from-helper";';
 		const md = '<!--mdeval\nimport { $ } from \'./helpers.js\';\n-->\n\n<!--mdeval $-->old<!--/mdeval-->';
 		await using fixture = await createFixture({
+			'package.json': esmPackageJson,
 			'helpers.js': helperJs,
 			'test.md': md,
 		});
@@ -173,6 +180,7 @@ describe('processSource', () => {
 	test('imports relative .ts files', async () => {
 		const md = '<!--mdeval\nimport { value } from \'./helper.ts\';\nconst x = value;\n-->\n\n<!--mdeval x-->?<!--/mdeval-->';
 		await using fixture = await createFixture({
+			'package.json': esmPackageJson,
 			'helper.ts': 'export const value = 42;',
 			'test.md': md,
 		});
@@ -186,6 +194,7 @@ describe('processSource', () => {
 	test('imports relative .js files', async () => {
 		const md = '<!--mdeval\nimport { value } from \'./helper.js\';\nconst x = value;\n-->\n\n<!--mdeval x-->?<!--/mdeval-->';
 		await using fixture = await createFixture({
+			'package.json': esmPackageJson,
 			'helper.js': 'export const value = "hello";',
 			'test.md': md,
 		});

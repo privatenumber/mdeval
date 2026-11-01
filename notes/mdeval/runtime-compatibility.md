@@ -33,6 +33,12 @@ The [quiet-output CLI test](../../tests/specs/cli.ts) asserts empty stderr, so i
 | `module.register()` only (before the fix) | `204 passed`, `1 failed`: stderr received `[DEP0205] DeprecationWarning` |
 | Capability selection (current) | `205 passed` |
 
-The test suite cannot run on the versions that use the fallback: Node.js 20 cannot strip types, and Node.js 22.14 cannot parse `await using`. Instead, [`tests/fallback-smoke.mjs`](../../tests/fallback-smoke.mjs) checks the built artifacts with Node.js built-ins only. It imports a synthetic `.md` file through `dist/loader.mjs`, runs `dist/cli.mjs` on it, and requires empty stderr and the rewritten marker. The [test workflow](../../.github/workflows/test.yml) runs it on Node.js 20.19.0 and 22.14.0 after the main suite. To run it locally, build first, then run `node tests/fallback-smoke.mjs` with the target Node.js version selected.
+Plain Node.js cannot run the TypeScript suite on the versions that use the fallback: Node.js 20 cannot strip types, and Node.js 22.14 cannot parse `await using`. The [test workflow](../../.github/workflows/test.yml) runs the suite on Node.js 20.19.0 (the `engines.node` minimum) and 22.14.0 (the last 22.x without `registerHooks()`) through [tsx](https://tsx.is), after installing and building on the development runtime:
 
-The script passed on Node.js 20.19.0, 22.14.0, and 26.13.0. With the capability check disabled so that Node.js 26.13.0 used `module.register()`, it failed on the `[DEP0205]` stderr output, so the check also catches this regression.
+```sh
+pnpm dlx node@20.19.0 --import tsx tests/index.ts
+```
+
+The CLI, recipe, and source-map specs spawn `process.execPath` with the built loader, so on these versions they run the real `module.register()` path, including the empty-stderr assertion. With the fallback replaced by a no-op hook, Node.js 20.19.0 reported `139 passed` and `66 failed`.
+
+The `process-source` fixtures that import a relative `.js` or `.ts` module include `{"type": "module"}`. Without it, tsx on Node.js 20.19–22.22 and 24.0–24.11 parses an ESM `.js` file in a directory without a package type as CommonJS, while Node.js itself detects it as ESM ([privatenumber/tsx#867](https://github.com/privatenumber/tsx/issues/867)). Remove the field from those fixtures when tsx fixes that issue.
