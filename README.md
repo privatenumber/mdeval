@@ -52,7 +52,7 @@ mdeval README.md
 
 The file is updated in-place. You can pass multiple files or glob patterns: `mdeval README.md "docs/**/*.md"`.
 
-`node_modules` and hidden directories are automatically excluded from glob expansion.
+`node_modules` and hidden directories are automatically excluded from glob expansion. To include them, name them in the pattern, such as `"node_modules/pkg/*.md"` or `".github/**/*.md"`.
 
 ## Example
 
