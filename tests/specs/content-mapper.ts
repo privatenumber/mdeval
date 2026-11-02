@@ -4,7 +4,7 @@ import { createFixture, type FileTree } from 'fs-fixture';
 import spawn, { SubprocessError } from 'nano-spawn';
 
 const projectRoot = path.resolve(import.meta.dirname, '../..');
-const compiler = path.join(projectRoot, 'node_modules/typescript-mapper-tests/bin/tsc');
+const compiler = path.join(projectRoot, 'node_modules/typescript7/bin/tsc');
 
 const tsc = async (
 	args: string[],

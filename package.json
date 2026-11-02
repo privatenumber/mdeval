@@ -72,7 +72,7 @@
 		"ts-content-mapper": "0.1.0",
 		"tsx": "^4.23.15",
 		"typescript": "^6.0.3",
-		"typescript-mapper-tests": "npm:typescript@7.1.0-beta"
+		"typescript7": "npm:typescript@7.1.0-beta"
 	},
 	"typescript": {
 		"contentMapper": {
