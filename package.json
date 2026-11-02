@@ -38,7 +38,7 @@
 		"test": "pnpm build && node tests/index.ts",
 		"type-check": "node node_modules/typescript/bin/tsc",
 		"lint": "lintroll --cache --git .",
-		"prepack": "pnpm build && clean-pkg-json --keep typescript"
+		"prepack": "pnpm build && clean-pkg-json"
 	},
 	"engines": {
 		"node": ">=20.19"
@@ -63,7 +63,7 @@
 	"devDependencies": {
 		"@types/node": "^26.6.6",
 		"@types/unist": "^3.0.3",
-		"clean-pkg-json": "^2.0.0",
+		"clean-pkg-json": "^2.1.0",
 		"fs-fixture": "^2.16.0",
 		"lintroll": "^1.34.1",
 		"manten": "^2.0.2",

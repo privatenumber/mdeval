@@ -2,8 +2,9 @@ skills:
   dirs:
     - .agents/skills
 
-# lintroll is published by this project's maintainer, so its releases skip the age delay
+# These packages are published by this project's maintainer, so their releases skip the age delay
 minimumReleaseAgeExclude:
+  - clean-pkg-json
   - lintroll
 
 allowBuilds:

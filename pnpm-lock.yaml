@@ -219,8 +219,8 @@ importers:
         specifier: ^3.0.3
         version: 3.0.3
       clean-pkg-json:
-        specifier: ^2.0.0
-        version: 2.0.0
+        specifier: ^2.1.0
+        version: 2.1.0
       fs-fixture:
         specifier: ^2.16.0
         version: 2.16.0
@@ -1335,8 +1335,8 @@ packages:
   cjs-module-lexer@2.3.0:
     resolution: {integrity: sha512-lmNyBzi6iYiqyrExTctfmjd8tInx+dHu9PBomTfH5RXS53c27JMFJgzNv5TyAnm3PgGf+MLy0+Ws41/HlVxdKQ==}
 
-  clean-pkg-json@2.0.0:
-    resolution: {integrity: sha512-HfgaeXf7xc2xEg28rKAb6iJ7KaBU6Bu1F+wefBUEm142fYvnn+dKuBg2WEwjv7hIs1S4tu/qdLK9wek03OolBQ==}
+  clean-pkg-json@2.1.0:
+    resolution: {integrity: sha512-bwxSL26Ud/EmAi2a/9+dh+7R5BtKya0ME81otnshTEoAOduNt96G3pqY5NHPXnjHk+FK7khpqxy8nCcDtN+GDQ==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -3888,7 +3888,7 @@ snapshots:
 
   cjs-module-lexer@2.3.0: {}
 
-  clean-pkg-json@2.0.0: {}
+  clean-pkg-json@2.1.0: {}
 
   cleye@2.3.0:
     dependencies:
