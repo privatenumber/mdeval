@@ -83,6 +83,19 @@ console.log(todos);
 - Works on `.md` directly too: `node --import mdeval/loader ./TODOS.md`.
 - Runtime stack traces from a `.md` point at original lines and columns automatically.
 
+## Type checking
+
+If the project's `tsconfig.json` registers mdeval under `contentMappers` (requires TypeScript 7.1+), check script blocks and markers without executing them:
+
+```bash
+npx tsc --noEmit --runExternalCode
+```
+
+- Errors point to the original Markdown lines and columns.
+- Embedded code must stay JavaScript. Annotate with JSDoc (`/** @type {number} */`), never TypeScript syntax: mdeval runs blocks as JavaScript, so `const count: number = 42` fails at runtime.
+- A repeated marker expression is checked once, and its errors point to the first occurrence.
+- Don't add the setup unless asked. See the README's "Type checking Markdown" section for configuration.
+
 ## CLI
 
 ```bash
