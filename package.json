@@ -34,7 +34,7 @@
 	},
 	"packageManager": "pnpm@12.16.1",
 	"scripts": {
-		"build": "pkgroll --minify --export-condition=node --license=dist/LICENSE",
+		"build": "pkgroll --minify --export-condition=node",
 		"test": "pnpm build && node tests/index.ts",
 		"type-check": "node node_modules/typescript/bin/tsc",
 		"lint": "lintroll --cache --git .",
