@@ -165,6 +165,63 @@ node --import mdeval/loader ./TODOS.md
 
 Runtime stack traces from a `.md` point at original lines and columns — the loader sets up source maps automatically.
 
+## Type checking Markdown
+
+TypeScript 7.1 Beta can check JavaScript inside mdeval comments and report errors at their original Markdown locations. Script blocks share a module scope, and imports resolve relative to the Markdown file. Each distinct marker expression is checked once, and its diagnostics point to the first occurrence. Checking does not execute the embedded code.
+
+Install the beta compiler:
+
+```sh
+npm install --save-dev typescript@7.1.0-beta
+```
+
+Register mdeval in your `tsconfig.json` and include the Markdown files you want to check:
+
+```json
+{
+    "compilerOptions": {
+        "module": "nodenext",
+        "target": "esnext",
+        "strict": true,
+        "allowJs": true,
+        "checkJs": true,
+        "noEmit": true
+    },
+    "contentMappers": [
+        {
+            "package": "mdeval",
+            "extensions": [
+                ".md"
+            ]
+        }
+    ],
+    "include": [
+        "README.md",
+        "docs/**/*.md"
+    ]
+}
+```
+
+Run the compiler with permission to start the mapper:
+
+```sh
+npx tsc --noEmit --runExternalCode
+```
+
+For example, this reports an error on `toUpperCase` because `count` is a number:
+
+```md
+<!--mdeval
+const count = 42;
+-->
+
+Count: <!--mdeval count.toUpperCase()-->42<!--/mdeval-->
+```
+
+Use JSDoc to add type annotations. The embedded code remains JavaScript; TypeScript-only syntax is not supported. Fenced code blocks, inline code, and rendered marker values are not checked.
+
+The content mapper API is experimental. This integration is tested with TypeScript `7.1.0-beta`. Editor activation for Markdown depends on the editor's TypeScript integration; the configuration above enables command-line checking.
+
 ## Notes
 
 - A file can have **multiple script blocks** — they're merged into one module, so variables and imports are shared. We recommend placing them at the top to signal the file has generated content.
