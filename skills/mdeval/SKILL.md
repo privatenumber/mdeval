@@ -1,156 +1,59 @@
 ---
 name: mdeval
-description: Evaluates JavaScript or TypeScript in markdown HTML comments and interpolates results in-place. Use when editing markdown files that contain mdeval script blocks or value markers, when the user wants computed/dynamic values in markdown, or when maintaining README badges, version numbers, or stats.
+description: Editing Markdown that contains `<!--mdeval` script blocks or value markers; adding computed values to Markdown, such as versions, counts, file contents, command output, or generated tables; running the `mdeval` CLI or `mdeval/loader`, or debugging their output.
 ---
 
 # mdeval
 
-## When to use
-
-- Markdown contains values derived from code, files, APIs, or shell commands
-- README stats, version numbers, dependency counts, or computed tables
-- Any value where accuracy matters — counts, sizes, dates, calculations
-- Auditable content — the expression proves the value is correct, not just asserted
+This skill covers writing mdeval code in Markdown and running it. mdeval evaluates the code and writes each result into the file.
 
 ## Syntax
 
-Two types of HTML comments — invisible when rendered:
+| Type | Syntax | Starts with |
+| --- | --- | --- |
+| Script block | `<!--mdeval\n...code...\n-->` | `<!--mdeval` + newline |
+| Value marker | `<!--mdeval EXPR-->value<!--/mdeval-->` | `<!--mdeval` + space |
 
-| Type | Syntax | Purpose |
-|------|--------|---------|
-| Script block | `<!--mdeval\n...\n-->` | Define variables, imports, logic. Starts with `<!--mdeval` + newline |
-| Value marker | `<!--mdeval EXPR-->value<!--/mdeval-->` | Interpolate expression result. Starts with `<!--mdeval ` + space |
+- All script blocks in a file form one ES module with full Node.js access and top-level `await`. Their imports and variables are visible to every marker in the file.
+- `import.meta` refers to the Markdown file, so relative imports and paths resolve from it.
+- Place script blocks at the top of the file. Order does not affect execution.
+- Scripts and markers can use TypeScript syntax that Node.js strips: type annotations, `interface`, `type`, `as`, `satisfies`, and `!`. Do not use `enum`, `namespace` with values, or constructor parameter properties; they fail at runtime. Markdown under `node_modules` runs as plain JavaScript.
 
-Script blocks run as ESM with full Node.js access and top-level `await`. All blocks in a file merge into one module — imports and variables are shared across blocks and markers. `import.meta` points to the markdown file. Marker expressions are auto-awaited, so promises resolve automatically.
+## Markers
 
-Scripts and markers can use TypeScript syntax that Node.js strips, such as type annotations, `interface`, `as`, and `satisfies`. Do not use `enum`, `namespace` with values, or constructor parameter properties: they fail at runtime. Markdown under `node_modules` runs as JavaScript only.
+A marker expression is anything valid after `const x =`. mdeval awaits it, converts the result to text, and replaces the value between `-->` and `<!--/mdeval-->`. An expression that appears in several markers is evaluated once.
 
-## Marker Expressions
+| Result | Written as |
+| --- | --- |
+| `string` | As is |
+| Object with `Symbol.toPrimitive`, such as zx output | `String(value)` |
+| Other object or array | `JSON.stringify(value)` |
+| `undefined` or `null` | Error |
+| Anything else | `String(value)` |
 
-Any JavaScript or TypeScript expression valid on the right side of `const x =`:
+Keep logic that one marker needs inside that marker. Markers can span lines, and an IIFE holds statements:
 
-| Expression | Example |
-|------------|---------|
-| Variable | `<!--mdeval name-->value<!--/mdeval-->` |
-| Property access | `<!--mdeval data.version-->value<!--/mdeval-->` |
-| Computation | `<!--mdeval items.length + " items"-->value<!--/mdeval-->` |
-| IIFE | `<!--mdeval (() => { const x = 1 + 1; return x; })()-->value<!--/mdeval-->` |
+````markdown
+<!--mdeval (() => {
+  const n = 3;
+  return n % 2 === 0 ? 'even' : 'odd';
+})()-->odd<!--/mdeval-->
+````
 
-Duplicate expressions across markers are evaluated once and reused.
-
-## Value Coercion
-
-| Type | Result |
-|------|--------|
-| `string` | As-is |
-| `number`, `boolean`, `bigint` | `String(value)` |
-| `object`, `array` | `JSON.stringify(value)` |
-| object with `Symbol.toPrimitive` | `String(value)` (e.g. zx `ProcessOutput`) |
-| `Promise` | Auto-awaited, then coerced |
-| `undefined`, `null` | Error |
+Use script blocks for imports and for values that several markers share.
 
 ## Helpers
 
-| Helper | Description |
-|--------|-------------|
-| `block(value)` | Wraps value with newlines for block-level rendering |
-| `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates: `` $`git branch` `` |
+| Helper | Use |
+| --- | --- |
+| `block(value)` | Puts the value on its own lines. Required for headings, lists, tables, and other block Markdown. |
+| `$` | Runs a shell command with [zx](https://google.github.io/zx/): `` $`git branch --show-current` `` |
 
-| File | Access |
-|------|--------|
-| `.md` | Globals — call directly: `block(x)`, `` $`cmd` `` |
-| `.js`, `.ts`, anything else | `import { block, $ } from 'mdeval'` |
-
-CLI (and `--import mdeval/loader`) seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import. `import { block, $ } from 'mdeval'` is side-effect-free.
-
-## Importing `.md` exports from a script
-
-Use when a Node script (validation, migration, agent tooling) needs to read exports from a `.md`. Run the script with `--import mdeval/loader`:
-
-```bash
-node --import mdeval/loader ./consumer.js
-```
-
-`consumer.js` can use ordinary static imports against `.md` files:
-
-```js
-import { todos } from './TODOS.md';
-
-console.log(todos);
-```
-
-- `--import mdeval/loader` is a side-effect-only entry — seeds `block`/`$` on `globalThis` and registers the Node ESM loader before any of the script's imports link.
-- Without it, static `import` of a `.md` fails — Node can't resolve `.md` until the loader is registered.
-- The plain `mdeval` import (`import { block, $ } from 'mdeval'`) stays pure — no globals, no loader. Use it when you only want the helpers.
-- Works on `.md` directly too: `node --import mdeval/loader ./TODOS.md`.
-- Runtime stack traces from a `.md` point at original lines and columns automatically.
-
-## Type checking
-
-TypeScript can type-check the code in mdeval script blocks and markers without executing it, and report errors at the original Markdown lines. This uses content mappers, a new TypeScript 7.1 feature that lets a package translate other file types for the compiler. Most projects have not set it up yet, so a `tsconfig.json` without it does not mean the project opted out.
-
-To type-check mdeval code, install TypeScript 7.1 (currently a beta):
-
-```bash
-npm install --save-dev typescript@7.1.0-beta
-```
-
-Register mdeval as the content mapper for `.md` files in `tsconfig.json`, and include the Markdown files to check:
-
-```json
-{
-    "compilerOptions": {
-        "module": "nodenext",
-        "target": "esnext",
-        "strict": true,
-        "erasableSyntaxOnly": true,
-        "noEmit": true
-    },
-    "contentMappers": [
-        {
-            "package": "mdeval",
-            "extensions": [".md"]
-        }
-    ],
-    "include": ["README.md", "docs/**/*.md"]
-}
-```
-
-Run the compiler. `--runExternalCode` allows `tsc` to start mdeval's mapper; the code in the Markdown is not executed:
-
-```bash
-npx tsc --noEmit --runExternalCode
-```
-
-- Markdown is checked as TypeScript. Annotate with TypeScript syntax (`const count: number = 42`); JSDoc types are not checked.
-- `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
-- A repeated marker expression is checked once, and its errors point to the first occurrence.
-- Fenced code, inline code, and rendered marker values are not checked.
-- The `block` and `$` globals are typed; no import is needed.
-- A `.ts` consumer of `.md` exports (`node --import mdeval/loader ./consumer.ts`) is checked against their types when it is in `include`.
-
-## CLI
-
-```bash
-mdeval README.md                    # single file
-mdeval README.md docs/guide.md      # multiple files
-mdeval "docs/**/*.md"               # glob pattern
-mdeval "**/*.md"                    # recursive — node_modules and dotdirs auto-excluded
-```
-
-Supports full glob syntax including `**` recursive, `{a,b}` brace expansion, and `!` negation.
-
-`node_modules` and hidden directories (`.git`, `.next`, etc.) are automatically excluded from glob expansion. No need to manually negate them. To explicitly include `node_modules`, reference it in the pattern: `mdeval "node_modules/pkg/*.md"`.
+Both are globals in `.md` files. In `.js` and `.ts` files, use `import { block, $ } from 'mdeval'`.
 
 ## Patterns
 
-### Shell commands
-
-````markdown
-<!--mdeval $`git branch --show-current`-->main<!--/mdeval-->
-````
-
-### Read package.json
+Read `package.json`:
 
 ````markdown
 <!--mdeval
@@ -158,12 +61,16 @@ import fs from 'node:fs/promises';
 const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));
 -->
 
-Version: <!--mdeval pkg.version-->0.0.0<!--/mdeval-->
+Version: <!--mdeval pkg.version-->1.0.0<!--/mdeval-->
 ````
 
-### Typed data
+Shell output:
 
-Annotate shared data so `tsc` catches mistakes in the markers that use it:
+````markdown
+Branch: <!--mdeval $`git branch --show-current`-->main<!--/mdeval-->
+````
+
+Typed data, which `tsc` can check:
 
 ````markdown
 <!--mdeval
@@ -181,83 +88,16 @@ const releases = [
 Latest: <!--mdeval releases[0].version-->1.1.0<!--/mdeval-->
 ````
 
-### Import from other .md files
-
-Only script blocks are executed — markers are not processed:
+Generated Markdown with [md-pen](https://github.com/privatenumber/md-pen). It must be installed in the project:
 
 ````markdown
 <!--mdeval
-import { version } from './data.md';
+import { table } from 'md-pen';
 -->
 
-<!--mdeval version-->1.0.0<!--/mdeval-->
-````
-
-If the imported `.md` may not yet have mdeval content (stubs filled in over time), use a **namespace import** — named imports against an empty module are rejected by Node's ESM linker, but missing properties on a namespace resolve to `undefined`:
-
-````markdown
-<!--mdeval
-import * as data from './stub.md';
-const version = data.version ?? 'tbd';
--->
-````
-
-### Generate Markdown with md-pen
-
-Use [md-pen](https://github.com/privatenumber/md-pen) for formatted output (tables, lists, headings):
-
-````markdown
-<!--mdeval
-import { table, bold, link } from 'md-pen';
-const deps = [['cleye', '^2.3.0'], ['md-pen', '^0.0.2']];
-const depsTable = table(deps.map(([name, v]) => [link(`https://npm.im/${name}`, bold(name)), v]));
--->
-
-<!--mdeval block(depsTable)-->
-| Package | Version |
-| - | - |
-| [__cleye__](https://npm.im/cleye) | ^2.3.0 |
-<!--/mdeval-->
-````
-
-## Gotchas
-
-**Block-level values need `block()`.** Without it, block elements don't render:
-
-````markdown
-<!-- ❌ Heading stays on same line as comment, won't render -->
-<!--mdeval heading-->### Title<!--/mdeval-->
-
-<!-- ✅ block() adds newlines so the heading renders correctly -->
-<!--mdeval block(heading)-->
-### Title
-<!--/mdeval-->
-````
-
-**Script code cannot contain `-->`** — it closes the HTML comment:
-
-````markdown
-<!-- ❌ --> in the string literal closes the comment prematurely -->
-<!--mdeval
-const x = "<!--/mdeval-->";
--->
-
-<!-- ✅ Build the string without --> -->
-<!--mdeval
-const x = String.fromCharCode(45, 45, 62);
--->
-````
-
-**Values cannot contain mdeval syntax.** Producing `<!--mdeval ` or `<!--/mdeval-->` in a value throws an error to prevent document corruption on re-parse.
-
-**Place scripts at the top.** Order doesn't affect execution — scripts can appear after the markers that reference them — but top placement signals the file contains generated content.
-
-**Markers can span multiple lines — use them to inline logic.** Don't cram expressions into one line. Co-locate marker-specific computation with its output:
-
-````markdown
 <!--mdeval block(table([
-  { name: 'cleye', version: '^2.3.0' },
-  { name: 'md-pen', version: '^0.0.2' },
+  { Package: 'cleye', Version: '^2.3.0' },
+  { Package: 'md-pen', Version: '^0.0.2' },
 ]))-->
 | Package | Version |
 | - | - |
@@ -266,77 +106,76 @@ const x = String.fromCharCode(45, 45, 62);
 <!--/mdeval-->
 ````
 
-For statements or control flow, wrap in an IIFE: `<!--mdeval (() => { ... })()-->`. Reserve script blocks for shared imports or values referenced by multiple markers.
-
-**Standalone markers suppress inline markdown in the value.** When a marker opens a line — standalone paragraph, list item, or blockquote — GitHub treats the entire line as a raw HTML block. Inline markdown in the value (`` `code` ``, `**bold**`, `[link](url)`) is not processed and appears literally.
-
-````markdown
-<!-- ❌ backtick shows literally — line is an HTML block, not inline markdown -->
-<!--mdeval expr-->`value`<!--/mdeval-->
-````
-
-Use a multi-line marker so the value occupies its own lines, which are processed as normal markdown. Use [md-pen](https://github.com/privatenumber/md-pen) to generate formatted values:
+Data from another `.md` file. Importing a `.md` file runs only its script blocks:
 
 ````markdown
 <!--mdeval
-import { code, bold, link } from 'md-pen';
+import { version } from './data.md';
 -->
 
-<!--mdeval code('asdf')-->
-`asdf`
-<!--/mdeval-->
+Version: <!--mdeval version-->1.0.0<!--/mdeval-->
 ````
 
-Markers inside headings are always inline — markdown in the value always renders there.
-
-**Comments don't work in link URLs or image alt text.** GitHub escapes comment syntax in these positions:
-
-````markdown
-<!-- ❌ comment is URL-encoded as href -->
-[text](<!-- comment -->)
-
-<!-- ❌ comment appears as visible alt text -->
-![<!-- comment -->](image.png)
-````
-
-**`<details>` requires blank lines around the `</summary>` close.** Block-level Markdown inside a `<details>` only renders when blank lines surround the closing `</summary>` tag — otherwise lists, code fences, tables, and other block elements render as literal text. md-pen's `details(summary, content)` emits the correct shape:
+If the imported file may not have mdeval code yet, use a namespace import. A named import of a missing export fails, but a missing namespace property is `undefined`:
 
 ````markdown
 <!--mdeval
-import { details, ul } from 'md-pen';
+import * as data from './stub.md';
+const version = data.version ?? 'tbd';
+-->
+````
+
+## Gotchas
+
+**Block Markdown needs `block()`.** Without it, a heading, list, or table stays on the marker's line and does not render.
+
+**Script code cannot contain `-->`.** It ends the HTML comment, even inside a string. Build the text instead, such as `'--' + '>'`. Rewrite `x-- > y` as `x -= 1; x > y`.
+
+**Values cannot contain `<!--mdeval ` or `<!--/mdeval-->`.** mdeval throws instead of writing them.
+
+**A marker that starts a line turns off inline Markdown in its value.** When a marker opens a paragraph, list item, or blockquote, GitHub treats the line as raw HTML, so `` `code` ``, `**bold**`, and links in the value appear literally. Wrap the value in `block()` so it renders on its own lines:
+
+````markdown
+<!--mdeval
+import { code } from 'md-pen';
 -->
 
-<!--mdeval block(details(
-  'Click me',
-  ul(['item one', 'item two']),
-))-->
-<details>
-<summary>Click me</summary>
-
-- item one
-- item two
-
-</details>
+<!--mdeval block(code('value'))-->
+`value`
 <!--/mdeval-->
 ````
 
-**Set up a git hook so values never go stale.** Use [Lefthook](https://github.com/evilmartians/lefthook) with this config:
+Markers inside headings, or after other text on a line, render inline Markdown normally.
 
-```yaml
-# lefthook.yml
-pre-commit:
-  jobs:
-    - name: mdeval
-      # lefthook's default `gobwas` matcher requires `**` to span 1+ dirs,
-      # so `**/*.md` alone misses root-level files like README.md
-      glob: ["*.md", "**/*.md"]
-      run: |
-        files=$(npx mdeval "**/*.md")
-        [ -z "$files" ] || git add $files
+**Markers do not work in link URLs or image alt text.** GitHub shows or encodes the comment there instead of hiding it. mdeval warns about markers in alt text.
+
+**`<details>` needs blank lines around `</summary>`.** Without them, block Markdown inside it renders as text. md-pen's `details(summary, content)` writes the correct shape.
+
+**Examples in code are safe.** mdeval ignores markers in fenced, indented, and inline code, so Markdown can document mdeval syntax.
+
+**Do not create a `.md` file that only holds code.** mdeval warns about it. Put shared logic in a `.js` or `.ts` file and import it.
+
+## CLI
+
+```bash
+mdeval README.md "docs/**/*.md"
 ```
 
-`git add $files` re-stages only the files mdeval actually rewrote. Assumes `.md` paths without spaces.
+- mdeval updates each file in place and prints the path of each file it changed.
+- Globs skip `node_modules` and hidden directories unless the pattern names them, such as `"node_modules/pkg/*.md"`.
+- Warnings go to stderr. A `marker leaks into rendered ...` warning means a marker will show as text on GitHub. Fix it unless the marker is an intentional example.
+- After editing mdeval code, run `mdeval` on the file and check the written values.
 
-**Markers in code blocks are safe.** Fenced, indented, and inline code won't be touched — safe to document mdeval syntax in your own README.
+## References
 
-**Never create a .md file with only a script block and no real content.** Markdown files must contain actual prose/documentation. For shared logic or utilities, create a `.js` or `.ts` file and import it from your markdown instead.
+- `references/type-checking.md`: setting up or running `tsc` on Markdown, or fixing a TypeScript error reported at a `.md` line. If the project's `tsconfig.json` lists mdeval in `contentMappers`, read it and run `tsc` after editing mdeval code.
+- `references/node-loader.md`: a Node.js script, test, or tool imports a `.md` file, or runs one with `node`.
+
+## Reporting problems
+
+Report bugs in mdeval or in this skill to [privatenumber/mdeval](https://github.com/privatenumber/mdeval/issues) without waiting to be asked. This includes wrong behavior, confusing errors or warnings, wrong or missing guidance in this skill, and friction that cost time.
+
+1. Search open and closed issues: `gh issue list -R privatenumber/mdeval --search "<terms>" --state all`.
+2. Confirm the behavior on the latest mdeval release.
+3. Write a minimal Markdown reproduction without the user's private content.
+4. If your instructions allow filing issues for the user, run `gh issue create -R privatenumber/mdeval`. Otherwise, show the user the draft and file it only after they approve it.

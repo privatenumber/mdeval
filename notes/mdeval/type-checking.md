@@ -27,7 +27,7 @@ The CLI and `mdeval/loader` put `block` and `$` on `globalThis`, so `.md` files 
   | 10,000 | 1.292 s / 1.316 s | 219.8 MB / 245.6 MB |
 
   The time differences are within run-to-run noise: a second 1,000-file run measured 0.322 s without and 0.316 s with. If memory matters for very large projects, one shared declaration file would replace the per-file copies.
-- **Accepted trade-off:** the augmentation is visible to every file in the program, including `.ts` files. Those files see the globals only when the loader runs them, and the README recommends the explicit import there.
+- **Accepted trade-off:** the augmentation is visible to every file in the program, including `.ts` files. Those files see the globals only when the loader runs them, and [Node.js usage](../../docs/node.md#helpers-without-the-loader) recommends the explicit import there.
 
 ## Packaging requirements
 
@@ -49,7 +49,7 @@ The published mapper depends on each of these package settings.
 
 The repository type-checks its own source with `typescript@^6` ([why it stays on 6.x](./typescript.md)). The content-mapper spec needs the 7.1 beta compiler, so it is installed under the alias `typescript7` (`npm:typescript@7.1.0-beta`). Both packages provide a `tsc` bin, and pnpm links `node_modules/.bin/tsc` to the 7.1 beta (`cmd-shim-target=../.pnpm/typescript@7.1.0-beta/...`). For this reason, the `type-check` script runs `node node_modules/typescript/bin/tsc` explicitly.
 
-**Decision:** pin exactly `7.1.0-beta` for tests and in the README. The beta is a prerelease, and the announcement plans a release candidate about a month after 2026-10-20. Re-evaluate the pin, the alias, and the README version when 7.1 is stable. Drop the alias when the repository moves its own type check to TypeScript 7.
+**Decision:** pin exactly `7.1.0-beta` for tests and in [the type-checking docs](../../docs/type-checking.md). The beta is a prerelease, and the announcement plans a release candidate about a month after 2026-10-20. Re-evaluate the pin, the alias, and the README version when 7.1 is stable. Drop the alias when the repository moves its own type check to TypeScript 7.
 
 ## Node.js support
 
