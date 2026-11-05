@@ -110,7 +110,7 @@ In `.js` and `.ts` files, import them instead: `import { block, $ } from 'mdeval
   })()-->odd<!--/mdeval-->
   ```
 
-- **Script blocks share one module.** Variables and imports from every block in a file are visible to all of its markers. Use script blocks for imports and values that several markers share, and place them at the top of the file.
+- **Script blocks share one module.** Variables and imports from every block in a file are visible to all of its markers. Blocks are joined in order, so a block starting with `(`, `[`, or a template literal can continue the previous block's last statement unless that statement ends with a semicolon. Use script blocks for imports and values that several markers share, and place them at the top of the file.
 
 ### Importing other `.md` files
 
@@ -134,7 +134,7 @@ TypeScript 7.1 can also type-check mdeval code at its Markdown lines. See [Type 
 ### Caveats
 
 - **Script code cannot contain `-->`**, because it closes the HTML comment. Rewrite `x-- > y` as `x -= 1; x > y`.
-- **Values cannot contain `<!--mdeval ` or `<!--/mdeval-->`.** mdeval throws instead of writing them, so the file stays parseable.
+- **Values cannot contain `<!--mdeval` followed by a space, a newline, or CRLF, or `<!--/mdeval-->`.** mdeval throws instead of writing them, so the file stays parseable.
 - **Files processed together share one Node.js process,** including the module cache, `globalThis`, and `process.env`.
 
 ## CLI

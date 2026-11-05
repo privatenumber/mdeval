@@ -14,9 +14,9 @@ This skill covers writing mdeval code in Markdown and running it. mdeval evaluat
 | Script block | `<!--mdeval\n...code...\n-->` | `<!--mdeval` + newline |
 | Value marker | `<!--mdeval EXPR-->value<!--/mdeval-->` | `<!--mdeval` + space |
 
-- All script blocks in a file form one ES module with full Node.js access and top-level `await`. Their imports and variables are visible to every marker in the file.
+- All script blocks in a file form one ES module with full Node.js access and top-level `await`. Their imports and variables are visible to every marker in the file. Blocks are joined in order, so a block starting with `(`, `[`, or a template literal can continue the previous block's last statement unless it ends with a semicolon.
 - `import.meta` refers to the Markdown file, so relative imports and paths resolve from it.
-- Place script blocks at the top of the file. Order does not affect execution.
+- Place script blocks at the top of the file. Their position relative to markers does not affect execution, but script blocks execute in their own order. Static imports from all blocks load before any block's code runs, so use dynamic `import()` when an earlier block must set up something an import reads at load time.
 - Scripts and markers can use TypeScript syntax that Node.js strips: type annotations, `interface`, `type`, `as`, `satisfies`, and `!`. Do not use `enum`, `namespace` with values, or constructor parameter properties; they fail at runtime. Markdown under `node_modules` runs as plain JavaScript.
 
 ## Markers
@@ -131,7 +131,7 @@ const version = data.version ?? 'tbd';
 
 **Script code cannot contain `-->`.** It ends the HTML comment, even inside a string. Build the text instead, such as `'--' + '>'`. Rewrite `x-- > y` as `x -= 1; x > y`.
 
-**Values cannot contain `<!--mdeval ` or `<!--/mdeval-->`.** mdeval throws instead of writing them.
+**Values cannot contain `<!--mdeval` followed by a space, a newline, or CRLF, or `<!--/mdeval-->`.** mdeval throws instead of writing them.
 
 **A marker that starts a line turns off inline Markdown in its value.** When a marker opens a paragraph, list item, or blockquote, GitHub treats the line as raw HTML, so `` `code` ``, `**bold**`, and links in the value appear literally. Wrap the value in `block()` so it renders on its own lines:
 

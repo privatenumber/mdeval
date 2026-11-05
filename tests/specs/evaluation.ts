@@ -132,6 +132,44 @@ describe('marker evaluation', () => {
 		expect(result.stdout.trim()).toBe('42');
 	});
 
+	test('imports Markdown URLs with query strings and fragments', async () => {
+		await using fixture = await createFixture({
+			'data #1.md': '<!--mdeval\nexport const url = import.meta.url;\n-->\n',
+			'consumer.mjs': 'import { url as a } from "./data%20%231.md?version=1"; import { url as b } from "./data%20%231.md#version=2"; console.log(JSON.stringify([a, b]));',
+		});
+		const result = await spawn(process.execPath, ['--import', 'mdeval/loader', fixture.getPath('consumer.mjs')]);
+		const urls = JSON.parse(result.stdout) as string[];
+		expect(urls.map(url => new URL(url).search + new URL(url).hash)).toStrictEqual(['?version=1', '#version=2']);
+	});
+
+	test('imports a Markdown URL with node_modules in its query', async () => {
+		await using fixture = await createFixture({
+			'data.md': '<!--mdeval\nexport const n = 42;\n-->',
+			'consumer.mjs': [
+				'import { n } from "./data.md?source=/node_modules/pkg/file.md";',
+				String.raw`import { n as m } from "./data.md?source=\\node_modules\\pkg";`,
+				'console.log(n, m);',
+			].join('\n'),
+		});
+		const result = await spawn(process.execPath, ['--import', 'mdeval/loader', fixture.getPath('consumer.mjs')]);
+		expect(result.stdout.trim()).toBe('42 42');
+	});
+
+	test('does not rewrite a file importing invalid UTF-8 Markdown', async () => {
+		const source = '<!--mdeval\nimport { value } from "./data.md";\n-->\n<!--mdeval value-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'a.md': source,
+			'data.md': Buffer.concat([Buffer.from('<!--mdeval\nexport const value = "'), Buffer.from([0xE9]), Buffer.from('";\n-->')]),
+		});
+		const error = await spawn(process.execPath, [cliPath, fixture.getPath('a.md')]).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain(`${fixture.getPath('data.md')}: not valid UTF-8`);
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+	});
+
 	test('a rejected marker does not stop other files from being written', async () => {
 		const a = '<!--mdeval Promise.reject(new Error("failed"))-->old<!--/mdeval-->\n<!--mdeval await new Promise(r => setTimeout(() => r(2), 100))-->old<!--/mdeval-->';
 		const b = '<!--mdeval await new Promise(r => setTimeout(() => r(3), 250))-->old<!--/mdeval-->';

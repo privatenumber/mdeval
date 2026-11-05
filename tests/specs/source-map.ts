@@ -214,6 +214,22 @@ describe('source map', () => {
 		expect(stderr).not.toMatch(/data\.md:4:16/);
 	});
 
+	test('marker expression error after the first token remaps to the failing call', async () => {
+		await using fixture = await buildFixture([
+			'<!--mdeval',
+			'const value = 1;',
+			'-->',
+			'',
+			'Result: <!--mdeval value + (() => { missingLater(); })()-->old<!--/mdeval-->',
+			'',
+		].join('\n'));
+
+		const result = await runConsumer(fixture.path);
+		const stderr = result.stderr ?? '';
+		expect(stderr).toContain('ReferenceError: missingLater is not defined');
+		expect(stderr).toMatch(/data\.md:5:37/);
+	});
+
 	test('marker expression error after the first token remaps inside the expression', async () => {
 		await using fixture = await buildFixture([
 			'<!--mdeval',
