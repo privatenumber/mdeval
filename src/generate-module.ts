@@ -26,26 +26,26 @@ export const generateModule = (
 	}
 
 	const expressions = new Set<string>();
-	chunks.push({ text: `const ${EXPORT_PREFIX}run = async () => {\n` });
+	// The holder widens primitive marker types for TypeScript's instanceof check.
+	chunks.push({ text: `const ${EXPORT_PREFIX}run = async () => {\nconst ${EXPORT_PREFIX}Promise = (async () => {})().constructor;\nconst ${EXPORT_PREFIX}check = [${EXPORT_PREFIX}Promise.prototype];\n` });
 	for (const marker of markers) {
 		if (expressions.has(marker.expression)) {
 			continue;
 		}
 		const variable = `${EXPORT_PREFIX}${expressions.size}`;
-		const promise = `${EXPORT_PREFIX}promise_${expressions.size}`;
 		// The leading operand makes V8 report the expression instead of the synthetic declaration.
-		// Normalize once so thenables are not re-evaluated when the caller awaits them.
+		// Attach a rejection handler without assimilating thenables before all markers run.
 		chunks.push(
 			{ text: `const ${variable} = (void 0,\n` },
 			{
 				text: marker.expression,
 				sourceOffset: marker.start + MARKER_OPEN.length,
 			},
-			{ text: `\n);\nconst ${promise} = globalThis.Promise.resolve(${variable});\n${promise}.catch(() => {});\n` },
+			{ text: `\n);\n${EXPORT_PREFIX}check[0] = ${variable};\nif (${EXPORT_PREFIX}check[0] instanceof ${EXPORT_PREFIX}Promise) ${EXPORT_PREFIX}Promise.prototype.then.call(${EXPORT_PREFIX}check[0], undefined, () => {});\n` },
 		);
 		expressions.add(marker.expression);
 	}
-	const variables = Array.from(expressions, (_, index) => `${EXPORT_PREFIX}promise_${index}`);
+	const variables = Array.from(expressions, (_, index) => `${EXPORT_PREFIX}${index}`);
 	chunks.push({ text: `return [${variables.join(', ')}];\n};\nlet ${EXPORT_PREFIX}get = ${EXPORT_PREFIX}run;\nexport const ${EXPORT_PREFIX}markers = () => {\nconst ${EXPORT_PREFIX}promise = ${EXPORT_PREFIX}get();\n${EXPORT_PREFIX}get = () => ${EXPORT_PREFIX}promise;\nreturn ${EXPORT_PREFIX}promise;\n};\n` });
 	return chunks;
 };
