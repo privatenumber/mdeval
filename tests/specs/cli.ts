@@ -263,6 +263,36 @@ describe('cli', () => {
 		expect(result.stderr).toContain('no markdown content');
 	});
 
+	test('colors warnings only when stderr supports color', async () => {
+		await using fixture = await createFixture({
+			'test.md': '<!--mdeval\nconst x = 1;\n-->',
+		});
+		// Variables that make color libraries enable color without a TTY.
+		// `undefined` removes an inherited variable from the child environment.
+		const colorEnvironment = {
+			COLORTERM: 'truecolor',
+			TERM: 'xterm-256color',
+			CI: 'true',
+			FORCE_COLOR: undefined,
+			NO_COLOR: undefined,
+		};
+
+		const piped = await mdeval(['test.md'], {
+			cwd: fixture.path,
+			env: colorEnvironment,
+		});
+		expect(piped.stderr).toBe('Warning: test.md has no markdown content outside of mdeval blocks');
+
+		const forced = await mdeval(['test.md'], {
+			cwd: fixture.path,
+			env: {
+				...colorEnvironment,
+				FORCE_COLOR: '1',
+			},
+		});
+		expect(forced.stderr).toContain('\u001B[33mWarning:\u001B[39m');
+	});
+
 	test('no warning when file has markdown content alongside mdeval blocks', async () => {
 		await using fixture = await createFixture({
 			'test.md': '# Title\n\n<!--mdeval\nconst x = 1;\n-->\n\nSome text <!--mdeval x-->1<!--/mdeval-->',

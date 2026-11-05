@@ -1,14 +1,15 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { styleText } from 'node:util';
 import { cli } from 'cleye';
 import { glob } from 'tinyglobby';
-import { yellow } from 'ansis';
 import './loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 import { findRenderedLeaks } from './validate-rendering/index.ts';
 
-const WARNING_PREFIX = yellow('Warning:');
+// Warnings go to stderr, so color depends on stderr, not stdout
+const WARNING_PREFIX = styleText('yellow', 'Warning:', { stream: process.stderr });
 
 const argv = cli({
 	name: 'mdeval',
