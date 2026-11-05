@@ -126,7 +126,7 @@ npx tsc --noEmit --runExternalCode
 - `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
 - A repeated marker expression is checked once, and its errors point to the first occurrence.
 - Fenced code, inline code, and rendered marker values are not checked.
-- The checker does not know the `block` and `$` globals (`Cannot find name 'block'`). In checked files, import them: `import { block, $ } from 'mdeval';`.
+- The `block` and `$` globals are typed; no import is needed.
 - A `.ts` consumer of `.md` exports (`node --import mdeval/loader ./consumer.ts`) is checked against their types when it is in `include`.
 
 ## CLI

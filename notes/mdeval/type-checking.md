@@ -10,6 +10,16 @@ TypeScript 7.1 adds content mappers: a project registers a package for a file ex
 
 **Decision:** keep one generator. Script scope, imports between `.md` files, and evaluate-once deduplication of repeated marker expressions then cannot drift between what the checker sees and what runs. [The content-mapper spec](../../tests/specs/content-mapper.ts) locks these behaviors, including the rule that a repeated expression reports errors only at its first occurrence.
 
+## Helper globals are declared with `declare global`
+
+The CLI and `mdeval/loader` put `block` and `$` on `globalThis`, so `.md` files call them without an import. The checker cannot see that assignment. Without a declaration, it reported `Cannot find name 'block'` for every file that used a helper (observed 2026-11-05 with `typescript@7.1.0-beta`).
+
+**Decision:** [the content mapper](../../src/content-mapper.ts) appends `declare global { var block: typeof import('mdeval').block; var $: typeof import('mdeval').$; }` to each virtual file. The types come from the published `mdeval` entry, so they cannot drift from the runtime.
+
+- **Global, not a module binding:** an injected `import { block } from 'mdeval'` or `declare const block` would conflict with a user's own import or `const block`. A global is shadowed by those declarations, the same as at runtime. [The content-mapper spec](../../tests/specs/content-mapper.ts) locks the global, imported, and shadowed cases.
+- **Repeated declarations are allowed:** every `.md` file declares the same `var`s, and TypeScript merges `var` declarations with identical types.
+- **Accepted trade-off:** the augmentation is visible to every file in the program, including `.ts` files. Those files see the globals only when the loader runs them, and the README recommends the explicit import there.
+
 ## Packaging requirements
 
 The published mapper depends on each of these package settings.

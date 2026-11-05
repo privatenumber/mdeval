@@ -153,11 +153,21 @@ describe('content mapper', () => {
 
 	test('uses published types for mdeval runtime helpers', async () => {
 		const result = await typecheckMdeval({
-			'example.md': '<!--mdeval\nimport { block } from "mdeval";\nblock("hello").toFixed();\n-->',
+			'imported.md': '<!--mdeval\nimport { block } from "mdeval";\nblock("hello").toFixed();\n-->',
+			'global.md': [
+				'<!--mdeval',
+				'const output: string = (await $`echo`).stdout;',
+				'-->',
+				'<!--mdeval block("hello").toFixed()-->old<!--/mdeval-->',
+			].join('\n'),
+			'shadowed.md': '<!--mdeval\nconst block = 1;\nblock.toFixed();\n-->',
 		});
 		expect(result).toStrictEqual({
 			exitCode: 2,
-			output: "example.md(3,16): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+			output: [
+				"global.md(4,27): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+				"imported.md(3,16): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+			].join('\n'),
 		});
 	});
 
