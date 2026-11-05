@@ -61,6 +61,8 @@ Count: <!--mdeval count.toUpperCase()-->42<!--/mdeval-->
 
 mdeval checks each Markdown file as a TypeScript module, so JSDoc type annotations are not checked. `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
 
+Marker expressions are checked inside a function, so TypeScript does not narrow a script-block `let` reassigned by another function. For example, after `let x: string | number = 0; const set = () => { x = "a"; };`, a marker containing `(set(), x.toFixed())` is still checked against `string | number`. Names beginning with `__mdeval_` are reserved for generated code.
+
 A `.ts` file that imports a `.md` file is checked against the types of its exports when the `.ts` file is in `include`. See [Node.js usage](./node.md).
 
 A namespace import of a `.md` file without exports, such as `import * as data from './stub.md'`, reports `data.version` as missing, even though it is `undefined` at runtime. Cast the namespace to the shape you expect: `const data = stub as { version?: string }`.

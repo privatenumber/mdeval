@@ -43,6 +43,7 @@ runContentMapper({
 			'declare global {',
 			'\tvar block: typeof import(\'mdeval\').block;',
 			'\tvar $: typeof import(\'mdeval\').$;',
+			'\tvar __mdeval_guard: <T>(value: T) => T;',
 			'}',
 			'',
 		].join('\n'));

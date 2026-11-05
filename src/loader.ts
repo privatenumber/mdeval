@@ -1,6 +1,7 @@
 import module from 'node:module';
 import { block, $ } from './runtime.ts';
 import { load } from './md-loader.ts';
+import { guardMarker } from './marker-guard.ts';
 
 // Side-effect-only entry: seeds the helpers `.md` modules expect on
 // `globalThis` and installs the Node ESM loader so `.md` files resolve as
@@ -10,6 +11,11 @@ import { load } from './md-loader.ts';
 Object.assign(globalThis, {
 	block,
 	$,
+});
+Object.defineProperty(globalThis, '__mdeval_guard', {
+	value: guardMarker,
+	writable: true,
+	configurable: true,
 });
 
 // Enable Node's source-map support so runtime stack traces from `.md` files

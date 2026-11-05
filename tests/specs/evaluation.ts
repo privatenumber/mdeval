@@ -8,6 +8,41 @@ import { processSource } from '../../src/process-source.ts';
 const cliPath = path.resolve(import.meta.dirname, '../../dist/cli.mjs');
 
 describe('marker evaluation', () => {
+	test('the loader exposes a non-enumerable guard global', async () => {
+		const result = await spawn(process.execPath, ['--import', 'mdeval/loader', '--input-type=module', '-e', 'const d = Object.getOwnPropertyDescriptor(globalThis, "__mdeval_guard"); console.log(JSON.stringify([typeof d.value, d.enumerable, d.writable, d.configurable]));']);
+		expect(JSON.parse(result.stdout)).toStrictEqual(['function', false, true, true]);
+	});
+
+	test('a cross-realm rejected promise does not stop other files', async () => {
+		const a = '<!--mdeval\nimport vm from "node:vm";\nconst p = vm.runInNewContext(\'Promise.reject(new Error("realm failure"))\');\n-->\n<!--mdeval p-->old<!--/mdeval-->\n<!--mdeval await new Promise(r => setTimeout(() => r(2), 100))-->old<!--/mdeval-->';
+		const b = '<!--mdeval await new Promise(r => setTimeout(() => r(3), 250))-->old<!--/mdeval-->';
+		await using fixture = await createFixture({
+			'a.md': a,
+			'b.md': b,
+		});
+		const error = await spawn(process.execPath, [cliPath, fixture.getPath('a.md'), fixture.getPath('b.md')]).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('realm failure');
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(a);
+		expect(await fixture.readFile('b.md', 'utf8')).toBe(b.replace('old', '3'));
+	});
+
+	test('does not inspect a proxy prototype during marker evaluation', async () => {
+		const source = '<!--mdeval\nconst x = new Proxy({ value: 1 }, { getPrototypeOf() { throw new Error("prototype trap"); } });\n-->\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		expect(await processSource(source, fixture.getPath('a.md'))).toBe(source.replace('old', '{"value":1}'));
+	});
+
+	test('a fulfilled promise value can gain a throwing then getter', async () => {
+		const source = '<!--mdeval\nconst x = {}; const p = Promise.resolve(x);\n-->\n<!--mdeval p-->old<!--/mdeval-->\n<!--mdeval (Object.defineProperty(x, "then", { get() { throw new Error("then getter"); } }), 1)-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		await spawn(process.execPath, [cliPath, fixture.getPath('a.md')]);
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source.replace('old', '{}').replace('old', '1'));
+	});
+
 	test('assimilates thenables only after all marker expressions run', async () => {
 		const source = '<!--mdeval\nlet n = 0; const x = { then(resolve) { n = 1; resolve(7); } };\n-->\n<!--mdeval x-->old<!--/mdeval-->\n<!--mdeval await Promise.resolve(2)-->old<!--/mdeval-->\n<!--mdeval n-->old<!--/mdeval-->';
 		await using fixture = await createFixture({ 'a.md': source });

@@ -214,7 +214,7 @@ describe('source map', () => {
 		expect(stderr).not.toMatch(/data\.md:4:16/);
 	});
 
-	test('marker expression error after the first token remaps to the failing call', async () => {
+	test('marker expression error after the first token remaps inside the expression', async () => {
 		await using fixture = await buildFixture([
 			'<!--mdeval',
 			'const value = 1;',
