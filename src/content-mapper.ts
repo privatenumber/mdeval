@@ -15,7 +15,7 @@ runContentMapper({
 			}
 			return {
 				text: 'export {};\n',
-				extension: '.mjs',
+				extension: '.mts',
 				diagnostics: [{
 					messageText: error.message,
 					start: error.offset,
@@ -33,8 +33,8 @@ runContentMapper({
 				out.appendVerbatim(sourceOffset, sourceOffset + text.length);
 			}
 		}
-		// The loader always treats Markdown as ESM, including script-only files.
+		// The loader runs Markdown as TypeScript ESM, including script-only files.
 		out.append('\nexport {};\n');
-		return out.build('.mjs');
+		return out.build('.mts');
 	},
 });

@@ -83,6 +83,23 @@ describe('source map', () => {
 		expect(stderr).toMatch(/data\.md:6:\d+/);
 	});
 
+	test('runtime error after stripped types remaps to original .md column', async () => {
+		await using fixture = await buildFixture([
+			'<!--mdeval',
+			'const x: number = nonexistentFunction();',
+			'-->',
+			'',
+			'<!--mdeval x-->old<!--/mdeval-->',
+			'',
+		].join('\n'));
+
+		const result = await runConsumer(fixture.path);
+		const stderr = result.stderr ?? '';
+
+		expect(stderr).toContain('ReferenceError: nonexistentFunction is not defined');
+		expect(stderr).toMatch(/data\.md:2:19/);
+	});
+
 	test('runtime error in a marker expression remaps to original .md line and column', async () => {
 		// Line 1: <!--mdeval
 		// Line 2: const value = 1;
@@ -192,7 +209,7 @@ describe('source map', () => {
 		const result = await runConsumer(fixture.path);
 		const stderr = result.stderr ?? '';
 
-		expect(stderr).toContain('SyntaxError: Unexpected token');
+		expect(stderr).toContain('SyntaxError [ERR_INVALID_TYPESCRIPT_SYNTAX]: Unexpected token');
 		expect(stderr).toMatch(/data\.md:1/);
 		expect(stderr).not.toMatch(/data\.md:4:16/);
 	});

@@ -177,6 +177,20 @@ describe('processSource', () => {
 		expect(output).toContain(resolvedPath);
 	});
 
+	test('runs TypeScript syntax', async () => {
+		const source = [
+			'<!--mdeval',
+			'type User = { name: string };',
+			'const user = { name: "a" } as User;',
+			'const greet = (u: User): string => `hi ${u.name}`;',
+			'-->',
+			'',
+			'<!--mdeval greet(user satisfies User)-->old<!--/mdeval-->',
+		].join('\n');
+		const output = await processMarkdown(source);
+		expect(output).toBe(source.replace('old', 'hi a'));
+	});
+
 	test('imports relative .ts files', async () => {
 		const md = '<!--mdeval\nimport { value } from \'./helper.ts\';\nconst x = value;\n-->\n\n<!--mdeval x-->?<!--/mdeval-->';
 		await using fixture = await createFixture({

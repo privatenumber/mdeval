@@ -40,8 +40,9 @@ const typecheckMdeval = async (files: FileTree) => {
 				module: 'nodenext',
 				target: 'esnext',
 				strict: true,
+				erasableSyntaxOnly: true,
+				// Only for the `.mjs` helper below. Markdown is checked as TypeScript
 				allowJs: true,
-				checkJs: true,
 				noEmit: true,
 				types: [],
 			},
@@ -106,6 +107,23 @@ describe('content mapper', () => {
 		});
 	});
 
+	test('checks TypeScript syntax', async () => {
+		const result = await typecheckMdeval({
+			'example.md': [
+				'<!--mdeval',
+				'type User = { name: string };',
+				'const user: User = { name: "a" };',
+				'const id: number = user.name;',
+				'-->',
+				'<!--mdeval (user satisfies User).name-->old<!--/mdeval-->',
+			].join('\n'),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: "example.md(4,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+		});
+	});
+
 	test('checks the types of exports imported from Markdown', async () => {
 		const result = await typecheckMdeval({
 			'example.md': '<!--mdeval\nimport { answer } from "./data.md";\nanswer.trim();\n-->',
@@ -147,8 +165,7 @@ describe('content mapper', () => {
 		const result = await typecheckMdeval({
 			'example.md': [
 				'<!--mdeval',
-				'/** @type {number | string} */',
-				'let value = 0;',
+				'let value: number | string = 0;',
 				'-->',
 				'<!--mdeval value = "a"-->old<!--/mdeval-->',
 				'<!--mdeval value = 1-->old<!--/mdeval-->',
