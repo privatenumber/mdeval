@@ -23,6 +23,8 @@ Two types of HTML comments — invisible when rendered:
 
 Script blocks run as ESM with full Node.js access and top-level `await`. All blocks in a file merge into one module — imports and variables are shared across blocks and markers. `import.meta` points to the markdown file. Marker expressions are auto-awaited, so promises resolve automatically.
 
+Scripts and markers can use TypeScript syntax that Node.js strips, such as type annotations, `interface`, `as`, and `satisfies`. Do not use `enum`, `namespace` with values, or constructor parameter properties: they fail at runtime. Markdown under `node_modules` runs as JavaScript only.
+
 ## Marker Expressions
 
 Any JavaScript expression valid on the right side of `const x =`:

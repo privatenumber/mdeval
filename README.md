@@ -167,7 +167,7 @@ Runtime stack traces from a `.md` point at original lines and columns — the lo
 
 ## Type checking Markdown
 
-TypeScript 7.1 Beta can check JavaScript inside mdeval comments and report errors at their original Markdown locations. Script blocks share a module scope, and imports resolve relative to the Markdown file. Each distinct marker expression is checked once, and its diagnostics point to the first occurrence. Checking does not execute the embedded code.
+TypeScript 7.1 Beta can check the code inside mdeval comments and report errors at their original Markdown locations. Script blocks share a module scope, and imports resolve relative to the Markdown file. Each distinct marker expression is checked once, and its diagnostics point to the first occurrence. Checking does not execute the embedded code.
 
 Install the beta compiler:
 
@@ -183,8 +183,7 @@ Register mdeval in your `tsconfig.json` and include the Markdown files you want 
         "module": "nodenext",
         "target": "esnext",
         "strict": true,
-        "allowJs": true,
-        "checkJs": true,
+        "erasableSyntaxOnly": true,
         "noEmit": true
     },
     "contentMappers": [
@@ -212,13 +211,13 @@ For example, this reports an error on `toUpperCase` because `count` is a number:
 
 ```md
 <!--mdeval
-const count = 42;
+const count: number = 42;
 -->
 
 Count: <!--mdeval count.toUpperCase()-->42<!--/mdeval-->
 ```
 
-Use JSDoc to add type annotations. The embedded code remains JavaScript; TypeScript-only syntax is not supported. Fenced code blocks, inline code, and rendered marker values are not checked.
+mdeval checks each Markdown file as a TypeScript module, so JSDoc type annotations are not checked. `erasableSyntaxOnly` reports syntax that cannot run, such as `enum`, at its Markdown location. Fenced code blocks, inline code, and rendered marker values are not checked.
 
 The content mapper API is experimental. This integration is tested with TypeScript `7.1.0-beta`. Editor activation for Markdown depends on the editor's TypeScript integration; the configuration above enables command-line checking.
 
@@ -282,7 +281,7 @@ The content mapper API is experimental. This integration is tested with TypeScri
 ## Caveats
 
 - Script code **cannot contain `-->`** — it closes the HTML comment. Rewrite `x-- > y` as `x -= 1; x > y`.
-- Scripts are **JavaScript only** — no TypeScript.
+- Scripts can use **TypeScript syntax that Node.js can strip**, such as type annotations, `interface`, `as`, and `satisfies`. Syntax that needs code generation, such as `enum`, `namespace` with values, and constructor parameter properties, fails ([Node.js docs](https://nodejs.org/api/typescript.html#type-stripping)). Markdown files under `node_modules` run as JavaScript, because Node.js does not strip types there.
 - Values **cannot contain `<!--mdeval `** or **`<!--/mdeval-->`** — mdeval will throw to prevent document corruption.
 
 ## Tip: md-pen

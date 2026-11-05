@@ -22,7 +22,9 @@ export const load: LoadHookSync = (url, context, nextLoad) => {
 	}
 
 	return {
-		format: 'module',
+		// Node.js strips TypeScript types in place, so the source map stays valid.
+		// It refuses to strip any file under node_modules, even plain JavaScript.
+		format: url.includes('/node_modules/') ? 'module' : 'module-typescript',
 		source: out.toModuleSource(),
 		shortCircuit: true,
 	};

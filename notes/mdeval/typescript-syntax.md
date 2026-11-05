@@ -2,17 +2,17 @@
 
 Verified 2026-11-05 on macOS arm64 with Node.js 20.19.0, 22.13.0, 22.14.0, 22.15.0, 22.17.0, 22.18.0, 23.6.0, 24.0.0, 24.11.0, 24.12.0, 25.0.0, and 26.13.0, `typescript@7.1.0-beta`, and Node.js source at `v26.13.0`. Experiments patched a built copy of mdeval at [`18041d3`](https://github.com/privatenumber/mdeval/commit/18041d3).
 
-**Status:** research for a proposed feature. The recommended design below is not implemented. Today, blocks must be JavaScript: [the loader](../../src/md-loader.ts) returns `format: 'module'`, and [the content mapper](../../src/content-mapper.ts) returns an `.mjs` virtual file. A block with `const n: number = 1` fails at runtime with `SyntaxError: Missing initializer in const declaration`.
+## Decision: every mdeval file is TypeScript
 
-## Recommendation: every mdeval file is TypeScript
+TypeScript's erasable syntax is a superset of JavaScript, so one rule covers both languages:
 
-TypeScript's erasable syntax is a superset of JavaScript, so one rule can cover both languages:
+1. **Runtime:** [the load hook](../../src/md-loader.ts) returns `format: 'module-typescript'`, and Node.js strips the types. Files under `node_modules` get `'module'`.
+2. **Checker:** [the content mapper](../../src/content-mapper.ts) always returns an `.mts` virtual file.
+3. **Docs:** the README recommends `erasableSyntaxOnly`. Projects need neither `allowJs` nor `checkJs`.
 
-1. **Runtime:** the load hook returns `format: 'module-typescript'`, and Node.js strips the types. It falls back to `'module'` when `process.features.typescript` is falsy or the file is under `node_modules`.
-2. **Checker:** the content mapper always returns `.mts`.
-3. **Docs:** recommend `erasableSyntaxOnly`. Projects no longer need `allowJs` and `checkJs`.
+The runtime and the checker parse every file with the same grammar, and nothing has to decide the language of a file: no detection, and no new syntax. The cost is that JSDoc types stop being checked and every process loads Node's TypeScript parser. The sections below give the evidence, and [Alternatives](#alternatives) explains why the other designs were rejected.
 
-The runtime and the checker then parse every file with the same grammar, and nothing has to decide the language of a file: no detection, and no new syntax. The cost is that JSDoc types stop being checked and every process loads Node's TypeScript parser. The sections below give the evidence, and [Alternatives](#alternatives) explains why the other designs were rejected.
+The loader has no Node.js version check. Every version in [`engines.node`](./runtime-compatibility.md#why-enginesnode-is-22211--24110) (`^22.21.1 || >=24.11.0`) strips types quietly for an explicit format, as the table below shows.
 
 ## Runtime: Node.js strips types for a hook that returns `module-typescript`
 
@@ -39,7 +39,7 @@ Observed by running a TypeScript `.md` file with `MDEVAL_FORMAT=module-typescrip
 
 The warning comes from `emitExperimentalWarning('Type Stripping')` in `stripTypeScriptModuleTypes()`. `git show <tag>:lib/internal/modules/typescript.js` contains it at v22.17.1, v23.6.0, v23.11.0, v24.0.0, and v24.2.0, and not at v22.18.0, v24.3.0, or v25.0.0. Main removed it in [nodejs/node#58643](https://github.com/nodejs/node/pull/58643).
 
-**Consequence:** a `process.features.typescript` gate avoids the failure on 20.19 and the warning on 22.13 through 22.17, but not the warning on 24.0 through 24.2. An earlier assumption that this gate prevents every warning was wrong.
+**Consequence:** a `process.features.typescript` check would avoid the failure on 20.19 and the warning on 22.13 through 22.17, but not the warning on 24.0 through 24.2. Raising `engines.node` above all of these versions removes the need for any check. Under `--no-strip-types`, mdeval still strips Markdown, because the flag disables stripping for `.ts` files that Node.js detects, and `.md` files are not among them.
 
 ### Cost
 
@@ -95,39 +95,37 @@ Observed through the mapper with `.mjs` patched to `.mts`, using `tsc --runExter
 
 | Design | Verdict | Evidence |
 | --- | --- | --- |
-| **Every file is TypeScript** (recommended) | Simplest: one runtime gate and a constant extension | Above |
-| **Detect per file in the mapper:** strip with `module.stripTypeScriptTypes()`, return `.mts` if the text changed, otherwise `.mjs` | Rejected. It keeps JSDoc checking, but adds a detection step that depends on a Stability 1.2 API. That API emits `ExperimentalWarning: stripTypeScriptTypes` on every call on 26.13.0 ([`typescript.js#L92`](https://github.com/nodejs/node/blob/v26.13.0/lib/internal/modules/typescript.js#L92)), visible only with `TS_CONTENT_MAPPER_DEBUG=1`. It also requires Node.js 22.13 or later in the mapper, which [runs on 20.19 today](./type-checking.md#nodejs-support). The runtime would still use `module-typescript` for every file, so it saves no runtime cost. | `typeof stripTypeScriptTypes` is `undefined` on 20.19.0 |
+| **Every file is TypeScript** (chosen) | Simplest: one path check and a constant extension | Above |
+| **Detect per file in the mapper:** strip with `module.stripTypeScriptTypes()`, return `.mts` if the text changed, otherwise `.mjs` | Rejected. It keeps JSDoc checking, but adds a detection step that depends on a Stability 1.2 API. That API emits `ExperimentalWarning: stripTypeScriptTypes` on every call on 26.13.0 ([`typescript.js#L92`](https://github.com/nodejs/node/blob/v26.13.0/lib/internal/modules/typescript.js#L92)), visible only with `TS_CONTENT_MAPPER_DEBUG=1`. The runtime would still use `module-typescript` for every file, so it saves no runtime cost. | `typeof stripTypeScriptTypes` is `undefined` on 20.19.0 |
 | **Explicit opt-in per file**, for example a `lang` marker | Viable. Plain JavaScript files keep `module`, `.mjs`, JSDoc, and no parser cost. The cost is new syntax that both the loader and the mapper must parse. All blocks in a file form one module, so they need one language. Vue enforces the same rule: `<script> and <script setup> must have the same language type` ([`compileScript.ts` at v3.5.44](https://github.com/vuejs/core/blob/v3.5.44/packages/compiler-sfc/src/compileScript.ts#L188-L193)). | |
 | **Strip in mdeval** with `stripTypeScriptTypes()` and return `module` | Rejected. It has the same parser cost, prints the warning above at runtime, and loses the compile cache integration. | |
-| **`module-typescript` for every file without a gate** | Rejected. On 20.19 every `.md` file fails, and JavaScript files under `node_modules` fail. | [Version boundaries](#version-boundaries) |
+| **`module-typescript` for every file, including `node_modules`** | Rejected. JavaScript files under `node_modules` fail. | [Runtime](#runtime-nodejs-strips-types-for-a-hook-that-returns-module-typescript) |
 | **Bundle a transpiler**, such as esbuild or sucrase | Rejected. It adds a dependency for every install, and full transforms move offsets, so the source map would need a second mapping step. | |
 
-## Trade-offs the recommendation accepts
+## Trade-offs the decision accepts
 
 - **JSDoc types are not checked.** Authors write TypeScript annotations instead. Type checking is unreleased (npm `latest` is 1.6.0, and no tag contains `18041d3`), so no released contract depends on JSDoc.
 - **JavaScript leniency is lost in the checker,** such as expando properties on `{}`.
 - **A few JavaScript expressions change meaning.** `a < b > (c)` is a comparison in JavaScript and a generic call in TypeScript. Observed on 26.13.0: `module` rendered `false`, and `module-typescript` failed with `a is not a function`. The checker parses it the same way as the runtime, so `tsc` reports the problem too. Node.js has the same rule for `.ts` files.
-- **On Node.js 20.19 and 22.13 to 22.17, TypeScript syntax fails as a JavaScript `SyntaxError`.** Plain JavaScript keeps working. The docs should name the supported range: Node.js 22.18 or later, or 24.3 or later.
-- **Node.js 24.0 to 24.2 print an `ExperimentalWarning`.**
+- **Syntax errors come from Node's TypeScript parser,** for example `SyntaxError [ERR_INVALID_TYPESCRIPT_SYNTAX]: Unexpected token`, not V8's `SyntaxError: Unexpected token`.
 
 ## Compile-time errors report generated lines
 
 Errors raised before V8 runs the module report lines of the generated module, not of the Markdown file, because the source map applies only to stack frames. This already affects JavaScript syntax errors.
 
 - `enum` on Markdown line 7 reported `file:///.../w.md:2`, the line in the generated module.
-- On 20.19.0, `interface User { name: string }` on Markdown line 8 reported `run.md:3` with `SyntaxError: Unexpected strict mode reserved word`.
+- `const value = {;` on Markdown line 4 reports `data.md:1`, locked by the [source-map spec](../../tests/specs/source-map.ts).
 
 The checker reports both at the right Markdown lines, so it is the better place to catch them. A fix at runtime would mean generating the module with Markdown line numbers preserved, which is a separate change.
 
 ## Re-evaluate when
 
-- **`engines.node` rises to `^22.18.0 || >=24.3.0`.** Node.js 20 reached end of life on 2026-04-30 ([endoflife.date](https://endoflife.date/nodejs)). At that minimum, the `process.features.typescript` gate only respects `--no-strip-types`, and the [`module.register()` fallback](./runtime-compatibility.md) can go too. Raising `engines` is a breaking release.
 - **Users depend on JSDoc checking,** or the parser cost matters. Explicit opt-in then becomes the better trade.
 - **Node.js allows stripping under `node_modules`,** which would remove the path check.
 
 ## Reproduce
 
-Patch a built copy of mdeval so the format and extension come from environment variables:
+The experiments ran on a build of `18041d3`, before this design shipped. Patch that build so the format and extension come from environment variables:
 
 ```sh
 sed -i '' 's/format:"module"/format:process.env.MDEVAL_FORMAT||"module"/' dist/md-loader.mjs
