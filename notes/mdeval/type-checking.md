@@ -18,6 +18,15 @@ The CLI and `mdeval/loader` put `block` and `$` on `globalThis`, so `.md` files 
 
 - **Global, not a module binding:** an injected `import { block } from 'mdeval'` or `declare const block` would conflict with a user's own import or `const block`. A global is shadowed by those declarations, the same as at runtime. [The content-mapper spec](../../tests/specs/content-mapper.ts) locks the global, imported, and shadowed cases.
 - **Repeated declarations are allowed:** every `.md` file declares the same `var`s, and TypeScript merges `var` declarations with identical types.
+- **The cost is about 3 KB of memory per file, and no measurable time.** Measured 2026-11-05 with `typescript@7.1.0-beta` on Node.js 24.14.0, macOS arm64. Each file imported the helpers explicitly, so the same files checked cleanly with and without the declaration. Medians of 5 interleaved `tsc --runExternalCode --extendedDiagnostics` runs after a warmup:
+
+  | `.md` files | Total time without / with | Memory without / with |
+  | --- | --- | --- |
+  | 1 | 0.212 s / 0.211 s | 112.2 MB / 112.5 MB |
+  | 1,000 | 0.304 s / 0.309 s | 121.9 MB / 125.0 MB |
+  | 10,000 | 1.292 s / 1.316 s | 219.8 MB / 245.6 MB |
+
+  The time differences are within run-to-run noise: a second 1,000-file run measured 0.322 s without and 0.316 s with. If memory matters for very large projects, one shared declaration file would replace the per-file copies.
 - **Accepted trade-off:** the augmentation is visible to every file in the program, including `.ts` files. Those files see the globals only when the loader runs them, and the README recommends the explicit import there.
 
 ## Packaging requirements
