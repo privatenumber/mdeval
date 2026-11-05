@@ -55,13 +55,57 @@ const codeTokenTypes = new Set(['codeFenced', 'codeIndented', 'codeText']);
 // also operate on.
 const findCodeRanges = (source: string): CodeRange[] => {
 	const bomOffset = source.codePointAt(0) === 0xFE_FF ? 1 : 0;
+	// GitHub treats any backslash before a table pipe as an escape, even when
+	// the run is even: https://github.com/github/cmark-gfm/issues/277. Change
+	// those runs in a same-length copy to preserve offsets and make their parity odd.
+	const tableSource = source.replaceAll(/\\+/g, (match, offset: number) => (
+		match.length % 2 === 0 && source[offset + match.length] === '|'
+			? `a${match.slice(1)}`
+			: match
+	));
 	const events = postprocess(
-		parse({ extensions: [gfmTable()] }).document().write(preprocess()(source, undefined, true)),
+		parse({ extensions: [gfmTable()] }).document()
+			.write(preprocess()(tableSource, undefined, true)),
 	);
 	const ranges: CodeRange[] = [];
+	let headerWidth = 0;
+	let column = 0;
+	let discardedCell = false;
 	for (const [phase, token] of events) {
+		if (discardedCell) {
+			if (phase === 'exit' && token.type === 'tableData') {
+				discardedCell = false;
+			}
+			continue;
+		}
 		if (phase !== 'enter') {
 			continue;
+		}
+		switch (token.type) {
+			case 'table': {
+				headerWidth = 0;
+				break;
+			}
+			case 'tableRow': {
+				column = 0;
+				break;
+			}
+			case 'tableHeader': {
+				headerWidth += 1;
+				break;
+			}
+			case 'tableData': {
+				column += 1;
+				if (column > headerWidth) {
+					ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
+					discardedCell = true;
+					continue;
+				}
+				break;
+			}
+			default: {
+				break;
+			}
 		}
 		if (codeTokenTypes.has(token.type) || (
 			token.type === 'characterEscape'
@@ -135,7 +179,7 @@ export const parseMarkdown = (source: string): ParseResult => {
 	let searchFrom = 0;
 
 	while (searchFrom < source.length) {
-		const start = source.indexOf(COMMENT_TAG, searchFrom);
+		const start = findNextMdevalOpening(source, searchFrom);
 		if (start === -1) {
 			break;
 		}
@@ -208,9 +252,6 @@ export const parseMarkdown = (source: string): ParseResult => {
 			searchFrom = markerEnd;
 			continue;
 		}
-
-		// Not a script or marker — advance past the tag and keep looking.
-		searchFrom = afterTag;
 	}
 
 	return {

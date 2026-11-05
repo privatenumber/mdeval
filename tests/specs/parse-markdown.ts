@@ -18,6 +18,31 @@ const markerContent = (
 };
 
 describe('parseMarkdown', () => {
+	test('ignores markers in body cells beyond the header width', () => {
+		const source = '\uFEFF| a | b |\r\n|---|---|\r\n| x | ` | <!--mdeval 1+1-->old<!--/mdeval-->` |\r\n\r\n<!--mdeval 2-->old<!--/mdeval-->';
+		const { markers } = parseMarkdown(source);
+		expect(markers).toHaveLength(1);
+		expect(markers[0].expression).toBe('2');
+		expect(markers[0].start).toBe(source.indexOf('<!--mdeval 2'));
+	});
+
+	test('ignores markers in table code spans across an even-backslash pipe', () => {
+		const source = '| a | b |\n|---|---|\n| `a\\\\| <!--mdeval 1+1-->old<!--/mdeval-->` | b |\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('ignores markers in table code spans across a single escaped pipe', () => {
+		const source = '| a | b |\n|---|---|\n| `a\\| <!--mdeval 1+1-->old<!--/mdeval-->` | b |\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('preserves markers after even-backslash pipes outside tables', () => {
+		const source = String.raw`   \\| <!--mdeval 1+1-->old<!--/mdeval-->`;
+		const { markers } = parseMarkdown(source);
+		expect(markers).toHaveLength(1);
+		expect(markers[0].expression).toBe('1+1');
+	});
+
 	test('ignores a code span within a GFM table cell', () => {
 		const source = '| a | b |\n|---|---|\n| ` | `<!--mdeval 1+1-->old<!--/mdeval-->` |\n';
 		expect(parseMarkdown(source).markers).toStrictEqual([]);
