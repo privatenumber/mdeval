@@ -55,37 +55,13 @@ const codeTokenTypes = new Set(['codeFenced', 'codeIndented', 'codeText']);
 // also operate on.
 const findCodeRanges = (source: string) => {
 	const bomOffset = source.codePointAt(0) === 0xFE_FF ? 1 : 0;
-	const parseSource = (value: string) => postprocess(
+	// The table extension differs from GitHub for escaped backslashes before a
+	// pipe: https://github.com/github/cmark-gfm/issues/277. Parse the original
+	// source so this scanner agrees with rendering validation.
+	const events = postprocess(
 		parse({ extensions: [gfmTable()] }).document()
-			.write(preprocess()(value, undefined, true)),
+			.write(preprocess()(source, undefined, true)),
 	);
-	let events = parseSource(source);
-	// GitHub treats any backslash before a table pipe as an escape, even when
-	// the run is even: https://github.com/github/cmark-gfm/issues/277. Restrict
-	// the same-length rewrite to table rows to preserve other Markdown syntax.
-	const runs = [...source.matchAll(/\\+/g)].filter(match => (
-		match[0].length % 2 === 0 && source[match.index + match[0].length] === '|'
-	));
-	if (runs.length > 0) {
-		const rows = events.filter(([phase, token]) => phase === 'enter' && token.type === 'tableRow');
-		let rowIndex = 0;
-		let cursor = 0;
-		const parts: string[] = [];
-		for (const match of runs) {
-			const offset = match.index;
-			while (rowIndex < rows.length && rows[rowIndex][1].end.offset + bomOffset <= offset) {
-				rowIndex += 1;
-			}
-			if (rowIndex < rows.length && rows[rowIndex][1].start.offset + bomOffset <= offset) {
-				parts.push(source.slice(cursor, offset), 'a');
-				cursor = offset + 1;
-			}
-		}
-		if (parts.length > 0) {
-			parts.push(source.slice(cursor));
-			events = parseSource(parts.join(''));
-		}
-	}
 	const ranges: CodeRange[] = [];
 	const cells: CodeRange[] = [];
 	let headerWidth = 0;
@@ -153,7 +129,7 @@ const createIsInCode = (source: string) => {
 	let parsed: ReturnType<typeof findCodeRanges> | null = null;
 	let rangeIndex = 0;
 	let cellIndex = 0;
-	return (position: number): boolean => {
+	const context = (position: number) => {
 		if (parsed === null) {
 			parsed = findCodeRanges(source);
 		}
@@ -162,16 +138,38 @@ const createIsInCode = (source: string) => {
 			rangeIndex += 1;
 		}
 		if (rangeIndex < ranges.length && position >= ranges[rangeIndex][0]) {
-			return true;
+			return {
+				literal: true,
+				cellEnd: undefined,
+			};
 		}
 		while (cellIndex < cells.length && cells[cellIndex][1] <= position) {
 			cellIndex += 1;
 		}
-		if (cellIndex < cells.length && position >= cells[cellIndex][0]) {
-			const close = source.indexOf(COMMENT_CLOSE, position + COMMENT_TAG.length);
-			return close === -1 || close + COMMENT_CLOSE.length > cells[cellIndex][1];
+		return {
+			literal: false,
+			cellEnd: cellIndex < cells.length && position >= cells[cellIndex][0]
+				? cells[cellIndex][1]
+				: undefined,
+		};
+	};
+	const isInCode = (position: number) => {
+		const { ranges } = parsed!;
+		let left = 0;
+		let right = ranges.length;
+		while (left < right) {
+			const middle = Math.floor((left + right) / 2);
+			if (ranges[middle][1] <= position) {
+				left = middle + 1;
+			} else {
+				right = middle;
+			}
 		}
-		return false;
+		return left < ranges.length && ranges[left][0] <= position;
+	};
+	return {
+		context,
+		isInCode,
 	};
 };
 
@@ -210,7 +208,7 @@ export const parseMarkdown = (source: string): ParseResult => {
 		};
 	}
 
-	const isInCode = createIsInCode(source);
+	const { context, isInCode } = createIsInCode(source);
 
 	const scriptBlocks: ScriptBlock[] = [];
 	const markers: Marker[] = [];
@@ -224,8 +222,35 @@ export const parseMarkdown = (source: string): ParseResult => {
 
 		const afterTag = start + COMMENT_TAG.length;
 		const nextChar = source[afterTag];
-		if (isInCode(start)) {
+		const { literal, cellEnd } = context(start);
+		if (literal) {
 			searchFrom = afterTag;
+			continue;
+		}
+		if (cellEnd !== undefined) {
+			const cell = source.slice(start, cellEnd);
+			const exprEnd = cell.indexOf(COMMENT_CLOSE, COMMENT_TAG.length);
+			const closeStart = exprEnd === -1
+				? -1
+				: cell.indexOf(MARKER_CLOSE, exprEnd + COMMENT_CLOSE.length);
+			if (nextChar !== ' ' || closeStart === -1 || isInCode(start + closeStart)) {
+				searchFrom = afterTag;
+				continue;
+			}
+			const nextOpening = findNextMdevalOpening(cell, exprEnd + COMMENT_CLOSE.length);
+			if (nextOpening !== -1 && nextOpening < closeStart) {
+				throw new MarkdownParseError(
+					`mdeval: unclosed marker open at offset ${start} (missing \`<!--/mdeval-->\`)`,
+					start,
+				);
+			}
+			const markerEnd = start + closeStart + MARKER_CLOSE.length;
+			markers.push({
+				expression: cell.slice(COMMENT_TAG.length + 1, exprEnd),
+				start,
+				end: markerEnd,
+			});
+			searchFrom = markerEnd;
 			continue;
 		}
 
