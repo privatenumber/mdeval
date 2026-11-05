@@ -41,7 +41,7 @@ This is a TypeScript and Node.js interaction, not mdeval behavior, but it breaks
 
 ### The 24.x bound matches `ts-content-mapper`
 
-`ts-content-mapper@0.1.0`, which mdeval bundles into `dist/content-mapper.mjs`, declares `engines.node` as `^22.18.0 || >=24.11.0`. On 24.x, mdeval uses the same bound, so it does not declare wider support than its bundled mapper. On 22.x, mdeval's bound is higher, for the `execve` reason above.
+`ts-content-mapper@0.1.1`, which mdeval bundles into `dist/content-mapper.mjs`, declares `engines.node` as `^22.18.0 || >=24.11.0`. On 24.x, mdeval uses the same bound, so it does not declare wider support than its bundled mapper. On 22.x, mdeval's bound is higher, for the `execve` reason above.
 
 ## Verification
 

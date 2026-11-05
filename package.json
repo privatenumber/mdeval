@@ -32,7 +32,7 @@
 	"imports": {
 		"#content-mapper": "./dist/content-mapper.mjs"
 	},
-	"packageManager": "pnpm@12.16.1",
+	"packageManager": "pnpm@12.18.0",
 	"scripts": {
 		"build": "pkgroll --minify --export-condition=node",
 		"test": "pnpm build && node tests/index.ts",
@@ -49,7 +49,7 @@
 		"cleye": "^2.3.0",
 		"mdast-util-from-markdown": "^2.1.0",
 		"mdast-util-gfm-footnote": "^2.1.0",
-		"mdast-util-gfm-table": "^2.0.0",
+		"mdast-util-gfm-table": "^2.0.1",
 		"mdast-util-to-hast": "^13.2.1",
 		"micromark": "^4.0.3",
 		"micromark-extension-gfm-footnote": "^2.1.0",
@@ -68,7 +68,7 @@
 		"manten": "^2.0.2",
 		"nano-spawn": "^2.1.0",
 		"pkgroll": "^2.29.0",
-		"ts-content-mapper": "0.1.0",
+		"ts-content-mapper": "0.1.1",
 		"tsx": "^4.23.15",
 		"typescript": "^6.0.3",
 		"typescript7": "npm:typescript@7.1.0-beta"
