@@ -29,10 +29,19 @@ describe('parseMarkdown', () => {
 	});
 
 	test('bounds delimiter searches for many incomplete table markers', () => {
-		const source = `| h |\n|---|\n${'| <!--mdeval x |\n'.repeat(32_000)}`;
-		const start = performance.now();
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
-		expect(performance.now() - start).toBeLessThan(6000);
+		// Compare how time scales instead of absolute time, so a slow runner
+		// cannot fail the test: doubling the rows roughly doubles linear work
+		// and quadruples quadratic work
+		const measure = (rows: number) => {
+			const source = `| h |\n|---|\n${'| <!--mdeval x |\n'.repeat(rows)}`;
+			const start = performance.now();
+			expect(parseMarkdown(source).markers).toStrictEqual([]);
+			return performance.now() - start;
+		};
+		measure(1000);
+		const fewer = Math.min(measure(4000), measure(4000));
+		const more = Math.min(measure(8000), measure(8000));
+		expect(more / fewer).toBeLessThan(3);
 	});
 
 	test('keeps reference labels inside table rows unchanged', () => {
