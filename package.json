@@ -32,7 +32,7 @@
 	"imports": {
 		"#content-mapper": "./dist/content-mapper.mjs"
 	},
-	"packageManager": "pnpm@12.16.1",
+	"packageManager": "pnpm@12.18.0",
 	"scripts": {
 		"build": "pkgroll --minify --export-condition=node",
 		"test": "pnpm build && node tests/index.ts",
