@@ -21,20 +21,26 @@ export const generateModule = (
 		}
 	}
 
+	if (markers.length === 0) {
+		return chunks;
+	}
+
 	const expressions = new Set<string>();
+	chunks.push({ text: `export const ${EXPORT_PREFIX}markers = () => [\n` });
 	for (const marker of markers) {
 		if (expressions.has(marker.expression)) {
 			continue;
 		}
 		chunks.push(
-			{ text: `export const ${EXPORT_PREFIX}${expressions.size} = ` },
+			{ text: '(async () => (\n' },
 			{
 				text: marker.expression,
 				sourceOffset: marker.start + MARKER_OPEN.length,
 			},
-			{ text: ';\n' },
+			{ text: '\n))(),\n' },
 		);
 		expressions.add(marker.expression);
 	}
+	chunks.push({ text: '];\n' });
 	return chunks;
 };

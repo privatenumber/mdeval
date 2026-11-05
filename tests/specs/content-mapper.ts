@@ -201,7 +201,7 @@ describe('content mapper', () => {
 		});
 	});
 
-	test('preserves evaluate-once control flow for repeated expressions', async () => {
+	test('checks marker expressions without narrowing across async closures', async () => {
 		const result = await typecheckMdeval({
 			'example.md': [
 				'<!--mdeval',
@@ -214,8 +214,8 @@ describe('content mapper', () => {
 			].join('\n'),
 		});
 		expect(result).toStrictEqual({
-			exitCode: 0,
-			output: '',
+			exitCode: 2,
+			output: "example.md(7,18): error TS2339: Property 'toFixed' does not exist on type 'string | number'.\n  Property 'toFixed' does not exist on type 'string'.",
 		});
 	});
 
