@@ -18,6 +18,23 @@ const markerContent = (
 };
 
 describe('parseMarkdown', () => {
+	test('ignores openings that cross table cell boundaries', () => {
+		const source = '| A | B | C |\n|---|---|---|\n| x | <!--mdeval a || b-->old<!--/mdeval--> | y |\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('preserves reference matching outside tables when a pipe follows backslashes', () => {
+		const source = String.raw`[z][x\\|y \`<!--mdeval 1+1-->old<!--/mdeval-->\`]
+
+[xa\|y \`<!--MDEVAL 1+1-->old<!--/MDEVAL-->\`]: /url
+
+| a | b |
+|---|---|
+| x\\|y | z |
+`.replaceAll('\\`', '`');
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
 	test('ignores markers in body cells beyond the header width', () => {
 		const source = '\uFEFF| a | b |\r\n|---|---|\r\n| x | ` | <!--mdeval 1+1-->old<!--/mdeval-->` |\r\n\r\n<!--mdeval 2-->old<!--/mdeval-->';
 		const { markers } = parseMarkdown(source);

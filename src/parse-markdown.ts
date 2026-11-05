@@ -53,21 +53,41 @@ const codeTokenTypes = new Set(['codeFenced', 'codeIndented', 'codeText']);
 // micromark's preprocess() strips a leading BOM; we shift offsets back so the
 // ranges align with positions in the original source that our mdeval scanners
 // also operate on.
-const findCodeRanges = (source: string): CodeRange[] => {
+const findCodeRanges = (source: string) => {
 	const bomOffset = source.codePointAt(0) === 0xFE_FF ? 1 : 0;
-	// GitHub treats any backslash before a table pipe as an escape, even when
-	// the run is even: https://github.com/github/cmark-gfm/issues/277. Change
-	// those runs in a same-length copy to preserve offsets and make their parity odd.
-	const tableSource = source.replaceAll(/\\+/g, (match, offset: number) => (
-		match.length % 2 === 0 && source[offset + match.length] === '|'
-			? `a${match.slice(1)}`
-			: match
-	));
-	const events = postprocess(
+	const parseSource = (value: string) => postprocess(
 		parse({ extensions: [gfmTable()] }).document()
-			.write(preprocess()(tableSource, undefined, true)),
+			.write(preprocess()(value, undefined, true)),
 	);
+	let events = parseSource(source);
+	// GitHub treats any backslash before a table pipe as an escape, even when
+	// the run is even: https://github.com/github/cmark-gfm/issues/277. Restrict
+	// the same-length rewrite to table rows to preserve other Markdown syntax.
+	const runs = [...source.matchAll(/\\+/g)].filter(match => (
+		match[0].length % 2 === 0 && source[match.index + match[0].length] === '|'
+	));
+	if (runs.length > 0) {
+		const rows = events.filter(([phase, token]) => phase === 'enter' && token.type === 'tableRow');
+		let rowIndex = 0;
+		let cursor = 0;
+		const parts: string[] = [];
+		for (const match of runs) {
+			const offset = match.index;
+			while (rowIndex < rows.length && rows[rowIndex][1].end.offset + bomOffset <= offset) {
+				rowIndex += 1;
+			}
+			if (rowIndex < rows.length && rows[rowIndex][1].start.offset + bomOffset <= offset) {
+				parts.push(source.slice(cursor, offset), 'a');
+				cursor = offset + 1;
+			}
+		}
+		if (parts.length > 0) {
+			parts.push(source.slice(cursor));
+			events = parseSource(parts.join(''));
+		}
+	}
 	const ranges: CodeRange[] = [];
+	const cells: CodeRange[] = [];
 	let headerWidth = 0;
 	let column = 0;
 	let discardedCell = false;
@@ -80,6 +100,9 @@ const findCodeRanges = (source: string): CodeRange[] => {
 		}
 		if (phase !== 'enter') {
 			continue;
+		}
+		if (token.type === 'tableHeader' || token.type === 'tableData') {
+			cells.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
 		}
 		switch (token.type) {
 			case 'table': {
@@ -114,7 +137,10 @@ const findCodeRanges = (source: string): CodeRange[] => {
 			ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
 		}
 	}
-	return ranges;
+	return {
+		ranges,
+		cells,
+	};
 };
 
 type ParseResult = {
@@ -124,16 +150,28 @@ type ParseResult = {
 
 // Lazy, forward-only membership test for literal source ranges.
 const createIsInCode = (source: string) => {
-	let ranges: CodeRange[] | null = null;
+	let parsed: ReturnType<typeof findCodeRanges> | null = null;
 	let rangeIndex = 0;
+	let cellIndex = 0;
 	return (position: number): boolean => {
-		if (ranges === null) {
-			ranges = findCodeRanges(source);
+		if (parsed === null) {
+			parsed = findCodeRanges(source);
 		}
+		const { ranges, cells } = parsed;
 		while (rangeIndex < ranges.length && ranges[rangeIndex][1] <= position) {
 			rangeIndex += 1;
 		}
-		return rangeIndex < ranges.length && position >= ranges[rangeIndex][0];
+		if (rangeIndex < ranges.length && position >= ranges[rangeIndex][0]) {
+			return true;
+		}
+		while (cellIndex < cells.length && cells[cellIndex][1] <= position) {
+			cellIndex += 1;
+		}
+		if (cellIndex < cells.length && position >= cells[cellIndex][0]) {
+			const close = source.indexOf(COMMENT_CLOSE, position + COMMENT_TAG.length);
+			return close === -1 || close + COMMENT_CLOSE.length > cells[cellIndex][1];
+		}
+		return false;
 	};
 };
 
