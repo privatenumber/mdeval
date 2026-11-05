@@ -418,6 +418,13 @@ describe('validate-rendering', () => {
 				source: '<div>\n<!--mdeval x-->old<!--/mdeval-->\n</div>',
 			},
 			{
+				// `</desc>` cannot close the SVG `desc` while the HTML `<b>` inside it
+				// is open, so the parser stays in HTML content. There, `<![CDATA[`
+				// starts a bogus comment, and the marker becomes comments, not text.
+				name: 'marker in CDATA after an SVG end tag that the parser ignores',
+				source: '<div>\n<svg><desc><b>x</desc><![CDATA[<!--mdeval x-->old<!--/mdeval-->]]></svg>\n</div>',
+			},
+			{
 				name: 'marker in link text',
 				source: '[<!--mdeval label-->Old<!--/mdeval-->](https://example.com)',
 			},
