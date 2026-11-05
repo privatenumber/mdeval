@@ -12,6 +12,7 @@ import { findRenderedLeaks } from './validate-rendering/index.ts';
 // Warnings go to stderr, so color depends on stderr, not stdout
 const WARNING_PREFIX = styleText('yellow', 'Warning:', { stream: process.stderr });
 const NODE_MODULES_SEGMENT = /(?:^|[\\/])node_modules(?:[\\/]|$)/;
+const NODE_MODULES_PATTERN_SEGMENT = /(?:^|[\\/{},])node_modules(?:[\\/{},]|$)/;
 
 const argv = cli({
 	name: 'mdeval',
@@ -48,7 +49,12 @@ for (const pattern of patterns) {
 		});
 	} catch (error) {
 		if (!(error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR'))) {
-			throw error;
+			const message = error instanceof Error
+				? ('code' in error && typeof error.code === 'string' ? error.code : error.message)
+				: error;
+			console.error(`${pattern}:`, message);
+			invalid = true;
+			continue;
 		}
 		if (!isDynamicPattern(pattern)) {
 			console.error(`${pattern}: file does not exist`);
@@ -73,7 +79,7 @@ if (invalid) {
 	const groups = [new Set<string>(), new Set<string>()];
 	for (const { pattern, literal } of positives) {
 		if (!literal) {
-			groups[Number(NODE_MODULES_SEGMENT.test(pattern))].add(pattern);
+			groups[Number(NODE_MODULES_PATTERN_SEGMENT.test(pattern))].add(pattern);
 		}
 	}
 	const groupedMatches = await Promise.all(groups.map((patterns_, index) => (patterns_.size === 0
@@ -83,7 +89,7 @@ if (invalid) {
 		}))));
 	const emitted = new Set<number>();
 	const candidates = positives.flatMap(({ pattern, literal }) => {
-		const optedIn = literal || NODE_MODULES_SEGMENT.test(pattern);
+		const optedIn = literal || NODE_MODULES_PATTERN_SEGMENT.test(pattern);
 		if (literal) {
 			return excluded.has(path.resolve(pattern))
 				? []
@@ -105,10 +111,16 @@ if (invalid) {
 	const realPaths = await Promise.all(
 		candidates.map(({ file }) => fs.realpath(file).catch(() => path.resolve(file))),
 	);
+	const realCwd = await fs.realpath(process.cwd());
 	const unique = new Set<string>();
 	const files = candidates.filter(({ optedIn }, index) => {
 		const realPath = realPaths[index];
-		if ((!optedIn && NODE_MODULES_SEGMENT.test(realPath)) || unique.has(realPath)) {
+		const relativePath = path.relative(realCwd, realPath);
+		const outsideCwd = relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath);
+		if (
+			(!optedIn && NODE_MODULES_SEGMENT.test(outsideCwd ? realPath : relativePath))
+			|| unique.has(realPath)
+		) {
 			return false;
 		}
 		unique.add(realPath);
@@ -159,7 +171,8 @@ if (invalid) {
 				);
 			}
 		} catch (error) {
-			const frame = error instanceof Error ? error.stack?.match(/^\s*at (?:.*? \()?((?:file:\/\/|\/|[A-Za-z]:[\\/]).*?\.md):(\d+):(\d+)\)?$/m) : undefined;
+			const stack = error instanceof Error ? error.stack : undefined;
+			const frame = typeof stack === 'string' ? stack.match(/^\s*at (?:.*? \()?((?:file:\/\/|\/|[A-Za-z]:[\\/]).*?\.md):(\d+):(\d+)\)?$/m) : undefined;
 			let location = file;
 			if (frame) {
 				const framePath = frame[1].startsWith('file:') ? fileURLToPath(frame[1]) : frame[1];

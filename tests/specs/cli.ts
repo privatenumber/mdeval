@@ -19,6 +19,63 @@ const mdeval = (
 describe('cli', () => {
 	const source = '# Test\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
 
+	test('brace alternatives opt into node_modules', async () => {
+		await using fixture = await createFixture({
+			'docs/a.md': source,
+			'node_modules/pkg/a.md': source,
+		});
+		const result = await mdeval(['{docs,node_modules/pkg}/**/*.md'], { cwd: fixture.path });
+		expect(result.stdout.split('\n').sort()).toStrictEqual(['docs/a.md', 'node_modules/pkg/a.md']);
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source.replace('old', '2'));
+	});
+
+	test('globs work when the cwd is inside node_modules', async () => {
+		await using fixture = await createFixture({
+			'node_modules/pkg/a.md': source,
+			'node_modules/pkg/node_modules/other/a.md': source,
+		});
+		const result = await mdeval(['**/*.md'], { cwd: fixture.getPath('node_modules/pkg') });
+		expect(result.stdout).toBe('a.md');
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source.replace('old', '2'));
+		expect(await fixture.readFile('node_modules/pkg/node_modules/other/a.md', 'utf8')).toBe(source);
+	});
+
+	test('excludes symlinks into node_modules outside the cwd', async () => {
+		await using fixture = await createFixture({
+			'project/a.md': source,
+			'node_modules/pkg/a.md': source,
+		});
+		await fs.symlink('../node_modules/pkg', fixture.getPath('project/docs'), 'dir');
+		await mdeval(['**/*.md'], { cwd: fixture.getPath('project') });
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source);
+	});
+
+	test('reports stat errors and later missing paths without processing', async () => {
+		await using fixture = await createFixture({
+			'a.md': source,
+			'preload.cjs': 'const fs = require("node:fs/promises"); const stat = fs.stat; fs.stat = (...args) => args[0] === "denied.md" ? Promise.reject(Object.assign(new Error("denied"), { code: "EACCES" })) : stat(...args);',
+		});
+		const error = await spawn(process.execPath, ['--import', fixture.getPath('preload.cjs'), cliPath, 'a.md', 'denied.md', 'missing.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('denied.md: EACCES');
+		expect(error.stderr).toContain('missing.md: file does not exist');
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+	});
+
+	test('reports original errors when the stack is not a string', async () => {
+		const markdown = '# Test\n\n<!--mdeval\nError.prepareStackTrace = () => [];\nthrow new Error("boom");\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': markdown });
+		const error = await mdeval(['a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('Error processing a.md: boom');
+	});
+
 	test('excludes symlinks into node_modules unless explicitly targeted', async () => {
 		await using fixture = await createFixture({
 			'root.md': source,
