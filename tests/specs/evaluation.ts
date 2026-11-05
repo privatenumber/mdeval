@@ -8,6 +8,18 @@ import { processSource } from '../../src/process-source.ts';
 const cliPath = path.resolve(import.meta.dirname, '../../dist/cli.mjs');
 
 describe('marker evaluation', () => {
+	test('assimilates a marker thenable once', async () => {
+		const source = '<!--mdeval\nlet n = 0; const x = { then(resolve) { resolve(++n); } };\n-->\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		expect(await processSource(source, fixture.getPath('a.md'))).toBe(source.replace('old', '1'));
+	});
+
+	test('uses the global Promise when a script declares its own Promise', async () => {
+		const source = '<!--mdeval\nconst Promise = "script value";\n-->\n<!--mdeval Promise-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		expect(await processSource(source, fixture.getPath('a.md'))).toBe(source.replace('old', 'script value'));
+	});
+
 	test('an explicit await delays evaluation of later markers', async () => {
 		const source = '<!--mdeval\nlet state = 0;\n-->\n<!--mdeval (await Promise.resolve(), state = 42, 1)-->old<!--/mdeval-->\n<!--mdeval state-->old<!--/mdeval-->';
 		await using fixture = await createFixture({ 'a.md': source });

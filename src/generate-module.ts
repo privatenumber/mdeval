@@ -32,19 +32,20 @@ export const generateModule = (
 			continue;
 		}
 		const variable = `${EXPORT_PREFIX}${expressions.size}`;
+		const promise = `${EXPORT_PREFIX}promise_${expressions.size}`;
 		// The leading operand makes V8 report the expression instead of the synthetic declaration.
-		// Handle early rejections without changing the value that the caller receives.
+		// Normalize once so thenables are not re-evaluated when the caller awaits them.
 		chunks.push(
 			{ text: `const ${variable} = (void 0,\n` },
 			{
 				text: marker.expression,
 				sourceOffset: marker.start + MARKER_OPEN.length,
 			},
-			{ text: `\n);\nPromise.resolve(${variable}).catch(() => {});\n` },
+			{ text: `\n);\nconst ${promise} = globalThis.Promise.resolve(${variable});\n${promise}.catch(() => {});\n` },
 		);
 		expressions.add(marker.expression);
 	}
-	const variables = Array.from(expressions, (_, index) => `${EXPORT_PREFIX}${index}`);
+	const variables = Array.from(expressions, (_, index) => `${EXPORT_PREFIX}promise_${index}`);
 	chunks.push({ text: `return [${variables.join(', ')}];\n};\nlet ${EXPORT_PREFIX}get = ${EXPORT_PREFIX}run;\nexport const ${EXPORT_PREFIX}markers = () => {\nconst ${EXPORT_PREFIX}promise = ${EXPORT_PREFIX}get();\n${EXPORT_PREFIX}get = () => ${EXPORT_PREFIX}promise;\nreturn ${EXPORT_PREFIX}promise;\n};\n` });
 	return chunks;
 };
