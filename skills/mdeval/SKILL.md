@@ -255,9 +255,13 @@ const x = String.fromCharCode(45, 45, 62);
 **Markers can span multiple lines — use them to inline logic.** Don't cram expressions into one line. Co-locate marker-specific computation with its output:
 
 ````markdown
+<!--mdeval
+import { table } from 'md-pen';
+-->
+
 <!--mdeval block(table([
-  { name: 'cleye', version: '^2.3.0' },
-  { name: 'md-pen', version: '^0.0.2' },
+  { Package: 'cleye', Version: '^2.3.0' },
+  { Package: 'md-pen', Version: '^0.0.2' },
 ]))-->
 | Package | Version |
 | - | - |
