@@ -85,7 +85,7 @@ console.log(todos);
 
 ## Type checking
 
-TypeScript can type-check the JavaScript in mdeval script blocks and markers without executing it, and report errors at the original Markdown lines. This uses content mappers, a new TypeScript 7.1 feature that lets a package translate other file types for the compiler. Most projects have not set it up yet, so a `tsconfig.json` without it does not mean the project opted out.
+TypeScript can type-check the code in mdeval script blocks and markers without executing it, and report errors at the original Markdown lines. This uses content mappers, a new TypeScript 7.1 feature that lets a package translate other file types for the compiler. Most projects have not set it up yet, so a `tsconfig.json` without it does not mean the project opted out.
 
 To type-check mdeval code, install TypeScript 7.1 (currently a beta):
 
@@ -101,8 +101,7 @@ Register mdeval as the content mapper for `.md` files in `tsconfig.json`, and in
         "module": "nodenext",
         "target": "esnext",
         "strict": true,
-        "allowJs": true,
-        "checkJs": true,
+        "erasableSyntaxOnly": true,
         "noEmit": true
     },
     "contentMappers": [
@@ -121,7 +120,8 @@ Run the compiler. `--runExternalCode` allows `tsc` to start mdeval's mapper; the
 npx tsc --noEmit --runExternalCode
 ```
 
-- Embedded code must stay JavaScript. Annotate with JSDoc (`/** @type {number} */`), never TypeScript syntax: mdeval runs blocks as JavaScript, so `const count: number = 42` fails at runtime.
+- Markdown is checked as TypeScript. Annotate with TypeScript syntax (`const count: number = 42`); JSDoc types are not checked.
+- `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
 - A repeated marker expression is checked once, and its errors point to the first occurrence.
 - Fenced code, inline code, and rendered marker values are not checked.
 
