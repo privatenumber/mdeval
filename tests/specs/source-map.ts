@@ -14,7 +14,7 @@ const projectRoot = path.resolve(import.meta.dirname, '../..');
 // remap to the original `.md` line.
 const buildFixture = (dataMd: string) => createFixture({
 	'data.md': dataMd,
-	'consumer.mjs': ({ fixturePath }) => `const mod = await import(${JSON.stringify(pathToFileURL(path.join(fixturePath, 'data.md')).href)}); await Promise.all(mod.__mdeval_markers());\n`,
+	'consumer.mjs': ({ fixturePath }) => `const mod = await import(${JSON.stringify(pathToFileURL(path.join(fixturePath, 'data.md')).href)}); await Promise.all(await mod.__mdeval_markers());\n`,
 	'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
 });
 

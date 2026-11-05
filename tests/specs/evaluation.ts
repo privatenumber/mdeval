@@ -1,11 +1,51 @@
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
 import spawn from 'nano-spawn';
+import { processSource } from '../../src/process-source.ts';
 
 const cliPath = path.resolve(import.meta.dirname, '../../dist/cli.mjs');
 
 describe('marker evaluation', () => {
+	test('an explicit await delays evaluation of later markers', async () => {
+		const source = '<!--mdeval\nlet state = 0;\n-->\n<!--mdeval (await Promise.resolve(), state = 42, 1)-->old<!--/mdeval-->\n<!--mdeval state-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		expect(await processSource(source, fixture.getPath('a.md'))).toBe(source.replace('old', '1').replace('old', '42'));
+	});
+
+	test('a synchronous marker throw stops later expressions', async () => {
+		const source = '<!--mdeval\nexport const state = { count: 0 };\n-->\n<!--mdeval JSON.parse("{")-->old<!--/mdeval-->\n<!--mdeval ++state.count-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		const filePath = fixture.getPath('a.md');
+		await expect(processSource(source, filePath)).rejects.toThrow(SyntaxError);
+		const module = await import(pathToFileURL(filePath).href);
+		expect(module.state.count).toBe(0);
+	});
+
+	test('processing one cached module twice evaluates markers once', async () => {
+		const source = '<!--mdeval\nlet count = 0;\n-->\n<!--mdeval ++count-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		const filePath = fixture.getPath('a.md');
+		const outputs = await Promise.all([
+			processSource(source, filePath),
+			processSource(source, filePath),
+		]);
+		expect(outputs).toStrictEqual([source.replace('old', '1'), source.replace('old', '1')]);
+	});
+
+	test('returned promises do not delay evaluation of later markers', async () => {
+		const source = '<!--mdeval\nlet state = 0;\n-->\n<!--mdeval Promise.resolve().then(() => { state = 42; return 1; })-->old<!--/mdeval-->\n<!--mdeval state-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		expect(await processSource(source, fixture.getPath('a.md'))).toBe(source.replace('old', '1').replace('old', '0'));
+	});
+
+	test('marker expressions can access similarly named script bindings', async () => {
+		const source = '<!--mdeval\nconst values = 1, result = 2;\n-->\n<!--mdeval values-->old<!--/mdeval-->\n<!--mdeval result-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		expect(await processSource(source, fixture.getPath('a.md'))).toBe(source.replace('old', '1').replace('old', '2'));
+	});
+
 	test('importing markdown runs script blocks but not markers', async () => {
 		await using fixture = await createFixture({
 			'data.md': '<!--mdeval\nexport const value = 42;\n-->\n<!--mdeval console.log("marker ran")-->old<!--/mdeval-->',

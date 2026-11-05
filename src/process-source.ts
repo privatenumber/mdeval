@@ -18,7 +18,7 @@ export const processSource = async (
 
 	const rawValues = await import(pathToFileURL(filePath).href);
 	const expressionMap = buildExpressionMap(markers);
-	const markerValues: Promise<unknown>[] = rawValues[`${EXPORT_PREFIX}markers`]();
+	const markerValues: unknown[] = await rawValues[`${EXPORT_PREFIX}markers`]();
 
 	const resolvedValues = await Promise.all(
 		Array.from(expressionMap).map(async ([expression, index]) => {
