@@ -8,7 +8,7 @@ TypeScript's erasable syntax is a superset of JavaScript, so one rule covers bot
 
 1. **Runtime:** [the load hook](../../src/md-loader.ts) returns `format: 'module-typescript'`, and Node.js strips the types. Files under `node_modules` get `'module'`.
 2. **Checker:** [the content mapper](../../src/content-mapper.ts) always returns an `.mts` virtual file.
-3. **Docs:** the README recommends `erasableSyntaxOnly`. Projects need neither `allowJs` nor `checkJs`.
+3. **Docs:** [the type-checking docs](../../docs/type-checking.md) recommend `erasableSyntaxOnly`. Projects need neither `allowJs` nor `checkJs`.
 
 The runtime and the checker parse every file with the same grammar, and nothing has to decide the language of a file: no detection, and no new syntax. The cost is that JSDoc types stop being checked and every process loads Node's TypeScript parser. The sections below give the evidence, and [Alternatives](#alternatives) explains why the other designs were rejected.
 

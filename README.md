@@ -3,14 +3,9 @@
 </p>
 <h1 align="center">mdeval</h1>
 
-Ever wanted dynamic values in your Markdown — package versions, star counts, computed tables — without a separate generation script that's easy to forget about?
+mdeval runs JavaScript or TypeScript written in HTML comments inside your Markdown, and writes the results back into the file. The code sits next to the content it produces. The file renders normally on GitHub and in any editor, because HTML comments are invisible.
 
-mdeval embeds JavaScript or TypeScript directly in your Markdown using HTML comments. The logic lives right next to the content it produces, and the file renders normally everywhere — GitHub, editors, any Markdown viewer — because HTML comments are invisible.
-
-Any value that matters — a dependency count, a version string, a benchmark result — is computed, not typed. Whether written by a person or an AI agent, the expression shows the work and anyone can verify it. Re-run `mdeval` and every value updates.
-
-> [!TIP]
-> Particularly useful for **knowledge bases** — contact lists, project trackers, changelogs, or any Markdown that functions as a source of truth. Values stay accurate on every run, so nothing drifts. AI agents reading the files also benefit: pre-computed values mean they don't need to re-process raw data across multiple documents, cutting token usage significantly.
+Values such as a version string, a dependency count, or a benchmark result are computed, not typed by hand, so anyone can check where they came from. Run `mdeval` again and every value updates. This also works well for Markdown knowledge bases, such as contact lists or project trackers, where files share data.
 
 ## Install
 
@@ -20,9 +15,7 @@ npm i mdeval
 
 ## Quick start
 
-mdeval adds two types of HTML comments to your Markdown:
-
-A **script block** is where you write JavaScript or TypeScript. It starts with `<!--mdeval` followed by a newline:
+A **script block** holds code. It starts with `<!--mdeval` followed by a newline:
 
 ```markdown
 <!--mdeval
@@ -31,33 +24,23 @@ const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));
 -->
 ```
 
-Script blocks support:
+Script blocks are ES modules with full Node.js access: imports, top-level `await`, and any installed package.
 
-- Full Node.js — any built-in module or installed package
-- ESM `import` / `export`
-- Top-level `await`
-- TypeScript syntax that Node.js can strip, such as type annotations and `interface` (see [Caveats](#caveats))
-- Shell commands via [`$`](https://google.github.io/zx/)
-
-A **value marker** is where the result appears. It starts with `<!--mdeval ` (with a space) followed by an expression:
+A **value marker** shows a result. It starts with `<!--mdeval ` (with a space) followed by an expression. The text between `-->` and `<!--/mdeval-->` is the current value:
 
 ```markdown
 Version: <!--mdeval pkg.version-->1.0.0<!--/mdeval-->
 ```
 
-The `1.0.0` between `-->` and `<!--/mdeval-->` is the current value — it gets overwritten with the result of `pkg.version` every time you run mdeval:
+Run mdeval to replace each value with the result of its expression:
 
 ```bash
 mdeval README.md
 ```
 
-The file is updated in-place. You can pass multiple files or glob patterns: `mdeval README.md "docs/**/*.md"`.
-
-`node_modules` and hidden directories are automatically excluded from glob expansion. To include them, name them in the pattern, such as `"node_modules/pkg/*.md"` or `".github/**/*.md"`.
-
 ## Example
 
-**`CONTACTS.md`** — a contact list stored as typed data, rendered as a table when viewed:
+**`CONTACTS.md`** stores contacts as data and renders them as a table, using [md-pen](https://github.com/privatenumber/md-pen) to generate Markdown:
 
 ````markdown
 <!--mdeval
@@ -66,273 +49,107 @@ import { table, link } from 'md-pen';
 type Contact = {
   name: string;
   linkedin: string;
-  notes: string;
 };
 
 export const contacts: Contact[] = [
-  {
-    name: 'Alice Martin',
-    linkedin: 'https://linkedin.com/in/alice-martin',
-    notes: 'Met at JSConf 2023',
-  },
-  {
-    name: 'Bob Tanaka',
-    linkedin: 'https://linkedin.com/in/bob-tanaka',
-    notes: 'Former colleague at Acme Co.',
-  },
+  { name: 'Alice Martin', linkedin: 'https://linkedin.com/in/alice-martin' },
+  { name: 'Bob Tanaka', linkedin: 'https://linkedin.com/in/bob-tanaka' },
 ];
-
-export const findContact = (name: string): Contact => {
-  const contact = contacts.find(c => c.name === name);
-  if (!contact) {
-    throw new Error(`Unknown contact: ${name}`);
-  }
-  return contact;
-};
-
-const contactsTable = table(
-  contacts.map(({ name, linkedin, notes }) => ({ Name: link(linkedin, name), Notes: notes })),
-);
 -->
 
-<!--mdeval block(contactsTable)-->
-| Name | Notes |
-| - | - |
-| [Alice Martin](https://linkedin.com/in/alice-martin) | Met at JSConf 2023 |
-| [Bob Tanaka](https://linkedin.com/in/bob-tanaka) | Former colleague at Acme Co. |
+<!--mdeval block(table(contacts.map(({ name, linkedin }) => ({ Name: link(linkedin, name) }))))-->
+| Name |
+| - |
+| [Alice Martin](https://linkedin.com/in/alice-martin) |
+| [Bob Tanaka](https://linkedin.com/in/bob-tanaka) |
 <!--/mdeval-->
 ````
 
-**`TIMELINE.md`** — imports contacts and links them by LinkedIn:
+**`TIMELINE.md`** imports the contacts from `CONTACTS.md`:
 
 ````markdown
 <!--mdeval
-import { link, ul, bold } from 'md-pen';
+import { link } from 'md-pen';
+import { contacts } from './CONTACTS.md';
 
-// Imports from the mdeval block!
-import { findContact } from './CONTACTS.md';
-
-const events = [
-  { date: '2023-10-15', description: 'Attended JSConf 2023' },
-  { date: '2024-03-01', description: `Coffee with ${link(findContact('Alice Martin').linkedin, 'Alice Martin')}` },
-  { date: '2024-11-08', description: 'Started new open-source project' },
-];
-
-const list = ul(events.map(({ date, description }) => `${bold(date)} — ${description}`));
+const alice = contacts.find(contact => contact.name === 'Alice Martin')!;
 -->
 
-<!--mdeval block(list)-->
-- __2023-10-15__ — Attended JSConf 2023
-- __2024-03-01__ — Coffee with [Alice Martin](https://linkedin.com/in/alice-martin)
-- __2024-11-08__ — Started new open-source project
-<!--/mdeval-->
+- 2024-03-01: Coffee with <!--mdeval link(alice.linkedin, alice.name)-->[Alice Martin](https://linkedin.com/in/alice-martin)<!--/mdeval-->
 ````
 
-The source of truth for contacts lives in `CONTACTS.md`. If contact info changes, run `mdeval **/*.md` and all files get re-rendered with the latest data.
+When a contact changes, run `mdeval "**/*.md"` and both files update.
 
-## Helpers
+## Writing mdeval code
 
-mdeval ships two helpers used in markers:
+### Helpers
+
+Two helpers are available as globals in `.md` files:
 
 | Helper | Description |
-|--------|-------------|
-| `block(value)` | Wraps the value with surrounding newlines so block-level Markdown (headings, lists, tables) renders correctly |
-| `$` | [zx](https://google.github.io/zx/) shell — run commands via tagged templates |
+| --- | --- |
+| `block(value)` | Puts the value on its own lines, so block-level Markdown such as headings, lists, and tables renders |
+| `$` | Runs shell commands with [zx](https://google.github.io/zx/): `` $`git branch --show-current` `` |
 
-How you access them depends on the file extension:
+In `.js` and `.ts` files, import them instead: `import { block, $ } from 'mdeval'`. The import has no side effects.
 
-| File | Access |
-|------|--------|
-| `.md` | Available as globals — call directly: `block(x)` or `` $`cmd` `` |
-| `.js`, `.ts`, anything else | Import explicitly: `import { block, $ } from 'mdeval'` |
+### Markers
 
-The `.md` case works because the CLI (and `--import mdeval/loader`) seeds the helpers on `globalThis` at startup. Modules imported transitively from a `.md` see them too, but in non-`.md` files prefer the explicit import for clarity and portability. The plain `import { block, $ } from 'mdeval'` is side-effect-free — no globals are touched, no loader is registered.
-
-## Using `.md` exports from a script
-
-`.md` files with mdeval script blocks are real ESM modules — anything they `export` can be imported from a Node script. Useful for validation tools, migration scripts, or any code that needs to read structured data out of a Markdown knowledge base.
-
-Run your script with `--import mdeval/loader`:
-
-```bash
-node --import mdeval/loader ./consumer.js
-```
-
-`consumer.js` can then use ordinary static imports against `.md` files:
-
-```js
-import { todos } from './TODOS.md'
-
-console.log(todos)
-```
-
-`--import mdeval/loader` is a side-effect-only entry. Before any of `consumer.js`'s imports are linked, it seeds `block` and `$` on `globalThis` and registers the Node ESM loader so `.md` files resolve as modules. Without it, the static `import` of a `.md` fails — Node has no idea how to load `.md` yet.
-
-The plain `mdeval` import stays pure — `import { block, $ } from 'mdeval'` just gives you the helpers without touching `globalThis` or registering any loader. The split keeps "I want the helpers in my script" separate from "I want to load `.md` files".
-
-You can also point `--import mdeval/loader` at a `.md` file directly:
-
-```bash
-node --import mdeval/loader ./TODOS.md
-```
-
-The consumer can also be TypeScript, such as `node --import mdeval/loader ./consumer.ts`, because Node.js strips types from `.ts` files. With [type checking](#type-checking-markdown) set up and the consumer in `include`, `tsc` checks the consumer against the types of the `.md` exports.
-
-Runtime stack traces from a `.md` point at original lines and columns — the loader sets up source maps automatically.
-
-## Type checking Markdown
-
-TypeScript 7.1 Beta can check the code inside mdeval comments and report errors at their original Markdown locations. Script blocks share a module scope, and imports resolve relative to the Markdown file. Each distinct marker expression is checked once, and its diagnostics point to the first occurrence. Checking does not execute the embedded code.
-
-Install the beta compiler:
-
-```sh
-npm install --save-dev typescript@7.1.0-beta
-```
-
-Register mdeval in your `tsconfig.json` and include the Markdown files you want to check:
-
-```json
-{
-    "compilerOptions": {
-        "module": "nodenext",
-        "target": "esnext",
-        "strict": true,
-        "erasableSyntaxOnly": true,
-        "noEmit": true
-    },
-    "contentMappers": [
-        {
-            "package": "mdeval",
-            "extensions": [
-                ".md"
-            ]
-        }
-    ],
-    "include": [
-        "README.md",
-        "docs/**/*.md"
-    ]
-}
-```
-
-Run the compiler with permission to start the mapper:
-
-```sh
-npx tsc --noEmit --runExternalCode
-```
-
-For example, this reports an error on `toUpperCase` because `count` is a number:
-
-```md
-<!--mdeval
-const count: number = 42;
--->
-
-Count: <!--mdeval count.toUpperCase()-->42<!--/mdeval-->
-```
-
-mdeval checks each Markdown file as a TypeScript module, so JSDoc type annotations are not checked. `erasableSyntaxOnly` reports syntax that cannot run, such as `enum`, at its Markdown location. Fenced code blocks, inline code, and rendered marker values are not checked.
-
-The checker knows the `block` and `$` globals, so checked files can use them without an import.
-
-The content mapper API is experimental. This integration is tested with TypeScript `7.1.0-beta`. Editor activation for Markdown depends on the editor's TypeScript integration; the configuration above enables command-line checking.
-
-## Notes
-
-- A file can have **multiple script blocks** — they're merged into one module, so variables and imports are shared. We recommend placing them at the top to signal the file has generated content.
-
-- **Markers can span multiple lines.** Don't cram everything into one line — give the expression room to breathe. This is what makes inlining marker-specific logic next to its output practical:
+- **Marker expressions are awaited**, so a promise resolves before its value is written:
 
   ```markdown
-  <!--mdeval block(table([
-    { name: 'cleye', version: '^2.3.0' },
-    { name: 'md-pen', version: '^0.0.2' },
-  ]))-->
-  | Package | Version |
-  | - | - |
-  | cleye | ^2.3.0 |
-  | md-pen | ^0.0.2 |
-  <!--/mdeval-->
+  Status: <!--mdeval fetch('https://api.github.com/repos/privatenumber/mdeval').then(response => response.status)-->200<!--/mdeval-->
   ```
 
-  When the expression needs statements or control flow, wrap it in an IIFE:
+- **Markers can span lines.** Keep logic that one marker needs inside the marker, and wrap statements in an IIFE:
 
   ```markdown
   <!--mdeval (() => {
     const n = 3;
-    if (n % 2 === 0) { return 'even' }
-    return 'odd'
+    return n % 2 === 0 ? 'even' : 'odd';
   })()-->odd<!--/mdeval-->
   ```
 
-  Coupling the expression to its rendered value keeps related code together and reads better than pushing every variable into a distant script block. Reserve script blocks for shared imports or values referenced by multiple markers.
+- **Script blocks share one module.** Variables and imports from every block in a file are visible to all of its markers. Use script blocks for imports and values that several markers share, and place them at the top of the file.
 
-- Marker expressions are **auto-awaited** — promises resolve automatically. Async APIs work directly in a marker without a script block:
+### Importing other `.md` files
 
-  ```markdown
-  Status: <!--mdeval (await fetch('https://api.github.com/repos/privatenumber/mdeval')).status-->200<!--/mdeval-->
-  ```
+A script block can import the exports of another `.md` file, as `TIMELINE.md` does above. mdeval runs only the script blocks of an imported file, not its markers.
 
-- You can **import from other `.md` files**. Only the script blocks are executed — no markers are processed:
-
-  ```markdown
-  <!--mdeval
-  import { version } from './data.md';
-  -->
-  ```
-
-  This lets you share constants and logic across multiple markdown files.
-
-  If the imported file might not yet have mdeval content (e.g. a stub being filled in over time), use a **namespace import** so missing exports resolve to `undefined` instead of crashing Node's ESM linker:
-
-  ```markdown
-  <!--mdeval
-  import * as data from './stub.md';
-  const version = data.version ?? 'tbd';
-  -->
-  ```
-
-- When processing multiple files (`mdeval a.md b.md`), all files **share the same Node.js runtime** — including the module cache, `globalThis`, and `process.env`. This is the same behavior as any Node.js program using `import()`.
-
-## Caveats
-
-- Script code **cannot contain `-->`** — it closes the HTML comment. Rewrite `x-- > y` as `x -= 1; x > y`.
-- Scripts can use **TypeScript syntax that Node.js can strip**, such as type annotations, `interface`, `as`, and `satisfies`. Syntax that needs code generation, such as `enum`, `namespace` with values, and constructor parameter properties, fails ([Node.js docs](https://nodejs.org/api/typescript.html#type-stripping)). Markdown files under `node_modules` run as JavaScript, because Node.js does not strip types there.
-- Values **cannot contain `<!--mdeval `** or **`<!--/mdeval-->`** — mdeval will throw to prevent document corruption.
-
-## Tip: md-pen
-
-[md-pen](https://github.com/privatenumber/md-pen) provides typed utilities for generating tables, lists, and other Markdown structures — useful when markers need to produce formatted output:
+If the imported file might not have mdeval code yet, use a namespace import. A missing export is then `undefined`, while a named import of a missing export fails:
 
 ```markdown
 <!--mdeval
-import { table, bold, link } from 'md-pen';
-const deps = [
-  ['cleye', '^2.3.0'],
-  ['md-pen', '^0.0.2'],
-];
-const depsTable = table(deps.map(([name, version]) => [
-  link(`https://npm.im/${name}`, bold(name)),
-  version,
-]));
+import * as data from './stub.md';
+const version = data.version ?? 'tbd';
 -->
-
-<!--mdeval block(depsTable)-->
-| Package | Version |
-| - | - |
-| [__cleye__](https://npm.im/cleye) | ^2.3.0 |
-| [__md-pen__](https://npm.im/md-pen) | ^0.0.2 |
-<!--/mdeval-->
 ```
 
-## Git hook
+### TypeScript
 
-Run mdeval automatically before every commit so values never go stale. [Lefthook](https://github.com/evilmartians/lefthook) makes this easy:
+Scripts and markers can use TypeScript syntax that Node.js can remove without changing the code, such as type annotations, `interface`, `as`, and `satisfies`. Syntax that generates code, such as `enum`, `namespace` with values, and constructor parameter properties, fails ([Node.js docs](https://nodejs.org/api/typescript.html#type-stripping)). Markdown files under `node_modules` run as JavaScript, because Node.js does not strip types there.
 
-```sh
-npm install lefthook --save-dev
+TypeScript 7.1 can also type-check mdeval code at its Markdown lines. See [Type checking](./docs/type-checking.md).
+
+### Caveats
+
+- **Script code cannot contain `-->`**, because it closes the HTML comment. Rewrite `x-- > y` as `x -= 1; x > y`.
+- **Values cannot contain `<!--mdeval ` or `<!--/mdeval-->`.** mdeval throws instead of writing them, so the file stays parseable.
+- **Files processed together share one Node.js process,** including the module cache, `globalThis`, and `process.env`.
+
+## CLI
+
+```bash
+mdeval README.md "docs/**/*.md"
 ```
+
+mdeval accepts files and glob patterns, and updates each file in place. It prints the path of every file it changes.
+
+Globs skip `node_modules` and hidden directories. To include them, name them in the pattern, such as `"node_modules/pkg/*.md"` or `".github/**/*.md"`.
+
+### Git hook
+
+To keep values current, run mdeval before every commit. With [Lefthook](https://github.com/evilmartians/lefthook):
 
 ```yaml
 # lefthook.yml
@@ -347,12 +164,29 @@ pre-commit:
         [ -z "$files" ] || git add $files
 ```
 
-`glob` makes the hook a no-op when no Markdown files are staged. mdeval prints the path of each file it rewrites to stdout, so `git add $files` re-stages only the files it actually updated. Note: `$files` relies on shell word-splitting, so this assumes `.md` paths without spaces.
+The hook re-stages only the files mdeval changed. `$files` relies on shell word splitting, so it assumes paths without spaces.
 
-## Agent Skills
+## Importing `.md` files from scripts
 
-This package ships with a built-in [agent skill](./skills/mdeval/SKILL.md) for AI coding assistants.
+`.md` files are ES modules, so a Node.js script can import their exports. Register the loader with `--import`:
+
+```bash
+node --import mdeval/loader ./script.js
+```
+
+```js
+// script.js
+import { contacts } from './CONTACTS.md'
+
+console.log(contacts)
+```
+
+See [Node.js usage](./docs/node.md) for TypeScript scripts, running a `.md` file directly, and stack traces.
+
+## Agent skill
+
+mdeval ships an [agent skill](./skills/mdeval/SKILL.md) that teaches AI coding assistants to write mdeval code.
 
 ## Related
 
-- [comment-mark](https://github.com/privatenumber/comment-mark) — Same idea of using HTML comment placeholders, but you write the script externally and pass values in via a JavaScript API. Useful when you want to keep the logic separate from the Markdown.
+- [comment-mark](https://github.com/privatenumber/comment-mark): also fills HTML comment placeholders, but values come from a script outside the Markdown through a JavaScript API.
