@@ -85,6 +85,48 @@ console.log(todos);
 - Works on `.md` directly too: `node --import mdeval/loader ./TODOS.md`.
 - Runtime stack traces from a `.md` point at original lines and columns automatically.
 
+## Type checking
+
+TypeScript can type-check the code in mdeval script blocks and markers without executing it, and report errors at the original Markdown lines. This uses content mappers, a new TypeScript 7.1 feature that lets a package translate other file types for the compiler. Most projects have not set it up yet, so a `tsconfig.json` without it does not mean the project opted out.
+
+To type-check mdeval code, install TypeScript 7.1 (currently a beta):
+
+```bash
+npm install --save-dev typescript@7.1.0-beta
+```
+
+Register mdeval as the content mapper for `.md` files in `tsconfig.json`, and include the Markdown files to check:
+
+```json
+{
+    "compilerOptions": {
+        "module": "nodenext",
+        "target": "esnext",
+        "strict": true,
+        "erasableSyntaxOnly": true,
+        "noEmit": true
+    },
+    "contentMappers": [
+        {
+            "package": "mdeval",
+            "extensions": [".md"]
+        }
+    ],
+    "include": ["README.md", "docs/**/*.md"]
+}
+```
+
+Run the compiler. `--runExternalCode` allows `tsc` to start mdeval's mapper; the code in the Markdown is not executed:
+
+```bash
+npx tsc --noEmit --runExternalCode
+```
+
+- Markdown is checked as TypeScript. Annotate with TypeScript syntax (`const count: number = 42`); JSDoc types are not checked.
+- `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
+- A repeated marker expression is checked once, and its errors point to the first occurrence.
+- Fenced code, inline code, and rendered marker values are not checked.
+
 ## CLI
 
 ```bash
