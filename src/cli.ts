@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { styleText } from 'node:util';
 import { cli } from 'cleye';
-import { escapePath, glob, isDynamicPattern } from 'tinyglobby';
+import { convertPathToPattern, glob, isDynamicPattern } from 'tinyglobby';
 import './loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
@@ -11,6 +11,7 @@ import { findRenderedLeaks } from './validate-rendering/index.ts';
 
 // Warnings go to stderr, so color depends on stderr, not stdout
 const WARNING_PREFIX = styleText('yellow', 'Warning:', { stream: process.stderr });
+const NODE_MODULES_SEGMENT = /(?:^|[\\/])node_modules(?:[\\/]|$)/;
 
 const argv = cli({
 	name: 'mdeval',
@@ -31,7 +32,7 @@ for (const pattern of patterns) {
 		const stat = await fs.stat(pattern);
 		if (stat.isDirectory()) {
 			positives.push({
-				pattern: `${escapePath(pattern.replace(/\/$/, ''))}/**/*.md`,
+				pattern: `${convertPathToPattern(pattern.replace(/[\\/]$/, ''))}/**/*.md`,
 				literal: false,
 			});
 			continue;
@@ -69,24 +70,50 @@ if (invalid) {
 		? await glob(negatives.map(pattern => pattern.slice(1)))
 		: [];
 	const excluded = new Set(exclusions.map(file => path.resolve(file)));
-	const matches = await Promise.all(positives.map(({ pattern, literal }) => (literal
-		? [pattern].filter(file => !excluded.has(path.resolve(file)))
-		: glob([pattern, ...negatives], {
-			ignore: pattern.includes('node_modules') ? [] : ['**/node_modules/**'],
+	const groups = [new Set<string>(), new Set<string>()];
+	for (const { pattern, literal } of positives) {
+		if (!literal) {
+			groups[Number(NODE_MODULES_SEGMENT.test(pattern))].add(pattern);
+		}
+	}
+	const groupedMatches = await Promise.all(groups.map((patterns_, index) => (patterns_.size === 0
+		? []
+		: glob([...patterns_, ...negatives], {
+			ignore: index === 1 ? [] : ['**/node_modules/**'],
 		}))));
-	const candidates = matches.flat();
+	const emitted = new Set<number>();
+	const candidates = positives.flatMap(({ pattern, literal }) => {
+		const optedIn = literal || NODE_MODULES_SEGMENT.test(pattern);
+		if (literal) {
+			return excluded.has(path.resolve(pattern))
+				? []
+				: [{
+					file: pattern,
+					optedIn,
+				}];
+		}
+		const group = Number(optedIn);
+		if (emitted.has(group)) {
+			return [];
+		}
+		emitted.add(group);
+		return groupedMatches[group].map(file => ({
+			file,
+			optedIn,
+		}));
+	});
 	const realPaths = await Promise.all(
-		candidates.map(file => fs.realpath(file).catch(() => path.resolve(file))),
+		candidates.map(({ file }) => fs.realpath(file).catch(() => path.resolve(file))),
 	);
 	const unique = new Set<string>();
-	const files = candidates.filter((file, index) => {
+	const files = candidates.filter(({ optedIn }, index) => {
 		const realPath = realPaths[index];
-		if (unique.has(realPath)) {
+		if ((!optedIn && NODE_MODULES_SEGMENT.test(realPath)) || unique.has(realPath)) {
 			return false;
 		}
 		unique.add(realPath);
 		return true;
-	});
+	}).map(({ file }) => file);
 
 	if (files.length === 0) {
 		console.error('No files matched the given patterns');

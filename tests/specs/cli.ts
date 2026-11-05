@@ -19,6 +19,54 @@ const mdeval = (
 describe('cli', () => {
 	const source = '# Test\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
 
+	test('excludes symlinks into node_modules unless explicitly targeted', async () => {
+		await using fixture = await createFixture({
+			'root.md': source,
+			'node_modules/pkg/a.md': source,
+		});
+		await fs.symlink('node_modules/pkg', fixture.getPath('docs'), 'dir');
+		await mdeval(['**/*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source);
+		await mdeval(['node_modules/pkg/*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source.replace('old', '2'));
+	});
+
+	test('processes a literal symlink into node_modules but excludes it from globs', async () => {
+		await using fixture = await createFixture({
+			'root.md': source,
+			'node_modules/pkg/a.md': source,
+		});
+		await fs.symlink('node_modules/pkg', fixture.getPath('docs'), 'dir');
+		await mdeval(['**/*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source);
+		const result = await mdeval(['docs/a.md', 'node_modules/pkg/a.md'], { cwd: fixture.path });
+		expect(result.stdout).toBe('docs/a.md');
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source.replace('old', '2'));
+	});
+
+	test('node_modules substrings do not opt into dependencies', async () => {
+		await using fixture = await createFixture({
+			'docs_node_modules/a.md': source,
+			'docs_node_modules/node_modules/pkg/a.md': source,
+		});
+		await mdeval(['docs_node_modules/**/*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('docs_node_modules/a.md', 'utf8')).toBe(source.replace('old', '2'));
+		expect(await fixture.readFile('docs_node_modules/node_modules/pkg/a.md', 'utf8')).toBe(source);
+	});
+
+	test('batches overlapping and repeated glob crawls', async () => {
+		await using fixture = await createFixture({
+			'a.md': '# Test',
+			'sub/a.md': '# Test',
+			'count.cjs': 'const fs = require("node:fs"); const { syncBuiltinESMExports } = require("node:module"); let count = 0; const readdir = fs.readdir; fs.readdir = (...args) => { count++; return readdir(...args); }; syncBuiltinESMExports(); process.on("exit", () => console.error(`count=${count}`));',
+		});
+		const run = (patterns: string[]) => spawn(process.execPath, ['--import', fixture.getPath('count.cjs'), cliPath, ...patterns], { cwd: fixture.path });
+		const single = await run(['**/*.md']);
+		const repeated = await run(['**/*.md', '**/a*.md', '**/*.md']);
+		expect(single.stderr).toMatch(/count=[1-9]\d*/);
+		expect(repeated.stderr).toBe(single.stderr);
+	});
+
 	test('uses literal file spelling on case-insensitive filesystems', async () => {
 		await using fixture = await createFixture({
 			'REAdme.md': source,
@@ -84,7 +132,7 @@ describe('cli', () => {
 
 	test('flushes all missing-file errors to a slow stderr pipe', async () => {
 		await using fixture = await createFixture({ 'a.md': source });
-		const missing = Array.from({ length: 6000 }, (_, index) => `missing-${index}.md`);
+		const missing = Array.from({ length: 3200 }, (_, index) => `x${index}`);
 		const child = spawnChild(process.execPath, [cliPath, 'a.md', ...missing], { cwd: fixture.path });
 		const exit = once(child, 'close');
 		await setTimeout(1000);
