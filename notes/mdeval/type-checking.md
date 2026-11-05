@@ -1,6 +1,6 @@
 # Type checking with a TypeScript content mapper
 
-Verified 2026-11-02 with `typescript@7.1.0-beta`, `ts-content-mapper@0.1.0`, and `clean-pkg-json@2.1.0`, on Node.js 24.14.0 and 20.19.0.
+Verified 2026-11-02 with `typescript@7.1.0-beta`, `ts-content-mapper@0.1.0`, and `clean-pkg-json@2.1.0`, on Node.js 24.14.0. Node.js support was re-verified 2026-11-05.
 
 ## The checker sees the same module that the loader runs
 
@@ -34,9 +34,9 @@ The repository type-checks its own source with `typescript@^6` ([why it stays on
 
 ## Node.js support
 
-`ts-content-mapper@0.1.0` declares `engines.node` as `^22.18.0 || >=24.11.0`, which is narrower than mdeval's `>=20.19`. Its `dist/index.mjs` imports only `node:buffer`, `node:process`, and `vscode-jsonrpc/node`. Observed: `tsc --runExternalCode` with Node.js 20.19.0 first on `PATH` loaded the bundled mapper and reported `a.md(4,18): error TS2339: Property 'toUpperCase' does not exist on type '42'.`
+mdeval's `engines.node` covers `ts-content-mapper@0.1.0`'s `^22.18.0 || >=24.11.0`, and excludes Node.js versions where `tsc` cannot start a content mapper at all. [Runtime compatibility](./runtime-compatibility.md#why-enginesnode-is-22211--24110) explains both bounds.
 
-TypeScript starts the mapper with the `node` on `PATH`. In the [test workflow](../../.github/workflows/test.yml), `pnpm dlx node@20.19.0` puts that binary on `PATH` for child processes (`execSync('node -v')` under it prints `v20.19.0`), so the Node.js 20.19 and 22.14 jobs run the mapper on those versions.
+TypeScript starts the mapper with the `node` on `PATH`. In the [test workflow](../../.github/workflows/test.yml), `pnpm dlx node@<version>` puts that binary on `PATH` for child processes (`execSync('node -v')` under it prints that version), so the jobs for the `engines.node` minimums run the mapper on those versions.
 
 ## Evidence gaps
 
