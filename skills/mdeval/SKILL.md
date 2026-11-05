@@ -1,6 +1,6 @@
 ---
 name: mdeval
-description: Evaluates JavaScript in markdown HTML comments and interpolates results in-place. Use when editing markdown files that contain mdeval script blocks or value markers, when the user wants computed/dynamic values in markdown, or when maintaining README badges, version numbers, or stats.
+description: Evaluates JavaScript or TypeScript in markdown HTML comments and interpolates results in-place. Use when editing markdown files that contain mdeval script blocks or value markers, when the user wants computed/dynamic values in markdown, or when maintaining README badges, version numbers, or stats.
 ---
 
 # mdeval
@@ -27,7 +27,7 @@ Scripts and markers can use TypeScript syntax that Node.js strips, such as type 
 
 ## Marker Expressions
 
-Any JavaScript expression valid on the right side of `const x =`:
+Any JavaScript or TypeScript expression valid on the right side of `const x =`:
 
 | Expression | Example |
 |------------|---------|
@@ -126,6 +126,8 @@ npx tsc --noEmit --runExternalCode
 - `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
 - A repeated marker expression is checked once, and its errors point to the first occurrence.
 - Fenced code, inline code, and rendered marker values are not checked.
+- The checker does not know the `block` and `$` globals (`Cannot find name 'block'`). In checked files, import them: `import { block, $ } from 'mdeval';`.
+- A `.ts` consumer of `.md` exports (`node --import mdeval/loader ./consumer.ts`) is checked against their types when it is in `include`.
 
 ## CLI
 
@@ -157,6 +159,26 @@ const pkg = JSON.parse(await fs.readFile('package.json', 'utf8'));
 -->
 
 Version: <!--mdeval pkg.version-->0.0.0<!--/mdeval-->
+````
+
+### Typed data
+
+Annotate shared data so `tsc` catches mistakes in the markers that use it:
+
+````markdown
+<!--mdeval
+interface Release {
+  version: string;
+  date: string;
+}
+
+const releases = [
+  { version: '1.1.0', date: '2026-11-01' },
+  { version: '1.0.0', date: '2026-10-01' },
+] satisfies Release[];
+-->
+
+Latest: <!--mdeval releases[0].version-->1.1.0<!--/mdeval-->
 ````
 
 ### Import from other .md files

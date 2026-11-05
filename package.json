@@ -1,13 +1,14 @@
 {
 	"name": "mdeval",
 	"version": "0.0.0-semantic-release",
-	"description": "Evaluate JavaScript in markdown HTML comments and interpolate results in-place",
+	"description": "Evaluate JavaScript or TypeScript in markdown HTML comments and interpolate results in-place",
 	"keywords": [
 		"markdown",
 		"eval",
 		"interpolation",
 		"dynamic",
-		"readme"
+		"readme",
+		"typescript"
 	],
 	"license": "MIT",
 	"repository": "privatenumber/mdeval",

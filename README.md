@@ -5,7 +5,7 @@
 
 Ever wanted dynamic values in your Markdown — package versions, star counts, computed tables — without a separate generation script that's easy to forget about?
 
-mdeval embeds JavaScript directly in your Markdown using HTML comments. The logic lives right next to the content it produces, and the file renders normally everywhere — GitHub, editors, any Markdown viewer — because HTML comments are invisible.
+mdeval embeds JavaScript or TypeScript directly in your Markdown using HTML comments. The logic lives right next to the content it produces, and the file renders normally everywhere — GitHub, editors, any Markdown viewer — because HTML comments are invisible.
 
 Any value that matters — a dependency count, a version string, a benchmark result — is computed, not typed. Whether written by a person or an AI agent, the expression shows the work and anyone can verify it. Re-run `mdeval` and every value updates.
 
@@ -22,7 +22,7 @@ npm i mdeval
 
 mdeval adds two types of HTML comments to your Markdown:
 
-A **script block** is where you write JavaScript. It starts with `<!--mdeval` followed by a newline:
+A **script block** is where you write JavaScript or TypeScript. It starts with `<!--mdeval` followed by a newline:
 
 ```markdown
 <!--mdeval
@@ -36,9 +36,10 @@ Script blocks support:
 - Full Node.js — any built-in module or installed package
 - ESM `import` / `export`
 - Top-level `await`
+- TypeScript syntax that Node.js can strip, such as type annotations and `interface` (see [Caveats](#caveats))
 - Shell commands via [`$`](https://google.github.io/zx/)
 
-A **value marker** is where the result appears. It starts with `<!--mdeval ` (with a space) followed by a JavaScript expression:
+A **value marker** is where the result appears. It starts with `<!--mdeval ` (with a space) followed by an expression:
 
 ```markdown
 Version: <!--mdeval pkg.version-->1.0.0<!--/mdeval-->
@@ -56,13 +57,19 @@ The file is updated in-place. You can pass multiple files or glob patterns: `mde
 
 ## Example
 
-**`CONTACTS.md`** — a contact list stored as data, rendered as a table when viewed:
+**`CONTACTS.md`** — a contact list stored as typed data, rendered as a table when viewed:
 
 ````markdown
 <!--mdeval
 import { table, link } from 'md-pen';
 
-export const contacts = [
+type Contact = {
+  name: string;
+  linkedin: string;
+  notes: string;
+};
+
+export const contacts: Contact[] = [
   {
     name: 'Alice Martin',
     linkedin: 'https://linkedin.com/in/alice-martin',
@@ -75,7 +82,13 @@ export const contacts = [
   },
 ];
 
-export const findContact = name => contacts.find(c => c.name === name);
+export const findContact = (name: string): Contact => {
+  const contact = contacts.find(c => c.name === name);
+  if (!contact) {
+    throw new Error(`Unknown contact: ${name}`);
+  }
+  return contact;
+};
 
 const contactsTable = table(
   contacts.map(({ name, linkedin, notes }) => ({ Name: link(linkedin, name), Notes: notes })),
@@ -115,7 +128,7 @@ const list = ul(events.map(({ date, description }) => `${bold(date)} — ${descr
 <!--/mdeval-->
 ````
 
-The source of truth for contacts live in `CONTACTS.md`. If contact info changes, run `mdeval **/*.md` and all files get re-rendered with the latest data.
+The source of truth for contacts lives in `CONTACTS.md`. If contact info changes, run `mdeval **/*.md` and all files get re-rendered with the latest data.
 
 ## Helpers
 
@@ -162,6 +175,8 @@ You can also point `--import mdeval/loader` at a `.md` file directly:
 ```bash
 node --import mdeval/loader ./TODOS.md
 ```
+
+The consumer can also be TypeScript, such as `node --import mdeval/loader ./consumer.ts`, because Node.js strips types from `.ts` files. With [type checking](#type-checking-markdown) set up and the consumer in `include`, `tsc` checks the consumer against the types of the `.md` exports.
 
 Runtime stack traces from a `.md` point at original lines and columns — the loader sets up source maps automatically.
 
@@ -218,6 +233,8 @@ Count: <!--mdeval count.toUpperCase()-->42<!--/mdeval-->
 ```
 
 mdeval checks each Markdown file as a TypeScript module, so JSDoc type annotations are not checked. `erasableSyntaxOnly` reports syntax that cannot run, such as `enum`, at its Markdown location. Fenced code blocks, inline code, and rendered marker values are not checked.
+
+The checker does not know the `block` and `$` globals, so it reports `Cannot find name 'block'`. In checked files, import the helpers explicitly: `import { block, $ } from 'mdeval';`.
 
 The content mapper API is experimental. This integration is tested with TypeScript `7.1.0-beta`. Editor activation for Markdown depends on the editor's TypeScript integration; the configuration above enables command-line checking.
 
