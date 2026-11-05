@@ -12,7 +12,17 @@ import { findRenderedLeaks } from './validate-rendering/index.ts';
 // Warnings go to stderr, so color depends on stderr, not stdout
 const WARNING_PREFIX = styleText('yellow', 'Warning:', { stream: process.stderr });
 const NODE_MODULES_SEGMENT = /(?:^|[\\/])node_modules(?:[\\/]|$)/;
-const NODE_MODULES_PATTERN_SEGMENT = /(?:^|[\\/{},])node_modules(?:[\\/{},]|$)/;
+
+const getStaticBase = (pattern: string) => {
+	const normalized = process.platform === 'win32' ? pattern.replaceAll('\\', '/') : pattern;
+	const parts = normalized.split('/');
+	const dynamicIndex = parts.findIndex(part => isDynamicPattern(part));
+	const base = parts.slice(0, dynamicIndex === -1 ? -1 : dynamicIndex).join('/') || (normalized.startsWith('/') ? '/' : '.');
+	return {
+		base: path.resolve(base),
+		optedIn: NODE_MODULES_SEGMENT.test(base),
+	};
+};
 
 const argv = cli({
 	name: 'mdeval',
@@ -25,6 +35,7 @@ const patterns = argv._.files;
 const positives: {
 	pattern: string;
 	literal: boolean;
+	directory?: string;
 }[] = [];
 const negatives: string[] = [];
 let invalid = false;
@@ -35,6 +46,7 @@ for (const pattern of patterns) {
 			positives.push({
 				pattern: `${convertPathToPattern(pattern.replace(/[\\/]$/, ''))}/**/*.md`,
 				literal: false,
+				directory: pattern,
 			});
 			continue;
 		}
@@ -76,49 +88,64 @@ if (invalid) {
 		? await glob(negatives.map(pattern => pattern.slice(1)))
 		: [];
 	const excluded = new Set(exclusions.map(file => path.resolve(file)));
-	const groups = [new Set<string>(), new Set<string>()];
-	for (const { pattern, literal } of positives) {
-		if (!literal) {
-			groups[Number(NODE_MODULES_PATTERN_SEGMENT.test(pattern))].add(pattern);
-		}
-	}
-	const groupedMatches = await Promise.all(groups.map((patterns_, index) => (patterns_.size === 0
-		? []
-		: glob([...patterns_, ...negatives], {
-			ignore: index === 1 ? [] : ['**/node_modules/**'],
-		}))));
-	const emitted = new Set<number>();
-	const candidates = positives.flatMap(({ pattern, literal }) => {
-		const optedIn = literal || NODE_MODULES_PATTERN_SEGMENT.test(pattern);
+	const groups = new Map<string, {
+		base: string;
+		optedIn: boolean;
+		patterns: Set<string>;
+	}>();
+	const entries: ({ file: string } | { group: string })[] = [];
+	for (const { pattern, literal, directory } of positives) {
 		if (literal) {
-			return excluded.has(path.resolve(pattern))
-				? []
-				: [{
-					file: pattern,
-					optedIn,
-				}];
+			if (!excluded.has(path.resolve(pattern))) {
+				entries.push({ file: pattern });
+			}
+			continue;
 		}
-		const group = Number(optedIn);
-		if (emitted.has(group)) {
-			return [];
+		const { base, optedIn } = directory
+			? {
+				base: path.resolve(directory),
+				optedIn: NODE_MODULES_SEGMENT.test(directory),
+			}
+			: getStaticBase(pattern);
+		const key = JSON.stringify([base, optedIn]);
+		if (!groups.has(key)) {
+			groups.set(key, {
+				base,
+				optedIn,
+				patterns: new Set(),
+			});
+			entries.push({ group: key });
 		}
-		emitted.add(group);
-		return groupedMatches[group].map(file => ({
+		groups.get(key)!.patterns.add(pattern);
+	}
+	const groupedMatches = new Map(await Promise.all([...groups].map(async ([key, group]) => {
+		const [files, base] = await Promise.all([
+			glob([...group.patterns, ...negatives], {
+				ignore: group.optedIn ? [] : ['**/node_modules/**'],
+			}),
+			fs.realpath(group.base).catch(() => group.base),
+		]);
+		return [key, files.map(file => ({
 			file,
-			optedIn,
-		}));
-	});
+			base,
+			optedIn: group.optedIn,
+		}))] as const;
+	})));
+	const candidates = entries.flatMap(entry => ('file' in entry
+		? [{
+			file: entry.file,
+			base: '',
+			optedIn: true,
+		}]
+		: groupedMatches.get(entry.group)!));
 	const realPaths = await Promise.all(
 		candidates.map(({ file }) => fs.realpath(file).catch(() => path.resolve(file))),
 	);
-	const realCwd = await fs.realpath(process.cwd());
 	const unique = new Set<string>();
-	const files = candidates.filter(({ optedIn }, index) => {
+	const files = candidates.filter(({ base, optedIn }, index) => {
 		const realPath = realPaths[index];
-		const relativePath = path.relative(realCwd, realPath);
-		const outsideCwd = relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath);
 		if (
-			(!optedIn && NODE_MODULES_SEGMENT.test(outsideCwd ? realPath : relativePath))
+			(!optedIn && NODE_MODULES_SEGMENT.test(path.relative(base, realPath)))
 			|| unique.has(realPath)
 		) {
 			return false;

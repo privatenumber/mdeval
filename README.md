@@ -145,7 +145,7 @@ mdeval README.md "docs/**/*.md"
 
 mdeval accepts files and glob patterns, and updates each file in place. It prints the path of every file it changes.
 
-Globs skip `node_modules` and hidden directories. To include them, name them in the pattern, such as `"node_modules/pkg/*.md"` or `".github/**/*.md"`.
+Globs skip `node_modules` and hidden directories. To include them, name them in the pattern's leading literal directory path, such as `"node_modules/pkg/*.md"` or `".github/**/*.md"`.
 
 ### Git hook
 

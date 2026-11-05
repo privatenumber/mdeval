@@ -19,14 +19,71 @@ const mdeval = (
 describe('cli', () => {
 	const source = '# Test\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
 
-	test('brace alternatives opt into node_modules', async () => {
+	test('brace alternatives do not opt into node_modules', async () => {
 		await using fixture = await createFixture({
 			'docs/a.md': source,
 			'node_modules/pkg/a.md': source,
 		});
 		const result = await mdeval(['{docs,node_modules/pkg}/**/*.md'], { cwd: fixture.path });
-		expect(result.stdout.split('\n').sort()).toStrictEqual(['docs/a.md', 'node_modules/pkg/a.md']);
+		expect(result.stdout).toBe('docs/a.md');
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source);
+	});
+
+	test('comma in a directory name does not opt into node_modules', async () => {
+		await using fixture = await createFixture({
+			'docs,node_modules/a.md': source,
+			'docs,node_modules/node_modules/pkg/a.md': source,
+		});
+		await mdeval(['docs,node_modules/**/*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('docs,node_modules/a.md', 'utf8')).toBe(source.replace('old', '2'));
+		expect(await fixture.readFile('docs,node_modules/node_modules/pkg/a.md', 'utf8')).toBe(source);
+	});
+
+	test('parent-directory globs work inside a dependency', async () => {
+		await using fixture = await createFixture({
+			'node_modules/pkg/a.md': source,
+			'node_modules/pkg/docs/placeholder.txt': '',
+		});
+		const result = await mdeval(['../*.md'], { cwd: fixture.getPath('node_modules/pkg/docs') });
+		expect(result.stdout).toBe('../a.md');
 		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source.replace('old', '2'));
+	});
+
+	test('extglob alternatives do not opt into node_modules', async () => {
+		await using fixture = await createFixture({
+			'docs/a.md': source,
+			'node_modules/pkg/a.md': source,
+		});
+		await mdeval(['@(node_modules|docs)/**/*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('docs/a.md', 'utf8')).toBe(source.replace('old', '2'));
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source);
+	});
+
+	test('uses the matching pattern static base for each glob', async () => {
+		await using fixture = await createFixture({
+			'root.md': source,
+			'node_modules/pkg/a.md': source,
+		});
+		await fs.symlink('node_modules/pkg', fixture.getPath('docs'), 'dir');
+		await mdeval(['**/*.md', 'docs/unmatched*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source);
+	});
+
+	test('uses the real static base when a glob starts in a symlink', async () => {
+		await using fixture = await createFixture({ 'node_modules/pkg/a.md': source });
+		await fs.symlink('node_modules/pkg', fixture.getPath('docs'), 'dir');
+		const result = await mdeval(['docs/*.md'], { cwd: fixture.path });
+		expect(result.stdout).toBe('docs/a.md');
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source.replace('old', '2'));
+	});
+
+	test('node_modules after a glob segment does not opt in', async () => {
+		await using fixture = await createFixture({
+			'root.md': source,
+			'node_modules/pkg/a.md': source,
+		});
+		await mdeval(['root.md', '**/node_modules/pkg/*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('node_modules/pkg/a.md', 'utf8')).toBe(source);
 	});
 
 	test('globs work when the cwd is inside node_modules', async () => {
@@ -518,7 +575,7 @@ describe('cli', () => {
 		await using fixture = await createFixture({
 			'node_modules/pkg/README.md': md,
 		});
-		await mdeval(['**/node_modules/pkg/*.md'], { cwd: fixture.path });
+		await mdeval(['node_modules/pkg/*.md'], { cwd: fixture.path });
 
 		const content = await fixture.readFile('node_modules/pkg/README.md', 'utf8');
 		expect(content).toBe(md.replace('old', 'found'));
