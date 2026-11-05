@@ -237,8 +237,8 @@ importers:
         specifier: ^2.29.0
         version: 2.29.0(typescript@6.0.3)
       ts-content-mapper:
-        specifier: 0.1.0
-        version: 0.1.0
+        specifier: 0.1.1
+        version: 0.1.1
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -2772,8 +2772,8 @@ packages:
     peerDependencies:
       typescript: '>=4.8.4'
 
-  ts-content-mapper@0.1.0:
-    resolution: {integrity: sha512-8OQYXCdQknsTR5EfnPCvJKA05dEaXzGbxfKGa1VeA+sxp1zItlZdIsxNNw3/sVxzVO4UTjkIKtXC15hpvckkaQ==}
+  ts-content-mapper@0.1.1:
+    resolution: {integrity: sha512-Lkci00riJ6+7cPxwhC6ENLTVEcT8vXb0zFeatJQ1fQInkcS0HWDyN/zE/SKWRxNHW7mev3OURfMUbUA+F3+WCA==}
     engines: {node: ^22.18.0 || >=24.11.0}
 
   ts-declaration-location@1.0.7:
@@ -2882,9 +2882,9 @@ packages:
   vfile@6.0.3:
     resolution: {integrity: sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q==}
 
-  vscode-jsonrpc@9.0.3:
-    resolution: {integrity: sha512-qETYf9PCl1lVfwR+oBmMfc4vP2nqLNA35ABxorw3j06+xlKRgDVxbLgKm4Y/xPL0YWdeDjLoI4ImICIT3nB0zQ==}
-    engines: {node: '>=14.0.0'}
+  vscode-jsonrpc@10.0.0:
+    resolution: {integrity: sha512-USSfxg0vDIpTQqlQBGxF3mBARyoS8cU7LHLpbYNh6dOJt32dlskxPWB0Irrh5TllTmyf7oNLAvqDqzklbwwnpA==}
+    engines: {node: '>=14.17.0'}
 
   vue-eslint-parser@10.4.1:
     resolution: {integrity: sha512-Gk6gRDj0n/fkRa3C3l0bBheoBckUq/Rs0F/TvMWIS6nzzx67amAViMe9CkNgsP2tXyQONvGiHQESHwFtZ3aYDA==}
@@ -5823,9 +5823,9 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  ts-content-mapper@0.1.0:
+  ts-content-mapper@0.1.1:
     dependencies:
-      vscode-jsonrpc: 9.0.3
+      vscode-jsonrpc: 10.0.0
 
   ts-declaration-location@1.0.7(typescript@6.0.3):
     dependencies:
@@ -6001,7 +6001,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vscode-jsonrpc@9.0.3: {}
+  vscode-jsonrpc@10.0.0: {}
 
   vue-eslint-parser@10.4.1(eslint@9.39.5(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0):
     dependencies:
