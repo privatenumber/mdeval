@@ -46,7 +46,6 @@
 	"dependencies": {
 		"@jridgewell/gen-mapping": "^0.3.13",
 		"@types/fs-extra": "^11.0.4",
-		"ansis": "^4.5.0",
 		"cleye": "^2.3.0",
 		"mdast-util-from-markdown": "^2.1.0",
 		"mdast-util-gfm-footnote": "^2.1.0",
