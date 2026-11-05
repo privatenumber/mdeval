@@ -134,7 +134,7 @@ TypeScript 7.1 can also type-check mdeval code at its Markdown lines. See [Type 
 ### Caveats
 
 - **Script code cannot contain `-->`**, because it closes the HTML comment, or `<!--mdeval` followed by a space or newline, because mdeval treats it as an unclosed script. Build the text instead, such as `'<!--' + 'mdeval '`. Rewrite `x-- > y` as `x -= 1; x > y`.
-- **Values cannot contain `<!--mdeval ` or `<!--/mdeval-->`.** mdeval throws instead of writing them, so the file stays parseable.
+- **Values cannot contain `<!--mdeval` followed by a space, a newline, or CRLF, or `<!--/mdeval-->`.** mdeval throws instead of writing them, so the file stays parseable.
 - **Files processed together share one Node.js process,** including the module cache, `globalThis`, and `process.env`.
 
 ## CLI
