@@ -29,7 +29,6 @@
 		"./loader": "./dist/loader.mjs"
 	},
 	"imports": {
-		"#md-loader": "./dist/md-loader.mjs",
 		"#content-mapper": "./dist/content-mapper.mjs"
 	},
 	"packageManager": "pnpm@12.16.1",
@@ -41,7 +40,7 @@
 		"prepack": "pnpm build && clean-pkg-json"
 	},
 	"engines": {
-		"node": ">=20.19"
+		"node": "^22.21.1 || >=24.11.0"
 	},
 	"dependencies": {
 		"@jridgewell/gen-mapping": "^0.3.13",
