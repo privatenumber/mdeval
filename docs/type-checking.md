@@ -63,6 +63,8 @@ mdeval checks each Markdown file as a TypeScript module, so JSDoc type annotatio
 
 A `.ts` file that imports a `.md` file is checked against the types of its exports when the `.ts` file is in `include`. See [Node.js usage](./node.md).
 
+A namespace import of a `.md` file without exports, such as `import * as data from './stub.md'`, reports `data.version` as missing, even though it is `undefined` at runtime. Cast the namespace to the shape you expect: `const data = stub as { version?: string }`.
+
 ## Limitations
 
 The content mapper API in TypeScript 7.1 is experimental. This integration is tested with `typescript@7.1.0-beta`. Whether an editor checks Markdown depends on its TypeScript integration; the configuration above enables command-line checking.
