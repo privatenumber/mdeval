@@ -50,7 +50,7 @@ const typecheckMdeval = async (files: FileTree) => {
 				package: 'mdeval',
 				extensions: ['.md'],
 			}],
-			include: ['**/*.md'],
+			include: ['**/*.md', '**/*.ts'],
 		}),
 		'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
 		...files,
@@ -153,11 +153,51 @@ describe('content mapper', () => {
 
 	test('uses published types for mdeval runtime helpers', async () => {
 		const result = await typecheckMdeval({
-			'example.md': '<!--mdeval\nimport { block } from "mdeval";\nblock("hello").toFixed();\n-->',
+			'imported.md': '<!--mdeval\nimport { block } from "mdeval";\nblock("hello").toFixed();\n-->',
+			'global.md': [
+				'<!--mdeval',
+				'const output: string = (await $`echo`).stdout;',
+				'-->',
+				'<!--mdeval block("hello").toFixed()-->old<!--/mdeval-->',
+			].join('\n'),
+			'shadowed.md': '<!--mdeval\nconst block = 1;\nblock.toFixed();\n-->',
 		});
 		expect(result).toStrictEqual({
 			exitCode: 2,
-			output: "example.md(3,16): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+			output: [
+				"global.md(4,27): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+				"imported.md(3,16): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+			].join('\n'),
+		});
+	});
+
+	test('checks a project that uses helper globals across files without errors', async () => {
+		const result = await typecheckMdeval({
+			'README.md': [
+				'# Project',
+				'<!--mdeval',
+				'import { contacts } from "./docs/contacts.md";',
+				'const branch: string = (await $`git branch --show-current`).stdout;',
+				'-->',
+				'<!--mdeval block(contacts.map(contact => contact.name).join(", "))-->old<!--/mdeval-->',
+				'Branch: <!--mdeval branch-->old<!--/mdeval-->',
+			].join('\n'),
+			'docs/contacts.md': [
+				'<!--mdeval',
+				'type Contact = { name: string };',
+				'export const contacts: Contact[] = [{ name: "a" }];',
+				'-->',
+				'<!--mdeval block(contacts.length)-->old<!--/mdeval-->',
+			].join('\n'),
+			'consumer.ts': [
+				'import { contacts } from "./docs/contacts.md";',
+				'const names: string[] = contacts.map(contact => contact.name);',
+				'export default names;',
+			].join('\n'),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
 		});
 	});
 

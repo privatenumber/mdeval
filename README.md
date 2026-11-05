@@ -234,7 +234,7 @@ Count: <!--mdeval count.toUpperCase()-->42<!--/mdeval-->
 
 mdeval checks each Markdown file as a TypeScript module, so JSDoc type annotations are not checked. `erasableSyntaxOnly` reports syntax that cannot run, such as `enum`, at its Markdown location. Fenced code blocks, inline code, and rendered marker values are not checked.
 
-The checker does not know the `block` and `$` globals, so it reports `Cannot find name 'block'`. In checked files, import the helpers explicitly: `import { block, $ } from 'mdeval';`.
+The checker knows the `block` and `$` globals, so checked files can use them without an import.
 
 The content mapper API is experimental. This integration is tested with TypeScript `7.1.0-beta`. Editor activation for Markdown depends on the editor's TypeScript integration; the configuration above enables command-line checking.
 
