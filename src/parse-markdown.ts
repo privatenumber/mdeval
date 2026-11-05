@@ -152,14 +152,7 @@ export const parseMarkdown = (source: string): ParseResult => {
 		if (nextChar === '\n' || (nextChar === '\r' && source[afterTag + 1] === '\n')) {
 			const contentStart = nextChar === '\n' ? afterTag + 1 : afterTag + 2;
 			const closeStart = source.indexOf(COMMENT_CLOSE, contentStart);
-			let nextOpening = findNextMdevalOpening(source, contentStart);
-			while (nextOpening !== -1 && (closeStart === -1 || nextOpening < closeStart)) {
-				const lineStart = source.lastIndexOf('\n', nextOpening - 1) + 1;
-				if (/^[\t ]*$/.test(source.slice(lineStart, nextOpening))) {
-					break;
-				}
-				nextOpening = findNextMdevalOpening(source, nextOpening + COMMENT_TAG.length);
-			}
+			const nextOpening = findNextMdevalOpening(source, contentStart);
 			const interveningOpen = (
 				nextOpening !== -1
 				&& (closeStart === -1 || nextOpening < closeStart)

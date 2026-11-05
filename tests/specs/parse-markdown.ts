@@ -48,17 +48,18 @@ describe('parseMarkdown', () => {
 		expect(markerContent(source, markers[0])).toBe('old');
 	});
 
-	test('allows an opening inside a script string', () => {
+	test('reports an opening inside a script string', () => {
 		const source = '<!--mdeval\nconst prefix = "<!--mdeval ";\nconst n = 42;\n-->\n\nValue: <!--mdeval n-->old<!--/mdeval-->\n';
-		const { scriptBlocks, markers } = parseMarkdown(source);
-		expect(scriptBlocks).toHaveLength(1);
-		expect(scriptBlocks[0].content).toBe('const prefix = "<!--mdeval ";\nconst n = 42;\n');
-		expect(markers).toHaveLength(1);
-		expect(markers[0].expression).toBe('n');
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed script block at offset 0 (another mdeval opening found before `-->`)');
 	});
 
 	test('reports a line-starting opening inside an unclosed script', () => {
 		const source = '<!--mdeval\r\nconst n = 42;\r\n \t<!--mdeval n-->old<!--/mdeval-->';
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed script block at offset 0 (another mdeval opening found before `-->`)');
+	});
+
+	test('reports an unclosed script before an inline marker', () => {
+		const source = '<!--mdeval\nconst n = 42;\n\nValue: <!--mdeval n-->old<!--/mdeval-->\n';
 		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed script block at offset 0 (another mdeval opening found before `-->`)');
 	});
 
