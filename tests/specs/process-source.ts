@@ -132,6 +132,72 @@ describe('processSource', () => {
 		expect(output).toBe(source.replace('old', '\n# Title\n'));
 	});
 
+	test('block() uses CRLF in a CRLF document', async () => {
+		const source = '# Test\r\n\r\n<!--mdeval block("hello")-->old<!--/mdeval-->\r\n';
+		const output = await processMarkdown(source);
+		expect(output).toBe('# Test\r\n\r\n<!--mdeval block("hello")-->\r\nhello\r\n<!--/mdeval-->\r\n');
+		expect(await processMarkdown(output)).toBe(output);
+	});
+
+	test('normalizes generated LF and bare CR in a CRLF document', async () => {
+		const source = '# Test\r\n\r\n<!--mdeval "a\\nb\\rc\\r\\nd"-->old<!--/mdeval-->\r\n';
+		const output = await processMarkdown(source);
+		expect(output).toBe('# Test\r\n\r\n<!--mdeval "a\\nb\\rc\\r\\nd"-->a\r\nb\r\nc\r\nd<!--/mdeval-->\r\n');
+		expect(await processMarkdown(output)).toBe(output);
+	});
+
+	test('normalizes generated CRLF in an LF document', async () => {
+		const source = '# Test\n\n<!--mdeval "a\\r\\nb"-->old<!--/mdeval-->\n';
+		const output = await processMarkdown(source);
+		expect(output).toBe('# Test\n\n<!--mdeval "a\\r\\nb"-->a\nb<!--/mdeval-->\n');
+		expect(await processMarkdown(output)).toBe(output);
+	});
+
+	test('ignores stale value line endings when choosing the document style', async () => {
+		const source = '# A\n# B\n<!--mdeval block("x")-->\r\nold\r\nline\r\nmore\r\n<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe('# A\n# B\n<!--mdeval block("x")-->\nx\n<!--/mdeval-->');
+		expect(await processMarkdown(output)).toBe(output);
+	});
+
+	test('keeps consecutive CR and CRLF as two line breaks', async () => {
+		const source = '# Test\n<!--mdeval block("a\\r\\r\\nb")-->old<!--/mdeval-->\n';
+		const output = await processMarkdown(source);
+		expect(output).toBe('# Test\n<!--mdeval block("a\\r\\r\\nb")-->\na\n\nb\n<!--/mdeval-->\n');
+		expect(await processMarkdown(output)).toBe(output);
+	});
+
+	test('uses CR in a CR-only document', async () => {
+		const source = '# Test\r\r<!--mdeval block("hello")-->old<!--/mdeval-->\r';
+		const output = await processMarkdown(source);
+		expect(output).toBe('# Test\r\r<!--mdeval block("hello")-->\rhello\r<!--/mdeval-->\r');
+		expect(await processMarkdown(output)).toBe(output);
+	});
+
+	test('uses the majority line ending and leaves other source unchanged', async () => {
+		const source = '<!--mdeval block("hello")-->old\nvalue<!--/mdeval-->\r\n\r\n# Test\r\n';
+		const expected = '<!--mdeval block("hello")-->\r\nhello\r\n<!--/mdeval-->\r\n\r\n# Test\r\n';
+		const output = await processMarkdown(source);
+		expect(output).toBe(expected);
+		expect(await processMarkdown(output)).toBe(expected);
+	});
+
+	test('uses LF for tied line endings or no line endings', async () => {
+		const marker = '<!--mdeval block("hello")-->old<!--/mdeval-->';
+		for (const source of [marker, `# Test\n${marker}\r\n`, `# Test\rX\r\n${marker}\n`]) {
+			const output = await processMarkdown(source);
+			expect(output).toBe(source.replace('old', '\nhello\n'));
+			expect(await processMarkdown(output)).toBe(output);
+		}
+	});
+
+	test('prefers CRLF over CR when they tie without LF', async () => {
+		const source = '# A\r# B\r\n<!--mdeval block("x")-->old<!--/mdeval-->';
+		const output = await processMarkdown(source);
+		expect(output).toBe('# A\r# B\r\n<!--mdeval block("x")-->\r\nx\r\n<!--/mdeval-->');
+		expect(await processMarkdown(output)).toBe(output);
+	});
+
 	test('coerces object to JSON', async () => {
 		const source = '<!--mdeval\nconst x = { a: 1, b: 2 };\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
 		const output = await processMarkdown(source);
@@ -357,7 +423,7 @@ describe('processSource', () => {
 	});
 
 	test('allows a bare carriage return after the mdeval tag', async () => {
-		const source = '<!--mdeval\nconst x = "<" + "!--mdeval\\rabc";\n-->\n<!--mdeval x-->old<!--/mdeval-->';
+		const source = '# Test\r<!--mdeval "<" + "!--mdeval\\rabc"-->old<!--/mdeval-->';
 		expect(await processMarkdown(source)).toBe(source.replace('old', '<!--mdeval\rabc'));
 	});
 

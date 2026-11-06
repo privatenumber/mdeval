@@ -30,3 +30,17 @@ The CLI spec covers the main case ("rejects invalid UTF-8 without changing bytes
 ## Byte order marks
 
 Node's `'utf8'` decoding keeps a leading U+FEFF, so a rewritten file keeps its BOM. `TextDecoder` strips it unless `ignoreBOM: true` is set, which is why the loader sets it. The CLI spec "preserves a UTF-8 byte order mark when rewriting" catches a change to a stripping decoder.
+
+## Line endings
+
+Verified 2026-11-07 on Node.js 26.13.0.
+
+**Decision:** [`processSource`](../../src/process-source.ts) counts LF, CRLF, and lone CR only outside marker values, including marker comments and script blocks. It rewrites every line break in generated values to the most common ending. Ties favor LF, then CRLF; a document with no endings outside values uses LF. Text outside marker values is never changed.
+
+- **Why every value, not only `block()`:** CommonMark treats LF, CR, and CRLF as line endings. `block()` returns a plain string, so `processSource` cannot tell its wrapper newlines from newlines in the value.
+- **Why exclude marker values:** counting the whole document is not idempotent. With two LF endings outside a stale value and four CRLF endings inside it, the old rule selected CRLF; replacing the value with `block("x")` left two CRLF endings, producing a tie and selecting LF on the next run. Text outside values is unchanged, so its count stays stable across runs.
+- **Why convert lone CR too:** under the old rule, converting CRLF to LF in `a\r\r\nb` produced `a\r\nb`. The remaining CR combined with the replacement LF, collapsing two line breaks into one. Converting all three forms in a single pass preserves the number of breaks.
+- **Precedent:** [VS Code 1.105.1](https://github.com/microsoft/vscode/blob/1.105.1/src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBufferBuilder.ts#L27-L40) also chooses by count, though it counts a lone CR with CRLF.
+- **Alternatives:** [Prettier's `endOfLine: "auto"`](https://prettier.io/docs/options#end-of-line) documents the first line's ending, and its [3.6.2 implementation](https://github.com/prettier/prettier/blob/3.6.2/src/common/end-of-line.js#L1-L7) looks for the first CR. [embedme 1.22.1](https://github.com/zakhenry/embedme/blob/v1.22.1/src/embedme.lib.ts) picks CRLF if any CRLF occurs.
+
+The count is linear in the source length. The earlier whole-document implementation measured 1,822 ms before and 1,823 ms after on a 10 MB CRLF document with 10,000 repeated markers, and 1,882 ms and 1,910 ms with 10,000 distinct expressions, over five fresh processes each. These measurements do not cover the outside-values implementation.

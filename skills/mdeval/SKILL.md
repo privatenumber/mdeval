@@ -23,9 +23,11 @@ This skill covers writing mdeval code in Markdown and running it. mdeval evaluat
 
 A marker expression is anything valid after `const x =`. mdeval awaits it, converts the result to text, and replaces the value between `-->` and `<!--/mdeval-->`. An expression that appears in several markers is evaluated once.
 
+Line breaks in values use the line ending most common outside marker values. Ties favor LF, then CRLF; if absent, LF is used.
+
 | Result | Written as |
 | --- | --- |
-| `string` | As is |
+| `string` | As is, with line breaks converted to the file's line ending |
 | Object with `Symbol.toPrimitive`, such as zx output | `String(value)` |
 | Other object or array | `JSON.stringify(value)` |
 | `undefined` or `null` | Error |
