@@ -37,7 +37,7 @@ describe('package files', () => {
 				if (/^[a-z][\d+.a-z-]*:/i.test(url) || url.startsWith('#')) {
 					continue;
 				}
-				const target = path.posix.normalize(path.posix.join(path.posix.dirname(file), decodeURI(url.split('#')[0])));
+				const target = path.posix.normalize(path.posix.join(path.posix.dirname(file), decodeURI(url.split('#', 1)[0])));
 				if (!packed.has(target)) {
 					broken.push(`${file}: ${url}`);
 				}
