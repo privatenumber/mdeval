@@ -16,6 +16,95 @@ const mdeval = (
 
 describe('cli', () => {
 	const source = '# Test\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+	const failing = '# Test\n\n<!--mdeval\nthrow new Error("boom");\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->';
+
+	for (const check of [true, false]) {
+		test(`fails when a file exits before ${check ? 'check' : 'normal'} processing completes`, async () => {
+			const fast = '# Fast\n\n<!--mdeval\nprocess.exit(0);\n-->\n\n<!--mdeval 1-->1<!--/mdeval-->';
+			const slow = '# Slow\n\n<!--mdeval\nawait new Promise(resolve => setTimeout(resolve, 400));\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->';
+			await using fixture = await createFixture({
+				'a.md': fast,
+				'b.md': slow,
+			});
+			const error = await mdeval([...check ? ['--check'] : [], 'a.md', 'b.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as { exitCode: number };
+			expect(error.exitCode).toBe(1);
+			expect(await fixture.readFile('b.md', 'utf8')).toBe(slow);
+		});
+	}
+
+	test('--check reports outdated files without writing', async () => {
+		await using fixture = await createFixture({ 'a.md': source });
+		const before = await fs.stat(fixture.getPath('a.md'));
+		await setTimeout(100);
+		const error = await mdeval(['--check', 'a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stdout: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stdout).toBe('a.md');
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+		const after = await fs.stat(fixture.getPath('a.md'));
+		expect(after.mtimeMs).toBe(before.mtimeMs);
+	});
+
+	test('preserves failures when a slower file resets process.exitCode', async () => {
+		const slow = '# Test\n\n<!--mdeval\nawait new Promise(resolve => setTimeout(resolve, 300));\nprocess.exitCode = 0;\n-->\n\n<!--mdeval 1-->1<!--/mdeval-->';
+		for (const check of [true, false]) {
+			await using fixture = await createFixture({
+				'a.md': check ? source : failing,
+				'b.md': slow,
+			});
+			const error = await mdeval([...check ? ['--check'] : [], 'a.md', 'b.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+				exitCode: number;
+				stdout: string;
+				stderr: string;
+			};
+			expect(error.exitCode).toBe(1);
+			if (check) {
+				expect(error.stdout).toBe('a.md');
+			} else {
+				expect(error.stderr).toContain('Error processing a.md:4:7: boom');
+			}
+		}
+	});
+
+	test('--check reports leak locations in the unchanged file', async () => {
+		const markdown = '# Test\n\n<!--mdeval [1,2,3].join("\\n")-->old<!--/mdeval-->\n\n`<!--mdeval x-->old<!--/mdeval-->`';
+		await using fixture = await createFixture({ 'a.md': markdown });
+		const error = await mdeval(['--check', 'a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('a.md:5:2 mdeval marker leaks into rendered inline code');
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(markdown);
+	});
+
+	test('--check succeeds silently for current files', async () => {
+		const current = source.replace('old', '2');
+		await using fixture = await createFixture({ 'a.md': current });
+		const result = await mdeval(['--check', 'a.md'], { cwd: fixture.path });
+		expect(result.stdout).toBe('');
+		expect(result.stderr).toBe('');
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(current);
+	});
+
+	test('--check reports file errors', async () => {
+		await using fixture = await createFixture({ 'a.md': '# Test\n\n<!--mdeval\nthrow new Error("boom");\n-->\n\n<!--mdeval 1-->1<!--/mdeval-->' });
+		const error = await mdeval(['--check', 'a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('boom');
+	});
+
+	test('--check still reports rendering leak warnings', async () => {
+		await using fixture = await createFixture({ 'a.md': '# Test\n\n`<!--mdeval x-->old<!--/mdeval-->`' });
+		const result = await mdeval(['--check', 'a.md'], { cwd: fixture.path });
+		expect(result.stdout).toBe('');
+		expect(result.stderr).toContain('a.md:3:2 mdeval marker leaks into rendered inline code');
+	});
 
 	test('reports original errors when the stack is not a string', async () => {
 		const markdown = '# Test\n\n<!--mdeval\nError.prepareStackTrace = () => [];\nthrow new Error("boom");\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->';
@@ -287,7 +376,7 @@ describe('cli', () => {
 	test('rejects unknown flags without rewriting', async () => {
 		const markdown = '<!--mdeval\nconst x = 1 + 1;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
 		await using fixture = await createFixture({ 'a.md': markdown });
-		for (const flag of ['--check', '--dry-run']) {
+		for (const flag of ['--unknown', '--dry-run']) {
 			const error = await mdeval([flag, 'a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
 				exitCode: number;
 				stderr: string;
@@ -320,6 +409,7 @@ describe('cli', () => {
 	test('--help shows usage', async () => {
 		const result = await mdeval(['--help']);
 		expect(result.stdout).toContain('mdeval');
+		expect(result.stdout).toContain('--check');
 	});
 
 	test('exits 1 on script error', async () => {

@@ -162,6 +162,8 @@ mdeval README.md "docs/**/*.md"
 ```
 
 - mdeval updates each file in place and prints the path of each file it changed.
+- For CI, run `npx mdeval --check "**/*.md"` to report outdated files and exit 1 without rewriting; evaluation can still have side effects.
+- For a Lefthook pre-commit hook, use a job with `run: npx mdeval --check "**/*.md"` and no `glob`, so changes to non-Markdown inputs are checked too. When it fails, run `npx mdeval "**/*.md"`, review and stage the updates, and commit again. Do not rewrite files in the hook (with `stage_fixed` or `fail_on_changes`) or parse mdeval's stdout to stage files: Lefthook's rollback can discard unstaged edits, `stage_fixed` misses dependent files, and scripts can print to stdout.
 - Globs skip `node_modules` and hidden directories unless the pattern names them, such as `"node_modules/pkg/*.md"`.
 - Warnings go to stderr. A `marker leaks into rendered ...` warning means a marker will show as text on GitHub. Fix it unless the marker is an intentional example.
 - After editing mdeval code, run `mdeval` on the file and check the written values.

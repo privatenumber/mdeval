@@ -17,6 +17,12 @@ const argv = cli({
 	name: packageJson.name,
 	version: packageJson.version,
 	strictFlags: true,
+	flags: {
+		check: {
+			type: Boolean,
+			description: 'Report files with outdated values instead of rewriting them',
+		},
+	},
 	parameters: ['<files...>'],
 });
 
@@ -32,6 +38,15 @@ if (errors.length > 0) {
 	process.exitCode = 1;
 }
 
+// Markdown scripts can call process.exit() or reset process.exitCode, so the code is
+// decided on exit: 0 only when every file finished and none failed
+let failed = false;
+let completed = false;
+process.on('exit', () => {
+	if (failed || !completed) {
+		process.exitCode = 1;
+	}
+});
 await Promise.all(files.map(async (file) => {
 	try {
 		if (path.extname(file) !== '.md') {
@@ -50,21 +65,23 @@ await Promise.all(files.map(async (file) => {
 		const output = await processSource(source, resolvedPath);
 
 		if (output !== source) {
-			await fs.writeFile(resolvedPath, output, 'utf8');
+			if (argv.flags.check) {
+				failed = true;
+			} else {
+				await fs.writeFile(resolvedPath, output, 'utf8');
+			}
 			console.log(file);
 		}
 
-		// Validation runs on the post-rewrite content regardless of whether we
-		// touched the file — a leaky marker that was already on disk should
-		// still surface a warning so the user can decide whether to act on it
-		// or accept it (e.g. an intentional documentation example).
-		for (const leak of findRenderedLeaks(output)) {
+		// Validate the content on disk, including in check mode where it is not rewritten.
+		for (const leak of findRenderedLeaks(argv.flags.check ? source : output)) {
 			console.warn(
 				`${WARNING_PREFIX} ${file}:${leak.line}:${leak.column} mdeval marker leaks into rendered ${leak.kind}`,
 			);
 		}
 	} catch (error) {
 		console.error(`Error processing ${formatErrorLocation(error, file)}:`, error instanceof Error ? error.message : error);
-		process.exitCode = 1;
+		failed = true;
 	}
 }));
+completed = true;
