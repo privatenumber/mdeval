@@ -4,7 +4,16 @@ import { generateModule } from './generate-module.ts';
 import { MarkdownParseError, COMMENT_TAG } from './parse-markdown.ts';
 import { nodeModulesPattern } from './node-modules.ts';
 
-const globalsReference = '/// <reference types="mdeval/globals" />\n';
+const globalDeclarations = [
+	'declare global {',
+	'\tvar block: typeof import(\'mdeval\').block;',
+	'\tvar $: typeof import(\'mdeval\').$;',
+	'}',
+].join('\n');
+const supplemental = [{
+	text: `export {};\n${globalDeclarations}\n`,
+	extension: '.mts' as const,
+}];
 
 // Node resolves symlinks before loading, so classify the file it will load
 const resolveRealPath = (fileName: string) => {
@@ -31,7 +40,7 @@ runContentMapper({
 				throw error;
 			}
 			return {
-				text: `${isJavaScript ? `// @ts-check\n${globalsReference}` : ''}export {};\n`,
+				text: `${isJavaScript ? '// @ts-check\n' : ''}export {};\n`,
 				extension,
 				diagnostics: [{
 					messageText: error.message,
@@ -45,7 +54,6 @@ runContentMapper({
 		const out = new MappedCodeBuilder(content);
 		if (isJavaScript) {
 			out.append('// @ts-check\n');
-			out.append(globalsReference);
 		}
 		for (const { text, sourceOffset } of chunks) {
 			if (sourceOffset === undefined) {
@@ -62,19 +70,16 @@ runContentMapper({
 		out.append([
 			'',
 			'export {};',
-			...(isJavaScript
-				? []
-				: [
-					'declare global {',
-					'\tvar block: typeof import(\'mdeval\').block;',
-					'\tvar $: typeof import(\'mdeval\').$;',
-					'}',
-				]),
+			...(isJavaScript ? [] : [globalDeclarations]),
 			isJavaScript
 				? '/** @type {<T>(value: T) => T} */ const __mdeval_guard = value => value;'
 				: 'declare const __mdeval_guard: <T>(value: T) => T;',
 			'',
 		].join('\n'));
-		return out.build(extension);
+		return {
+			...out.build(extension),
+			// JavaScript cannot contain `declare global`, so a virtual .mts file carries it
+			supplemental: isJavaScript ? supplemental : undefined,
+		};
 	},
 });

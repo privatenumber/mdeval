@@ -437,11 +437,61 @@ describe('content mapper', () => {
 					package: 'mdeval',
 					extensions: ['.md'],
 				}],
-				files: ['node_modules/example/data.md', 'workspace.md'],
+				files: ['node_modules/example/data.md'],
 			}),
-			'node_modules/example/data.md': '<!--mdeval\nconst output = (await $`echo`).stdout;\n-->\n<!--mdeval block(output)-->old<!--/mdeval-->',
-			'workspace.md': '<!--mdeval block(42)-->old<!--/mdeval-->',
+			'node_modules/example/data.md': '<!--mdeval\nconst output = (await $`echo`).stdout;\n-->\n<!--mdeval block(output)-->old<!--/mdeval-->\n<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
 		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: "node_modules/example/data.md(5,22): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+		});
+	});
+
+	test('reports a conflicting project global for JavaScript node_modules Markdown', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					skipLibCheck: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['globals.d.ts', 'node_modules/example/data.md'],
+			}),
+			'globals.d.ts': 'export {}; declare global { var block: (value: unknown) => number; }',
+			'node_modules/example/data.md': '<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
+		});
+		expect(result.exitCode).toBe(2);
+		expect(result.output).toMatch(/^node_modules\/example\/data\.md\(3,6\): error TS2403:/);
+	});
+
+	test('resolves helper types through paths for JavaScript Markdown outside the project', async () => {
+		await using fixture = await createFixture({
+			'project/package.json': JSON.stringify({ type: 'module' }),
+			'project/tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					noEmit: true,
+					types: [],
+					paths: { mdeval: ['./node_modules/mdeval/dist/runtime.d.mts'] },
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['../node_modules/example/data.md'],
+			}),
+			'project/node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
+			'node_modules/example/data.md': '<!--mdeval block(42)-->42<!--/mdeval-->',
+		});
+		const result = await tsc(['--runExternalCode', '--pretty', 'false'], path.join(fixture.path, 'project'));
 		expect(result).toStrictEqual({
 			exitCode: 0,
 			output: '',
