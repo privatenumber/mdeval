@@ -45,9 +45,11 @@ export const offsetToLineColumn = (
 };
 
 // Advance a (line, column) by walking `length` chars of `value`, resetting
-// column on each newline. Used when source-byte lookup can't map a marker —
+// column on each LF, CRLF, or CR. Used when source-byte lookup can't map a marker —
 // e.g. an entity-decoded `&lt;!--mdeval` whose `value` offset has no literal
-// `<` in source.
+// `<` in source. The walk is approximate: `value` is decoded, so a character
+// reference such as `&#10;` or `&#xD;` counts as a line break, and entities
+// shift columns by their source length.
 export const advanceByValue = (
 	startLine: number,
 	startColumn: number,
