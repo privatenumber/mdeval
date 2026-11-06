@@ -110,7 +110,7 @@ In `.js` and `.ts` files, import them instead: `import { block, $ } from 'mdeval
   })()-->odd<!--/mdeval-->
   ```
 
-- **Script blocks share one module.** Variables and imports from every block in a file are visible to all of its markers. Use script blocks for imports and values that several markers share, and place them at the top of the file.
+- **Script blocks share one module.** Variables and imports from every block in a file are visible to all of its markers. Blocks are joined in order, so a block starting with `(`, `[`, or a template literal can continue the previous block's last statement unless that statement ends with a semicolon. Use script blocks for imports and values that several markers share, and place them at the top of the file.
 
 ### Importing other `.md` files
 

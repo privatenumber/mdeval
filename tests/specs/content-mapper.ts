@@ -60,6 +60,16 @@ const typecheckMdeval = async (files: FileTree) => {
 };
 
 describe('content mapper', () => {
+	test('checks overload declarations and implementations across script blocks', async () => {
+		const result = await typecheckMdeval({
+			'example.md': '<!--mdeval\nexport function f(x: string): string;\n-->\n<!--mdeval\nexport function f(x: string) { return x; }\n-->\n<!--mdeval f("a")-->old<!--/mdeval-->',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
 	test('checks 1100 distinct marker expressions', async () => {
 		const source = Array.from({ length: 1100 }, (_, index) => `<!--mdeval ${index}-->old<!--/mdeval-->`).join('\n');
 		const result = await typecheckMdeval({ 'example.md': source });

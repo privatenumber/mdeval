@@ -32,6 +32,16 @@ describe('processSource', () => {
 		expect(output).toBe(source.replace('a-->0', 'a-->1').replace('b-->0', 'b-->2'));
 	});
 
+	test('identifies the marker when a value is undefined', async () => {
+		const source = '<!--mdeval\nconst obj = {}\n-->\n<!--mdeval 42-->old<!--/mdeval-->\n<!--mdeval obj.missing-->old<!--/mdeval-->';
+		await expect(processMarkdown(source)).rejects.toThrow('Expression "obj.missing" evaluated to undefined');
+	});
+
+	test('identifies the marker when a value is null', async () => {
+		const source = '<!--mdeval null-->old<!--/mdeval-->';
+		await expect(processMarkdown(source)).rejects.toThrow('Expression "null" evaluated to null');
+	});
+
 	test('errors on duplicate variable names across blocks', async () => {
 		await expect(processMarkdown(
 			'<!--mdeval\nconst x = 1;\n-->\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->0<!--/mdeval-->',
@@ -339,6 +349,16 @@ describe('processSource', () => {
 			'',
 			'<!--mdeval x-->old<!--/mdeval-->',
 		].join('\n'))).rejects.toThrow();
+	});
+
+	test('errors when a value contains a CRLF script opening', async () => {
+		const source = '<!--mdeval\nconst x = "<" + "!--mdeval\\r\\nabc";\n-->\n<!--mdeval x-->old<!--/mdeval-->';
+		await expect(processMarkdown(source)).rejects.toThrow('Expression "x" produced a value containing mdeval comment syntax');
+	});
+
+	test('allows a bare carriage return after the mdeval tag', async () => {
+		const source = '<!--mdeval\nconst x = "<" + "!--mdeval\\rabc";\n-->\n<!--mdeval x-->old<!--/mdeval-->';
+		expect(await processMarkdown(source)).toBe(source.replace('old', '<!--mdeval\rabc'));
 	});
 
 	test('allows values containing non-matching mdeval substrings', async () => {
