@@ -11,4 +11,5 @@ describe('mdeval', () => {
 	import('./specs/recipe.ts');
 	import('./specs/source-map.ts');
 	import('./specs/content-mapper.ts');
+	import('./specs/package-files.ts');
 });
