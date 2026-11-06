@@ -4,6 +4,7 @@ import { styleText } from 'node:util';
 import { cli } from 'cleye';
 import './loader.ts';
 import packageJson from '../package.json' with { type: 'json' };
+import { formatErrorLocation } from './cli/error-location.ts';
 import { resolveFiles } from './cli/resolve-files.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
@@ -37,6 +38,8 @@ await Promise.all(files.map(async (file) => {
 			throw new Error('mdeval only processes .md files');
 		}
 		const resolvedPath = path.resolve(file);
+		// Lenient decoding is safe: evaluating the file runs the loader's strict decoder,
+		// which throws on invalid UTF-8 before anything is written
 		const source = await fs.readFile(resolvedPath, 'utf8');
 		const parsed = parseMarkdown(source);
 
@@ -61,7 +64,7 @@ await Promise.all(files.map(async (file) => {
 			);
 		}
 	} catch (error) {
-		console.error(`Error processing ${file}:`, error instanceof Error ? error.message : error);
+		console.error(`Error processing ${formatErrorLocation(error, file)}:`, error instanceof Error ? error.message : error);
 		process.exitCode = 1;
 	}
 }));
