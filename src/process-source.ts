@@ -18,10 +18,11 @@ export const processSource = async (
 
 	const rawValues = await import(pathToFileURL(filePath).href);
 	const expressionMap = buildExpressionMap(markers);
+	const markerValues: unknown[] = await rawValues[`${EXPORT_PREFIX}markers`]();
 
 	const resolvedValues = await Promise.all(
 		Array.from(expressionMap).map(async ([expression, index]) => {
-			const value = coerceValue(await rawValues[`${EXPORT_PREFIX}${index}`]);
+			const value = coerceValue(await markerValues[index]);
 			if (value.includes(MARKER_OPEN) || value.includes(`${COMMENT_TAG}\n`) || value.includes(MARKER_CLOSE)) {
 				throw new Error(
 					`Expression "${expression}" produced a value containing mdeval comment syntax, which would corrupt the document on re-parse`,

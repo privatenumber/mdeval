@@ -14,7 +14,7 @@ const projectRoot = path.resolve(import.meta.dirname, '../..');
 // remap to the original `.md` line.
 const buildFixture = (dataMd: string) => createFixture({
 	'data.md': dataMd,
-	'consumer.mjs': ({ fixturePath }) => `await import(${JSON.stringify(pathToFileURL(path.join(fixturePath, 'data.md')).href)});\n`,
+	'consumer.mjs': ({ fixturePath }) => `const mod = await import(${JSON.stringify(pathToFileURL(path.join(fixturePath, 'data.md')).href)}); await Promise.all(await mod.__mdeval_markers());\n`,
 	'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
 });
 
@@ -214,7 +214,7 @@ describe('source map', () => {
 		expect(stderr).not.toMatch(/data\.md:4:16/);
 	});
 
-	test('marker expression error after the first token remaps to the V8-reported expression start', async () => {
+	test('marker expression error after the first token remaps inside the expression', async () => {
 		await using fixture = await buildFixture([
 			'<!--mdeval',
 			'const value = 1;',
@@ -228,7 +228,7 @@ describe('source map', () => {
 		const stderr = result.stderr ?? '';
 
 		expect(stderr).toContain('ReferenceError: missingLater is not defined');
-		expect(stderr).toMatch(/data\.md:5:20/);
+		expect(stderr).toMatch(/data\.md:5:26/);
 	});
 
 	test('multi-line marker expression error remaps to its V8-reported statement start', async () => {
@@ -283,7 +283,7 @@ describe('source map', () => {
 		const stderr = result.stderr ?? '';
 
 		expect(stderr).toContain('ReferenceError: missingBeforeScript is not defined');
-		expect(stderr).toMatch(/data\.md:1:19/);
+		expect(stderr).toMatch(/data\.md:1:25/);
 	});
 
 	test('inline map omits sourcesContent and stays compact for large source spans', () => {

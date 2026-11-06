@@ -60,6 +60,23 @@ const typecheckMdeval = async (files: FileTree) => {
 };
 
 describe('content mapper', () => {
+	test('checks 1100 distinct marker expressions', async () => {
+		const source = Array.from({ length: 1100 }, (_, index) => `<!--mdeval ${index}-->old<!--/mdeval-->`).join('\n');
+		const result = await typecheckMdeval({ 'example.md': source });
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('preserves inferred marker literal types', async () => {
+		const result = await typecheckMdeval({ 'example.md': '<!--mdeval 42-->old<!--/mdeval-->\n<!--mdeval __mdeval_0 satisfies 42-->old<!--/mdeval-->' });
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
 	test('reports original positions in scripts and markers, with Unicode and CRLF', async () => {
 		const result = await typecheckMdeval({
 			'example.md': [
