@@ -81,3 +81,9 @@ TypeScript starts the mapper with the `node` on `PATH`. In the [test workflow](.
 
 - `ts-content-mapper` was used without a comparison against writing the JSON-RPC protocol directly.
 - Editor integration, the language service, and watch or incremental builds are not verified.
+
+## Content-mapper tests run with limited concurrency
+
+TypeScript stops waiting for a content mapper that does not answer its `initialize` request within 5 seconds, and reports `TS18099: The content mapper 'mdeval' could not be initialized.` Each test in the [content-mapper spec](../../tests/specs/content-mapper.ts) starts `tsc` and a mapper process, so running them all at once can miss that deadline on a loaded machine. On 2026-11-07, CI's Node.js 22.21.1 step failed two symlink tests this way while running 22 mapper tests concurrently.
+
+**Decision:** the spec's `describe` uses manten's `{ parallel: 'auto' }`, which adapts concurrency to CPU load. Running four full suites at once on an Apple M2 Max (Node.js 24.14.0) reproduced 5 initialization timeouts without the limit and 0 with it, in two runs. A single suite took 6 s instead of 5 s.
