@@ -18,6 +18,112 @@ const markerContent = (
 };
 
 describe('parseMarkdown', () => {
+	test('ignores a table marker whose closing tag is in another cell', () => {
+		const source = '| a | b | c |\n|---|---|---|\n| ` | <!--mdeval 42-->old | `<!--/mdeval-->` |\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('ignores a table marker whose closing tag is in code within the same cell', () => {
+		const source = '| a |\n|---|\n| <!--mdeval 42-->old `<!--/mdeval-->` |\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('bounds delimiter searches for many incomplete table markers', () => {
+		// Compare how time scales instead of absolute time, so a slow runner
+		// cannot fail the test: doubling the rows roughly doubles linear work
+		// and quadruples quadratic work
+		const measure = (rows: number) => {
+			const source = `| h |\n|---|\n${'| <!--mdeval x |\n'.repeat(rows)}`;
+			const start = performance.now();
+			expect(parseMarkdown(source).markers).toStrictEqual([]);
+			return performance.now() - start;
+		};
+		measure(1000);
+		const fewer = Math.min(measure(4000), measure(4000));
+		const more = Math.min(measure(8000), measure(8000));
+		expect(more / fewer).toBeLessThan(3);
+	});
+
+	test('keeps reference labels inside table rows unchanged', () => {
+		const source = '| h |\n|---|\n| [z][x\\\\|y`] <!--mdeval 1+1-->old<!--/mdeval-->` |\n\n[xa\\|y`]: /url\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('ignores openings that cross table cell boundaries', () => {
+		const source = '| A | B | C |\n|---|---|---|\n| x | <!--mdeval a || b-->old<!--/mdeval--> | y |\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('preserves reference matching outside tables when a pipe follows backslashes', () => {
+		const source = String.raw`[z][x\\|y \`<!--mdeval 1+1-->old<!--/mdeval-->\`]
+
+[xa\|y \`<!--MDEVAL 1+1-->old<!--/MDEVAL-->\`]: /url
+
+| a | b |
+|---|---|
+| x\\|y | z |
+`.replaceAll('\\`', '`');
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('ignores markers in body cells beyond the header width', () => {
+		const source = '\uFEFF| a | b |\r\n|---|---|\r\n| x | ` | <!--mdeval 1+1-->old<!--/mdeval-->` |\r\n\r\n<!--mdeval 2-->old<!--/mdeval-->';
+		const { markers } = parseMarkdown(source);
+		expect(markers).toHaveLength(1);
+		expect(markers[0].expression).toBe('2');
+		expect(markers[0].start).toBe(source.indexOf('<!--mdeval 2'));
+	});
+
+	test('ignores markers in table code spans across a single escaped pipe', () => {
+		const source = '| a | b |\n|---|---|\n| `a\\| <!--mdeval 1+1-->old<!--/mdeval-->` | b |\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('ignores a code span within a GFM table cell', () => {
+		const source = '| a | b |\n|---|---|\n| ` | `<!--mdeval 1+1-->old<!--/mdeval-->` |\n';
+		expect(parseMarkdown(source).markers).toStrictEqual([]);
+	});
+
+	test('recognizes a marker between unpaired backticks in separate table cells', () => {
+		const source = '| a | b |\n|---|---|\n| ` | <!--mdeval 1+1-->old<!--/mdeval-->` |\n';
+		const { markers } = parseMarkdown(source);
+		expect(markers).toHaveLength(1);
+		expect(markers[0].expression).toBe('1+1');
+	});
+
+	test('ignores escaped marker openers but not escaped backslashes', () => {
+		const source = '\uFEFF\\<!--mdeval x-->literal<!--/mdeval-->\r\n\r\n\\\\<!--mdeval y-->old<!--/mdeval-->';
+		const { markers } = parseMarkdown(source);
+		expect(markers).toStrictEqual([{
+			expression: 'y',
+			start: source.indexOf('<!--mdeval y'),
+			end: source.length,
+		}]);
+	});
+
+	test('finds a marker after an unclosed example in a fence', () => {
+		const source = '# Test\n\n```\n<!--mdeval example without closing delimiter\n```\n\nValue: <!--mdeval 1+1-->old<!--/mdeval-->\n';
+		const { markers } = parseMarkdown(source);
+		expect(markers).toHaveLength(1);
+		expect(markers[0].expression).toBe('1+1');
+		expect(markerContent(source, markers[0])).toBe('old');
+	});
+
+	test('reports an opening inside a script string', () => {
+		const source = '<!--mdeval\nconst prefix = "<!--mdeval ";\nconst n = 42;\n-->\n\nValue: <!--mdeval n-->old<!--/mdeval-->\n';
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed script block at offset 0 (another mdeval opening found before `-->`)');
+	});
+
+	test('reports a line-starting opening inside an unclosed script', () => {
+		const source = '<!--mdeval\r\nconst n = 42;\r\n \t<!--mdeval n-->old<!--/mdeval-->';
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed script block at offset 0 (another mdeval opening found before `-->`)');
+	});
+
+	test('reports an unclosed script before an inline marker', () => {
+		const source = '<!--mdeval\nconst n = 42;\n\nValue: <!--mdeval n-->old<!--/mdeval-->\n';
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed script block at offset 0 (another mdeval opening found before `-->`)');
+	});
+
 	test('extracts script blocks', () => {
 		const source = '<!--mdeval\nconst x = 1;\n-->\n\n<!--mdeval\nconst y = 2;\n-->';
 		const { scriptBlocks } = parseMarkdown(source);
@@ -100,6 +206,7 @@ describe('parseMarkdown', () => {
 			'[<!--mdeval x-->42<!--/mdeval-->](https://example.com)',
 			'**<!--mdeval x-->42<!--/mdeval-->**',
 			'<div>\n<!--mdeval x-->42<!--/mdeval-->\n</div>',
+			'<details>\n\\<!--mdeval x-->42<!--/mdeval-->\n</details>',
 		];
 		for (const source of sources) {
 			const { markers } = parseMarkdown(source);

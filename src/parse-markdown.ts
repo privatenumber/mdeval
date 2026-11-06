@@ -1,4 +1,5 @@
 import { parse, preprocess, postprocess } from 'micromark';
+import { gfmTable } from 'micromark-extension-gfm-table';
 
 export type Marker = {
 	expression: string;
@@ -45,30 +46,77 @@ type CodeRange = [number, number];
 
 const codeTokenTypes = new Set(['codeFenced', 'codeIndented', 'codeText']);
 
-// Collect the byte ranges of all code constructs via micromark — the CommonMark
-// reference parser. Fenced code, inline code, and indented code blocks are the
-// regions where mdeval patterns are treated as literal content (part of a docs
-// example) rather than active syntax.
+// Collect source ranges for code constructs and escaped opening angle brackets.
+// GFM tables constrain inline code spans to individual cells.
 //
 // micromark emits events in document order, so the ranges come out sorted.
 // micromark's preprocess() strips a leading BOM; we shift offsets back so the
 // ranges align with positions in the original source that our mdeval scanners
 // also operate on.
-const findCodeRanges = (source: string): CodeRange[] => {
+const findCodeRanges = (source: string) => {
 	const bomOffset = source.codePointAt(0) === 0xFE_FF ? 1 : 0;
+	// The table extension differs from GitHub for escaped backslashes before a
+	// pipe: https://github.com/github/cmark-gfm/issues/277. Parse the original
+	// source so this scanner agrees with rendering validation.
 	const events = postprocess(
-		parse().document().write(preprocess()(source, undefined, true)),
+		parse({ extensions: [gfmTable()] }).document()
+			.write(preprocess()(source, undefined, true)),
 	);
 	const ranges: CodeRange[] = [];
+	const cells: CodeRange[] = [];
+	let headerWidth = 0;
+	let column = 0;
+	let discardedCell = false;
 	for (const [phase, token] of events) {
+		if (discardedCell) {
+			if (phase === 'exit' && token.type === 'tableData') {
+				discardedCell = false;
+			}
+			continue;
+		}
 		if (phase !== 'enter') {
 			continue;
 		}
-		if (codeTokenTypes.has(token.type)) {
+		if (token.type === 'tableHeader' || token.type === 'tableData') {
+			cells.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
+		}
+		switch (token.type) {
+			case 'table': {
+				headerWidth = 0;
+				break;
+			}
+			case 'tableRow': {
+				column = 0;
+				break;
+			}
+			case 'tableHeader': {
+				headerWidth += 1;
+				break;
+			}
+			case 'tableData': {
+				column += 1;
+				if (column > headerWidth) {
+					ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
+					discardedCell = true;
+					continue;
+				}
+				break;
+			}
+			default: {
+				break;
+			}
+		}
+		if (codeTokenTypes.has(token.type) || (
+			token.type === 'characterEscape'
+			&& source[token.end.offset + bomOffset - 1] === '<'
+		)) {
 			ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
 		}
 	}
-	return ranges;
+	return {
+		ranges,
+		cells,
+	};
 };
 
 type ParseResult = {
@@ -76,22 +124,52 @@ type ParseResult = {
 	markers: Marker[];
 };
 
-// Lazy, forward-only code-range membership test. We defer the micromark parse
-// until we actually find a candidate mdeval opening in source — the substring
-// check in parseMarkdown can pass on matches that only exist inside code (e.g.
-// a string literal `<!--mdeval` inside a fenced block), in which case we never
-// need the parser at all.
+// Lazy, forward-only membership test for literal source ranges.
 const createIsInCode = (source: string) => {
-	let ranges: CodeRange[] | null = null;
+	let parsed: ReturnType<typeof findCodeRanges> | null = null;
 	let rangeIndex = 0;
-	return (position: number): boolean => {
-		if (ranges === null) {
-			ranges = findCodeRanges(source);
+	let cellIndex = 0;
+	const context = (position: number) => {
+		if (parsed === null) {
+			parsed = findCodeRanges(source);
 		}
+		const { ranges, cells } = parsed;
 		while (rangeIndex < ranges.length && ranges[rangeIndex][1] <= position) {
 			rangeIndex += 1;
 		}
-		return rangeIndex < ranges.length && position >= ranges[rangeIndex][0];
+		if (rangeIndex < ranges.length && position >= ranges[rangeIndex][0]) {
+			return {
+				literal: true,
+				cellEnd: undefined,
+			};
+		}
+		while (cellIndex < cells.length && cells[cellIndex][1] <= position) {
+			cellIndex += 1;
+		}
+		return {
+			literal: false,
+			cellEnd: cellIndex < cells.length && position >= cells[cellIndex][0]
+				? cells[cellIndex][1]
+				: undefined,
+		};
+	};
+	const isInCode = (position: number) => {
+		const { ranges } = parsed!;
+		let left = 0;
+		let right = ranges.length;
+		while (left < right) {
+			const middle = Math.floor((left + right) / 2);
+			if (ranges[middle][1] <= position) {
+				left = middle + 1;
+			} else {
+				right = middle;
+			}
+		}
+		return left < ranges.length && ranges[left][0] <= position;
+	};
+	return {
+		context,
+		isInCode,
 	};
 };
 
@@ -130,20 +208,51 @@ export const parseMarkdown = (source: string): ParseResult => {
 		};
 	}
 
-	const isInCode = createIsInCode(source);
+	const { context, isInCode } = createIsInCode(source);
 
 	const scriptBlocks: ScriptBlock[] = [];
 	const markers: Marker[] = [];
 	let searchFrom = 0;
 
 	while (searchFrom < source.length) {
-		const start = source.indexOf(COMMENT_TAG, searchFrom);
+		const start = findNextMdevalOpening(source, searchFrom);
 		if (start === -1) {
 			break;
 		}
 
 		const afterTag = start + COMMENT_TAG.length;
 		const nextChar = source[afterTag];
+		const { literal, cellEnd } = context(start);
+		if (literal) {
+			searchFrom = afterTag;
+			continue;
+		}
+		if (cellEnd !== undefined) {
+			const cell = source.slice(start, cellEnd);
+			const exprEnd = cell.indexOf(COMMENT_CLOSE, COMMENT_TAG.length);
+			const closeStart = exprEnd === -1
+				? -1
+				: cell.indexOf(MARKER_CLOSE, exprEnd + COMMENT_CLOSE.length);
+			if (nextChar !== ' ' || closeStart === -1 || isInCode(start + closeStart)) {
+				searchFrom = afterTag;
+				continue;
+			}
+			const nextOpening = findNextMdevalOpening(cell, exprEnd + COMMENT_CLOSE.length);
+			if (nextOpening !== -1 && nextOpening < closeStart) {
+				throw new MarkdownParseError(
+					`mdeval: unclosed marker open at offset ${start} (missing \`<!--/mdeval-->\`)`,
+					start,
+				);
+			}
+			const markerEnd = start + closeStart + MARKER_CLOSE.length;
+			markers.push({
+				expression: cell.slice(COMMENT_TAG.length + 1, exprEnd),
+				start,
+				end: markerEnd,
+			});
+			searchFrom = markerEnd;
+			continue;
+		}
 
 		// Script block: <!--mdeval followed by LF or CRLF. We accept CRLF so
 		// files saved on Windows (or via git autocrlf) still parse.
@@ -156,29 +265,20 @@ export const parseMarkdown = (source: string): ParseResult => {
 				&& (closeStart === -1 || nextOpening < closeStart)
 			);
 			if (closeStart === -1 || interveningOpen) {
-				if (!isInCode(start)) {
-					throw new MarkdownParseError(
-						interveningOpen
-							? `mdeval: unclosed script block at offset ${start} (another mdeval opening found before \`-->\`)`
-							: `mdeval: unclosed script block at offset ${start} (missing \`-->\`)`,
-						start,
-					);
-				}
-				if (closeStart === -1) {
-					break;
-				}
-				searchFrom = contentStart;
-				continue;
+				throw new MarkdownParseError(
+					interveningOpen
+						? `mdeval: unclosed script block at offset ${start} (another mdeval opening found before \`-->\`)`
+						: `mdeval: unclosed script block at offset ${start} (missing \`-->\`)`,
+					start,
+				);
 			}
 			const end = closeStart + COMMENT_CLOSE.length;
-			if (!isInCode(start)) {
-				scriptBlocks.push({
-					content: source.slice(contentStart, closeStart),
-					contentStart,
-					start,
-					end,
-				});
-			}
+			scriptBlocks.push({
+				content: source.slice(contentStart, closeStart),
+				contentStart,
+				start,
+				end,
+			});
 			searchFrom = end;
 			continue;
 		}
@@ -188,9 +288,6 @@ export const parseMarkdown = (source: string): ParseResult => {
 			const exprStart = afterTag + 1;
 			const exprEnd = source.indexOf(COMMENT_CLOSE, exprStart);
 			if (exprEnd === -1) {
-				if (isInCode(start)) {
-					break;
-				}
 				throw new MarkdownParseError(
 					`mdeval: unclosed marker open at offset ${start} (missing \`-->\` on the marker open)`,
 					start,
@@ -204,29 +301,20 @@ export const parseMarkdown = (source: string): ParseResult => {
 				|| (nextOpening !== -1 && nextOpening < closeStart)
 			);
 			if (isUnclosed) {
-				if (isInCode(start)) {
-					searchFrom = contentStart;
-					continue;
-				}
 				throw new MarkdownParseError(
 					`mdeval: unclosed marker open at offset ${start} (missing \`<!--/mdeval-->\`)`,
 					start,
 				);
 			}
 			const markerEnd = closeStart + MARKER_CLOSE.length;
-			if (!isInCode(start)) {
-				markers.push({
-					expression: source.slice(exprStart, exprEnd),
-					start,
-					end: markerEnd,
-				});
-			}
+			markers.push({
+				expression: source.slice(exprStart, exprEnd),
+				start,
+				end: markerEnd,
+			});
 			searchFrom = markerEnd;
 			continue;
 		}
-
-		// Not a script or marker — advance past the tag and keep looking.
-		searchFrom = afterTag;
 	}
 
 	return {

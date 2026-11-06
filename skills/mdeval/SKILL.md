@@ -129,7 +129,7 @@ const version = data.version ?? 'tbd';
 
 **Block Markdown needs `block()`.** Without it, a heading, list, or table stays on the marker's line and does not render.
 
-**Script code cannot contain `-->`.** It ends the HTML comment, even inside a string. Build the text instead, such as `'--' + '>'`. Rewrite `x-- > y` as `x -= 1; x > y`.
+**Script code cannot contain `-->` or `<!--mdeval` followed by a space or newline.** The first ends the HTML comment; the second makes mdeval report an unclosed script, even inside a string. Build the text instead, such as `'--' + '>'` or `'<!--' + 'mdeval '`. Rewrite `x-- > y` as `x -= 1; x > y`.
 
 **Values cannot contain `<!--mdeval` followed by a space, a newline, or CRLF, or `<!--/mdeval-->`.** mdeval throws instead of writing them.
 
