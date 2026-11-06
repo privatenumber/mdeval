@@ -8,6 +8,7 @@ import './loader.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 import { findRenderedLeaks } from './validate-rendering/index.ts';
+import packageJson from '../package.json' with { type: 'json' };
 
 // Warnings go to stderr, so color depends on stderr, not stdout
 const WARNING_PREFIX = styleText('yellow', 'Warning:', { stream: process.stderr });
@@ -25,8 +26,8 @@ const getStaticBase = (pattern: string) => {
 };
 
 const argv = cli({
-	name: 'mdeval',
-	version: (JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version,
+	name: packageJson.name,
+	version: packageJson.version,
 	strictFlags: true,
 	parameters: ['<files...>'],
 });

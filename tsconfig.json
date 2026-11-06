@@ -6,6 +6,7 @@
 			"node",
 		],
 		"allowImportingTsExtensions": true,
+		"resolveJsonModule": true,
 		"erasableSyntaxOnly": true,
 		"strict": true,
 		"noEmit": true,
