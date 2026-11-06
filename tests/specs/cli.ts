@@ -1,6 +1,4 @@
 import fs from 'node:fs/promises';
-import { spawn as spawnChild } from 'node:child_process';
-import { once } from 'node:events';
 import path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import {
@@ -78,19 +76,22 @@ describe('cli', () => {
 	});
 
 	test('flushes all missing-file errors to a slow stderr pipe', async () => {
-		await using fixture = await createFixture({ 'a.md': source });
-		const missing = Array.from({ length: 3200 }, (_, index) => `x${index}`);
-		// Not nano-spawn: it drains stderr at once, so the pipe never fills to expose lost writes
-		const child = spawnChild(process.execPath, [cliPath, 'a.md', ...missing], { cwd: fixture.path });
-		const exit = once(child, 'close');
-		await setTimeout(1000);
-		let stderr = '';
-		for await (const chunk of child.stderr) {
-			stderr += chunk;
+		if (process.platform === 'win32') {
+			skip('Requires sh; Windows pipe writes are synchronous');
 		}
-		const [code] = await exit;
-		expect(code).toBe(1);
-		expect(stderr.trim().split('\n')).toHaveLength(missing.length);
+		await using fixture = await createFixture({ 'a.md': source });
+		const missing = Array.from({ length: 6000 }, (_, index) => `x${index}`);
+		// The reader stalls after the first line, so the kernel pipe fills and an exit with
+		// writes pending loses lines. See notes/mdeval/cli-tests.md
+		const result = await spawn('sh', [
+			'-c',
+			'"$0" "$@" 2>&1 >/dev/null | { read -r _; sleep 1; wc -l; }',
+			process.execPath,
+			cliPath,
+			'a.md',
+			...missing,
+		], { cwd: fixture.path });
+		expect(result.stdout.trim()).toBe(String(missing.length - 1));
 		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
 	});
 
