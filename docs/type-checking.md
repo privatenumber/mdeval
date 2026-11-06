@@ -69,4 +69,6 @@ A namespace import of a `.md` file without exports, such as `import * as data fr
 
 ## Limitations
 
+If the project declares its own global `block` or `$`, an unimported use in Markdown resolves to that global and is not reported; import the helpers explicitly.
+
 The content mapper API in TypeScript 7.1 is experimental. This integration is tested with `typescript@7.1.0-beta`. Whether an editor checks Markdown depends on its TypeScript integration; the configuration above enables command-line checking.

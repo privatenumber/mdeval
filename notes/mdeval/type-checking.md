@@ -18,6 +18,8 @@ A global declaration affects every file in the TypeScript program, even files th
 
 Module-local helper declarations avoid the program-wide conflict but conflict with a Markdown file's own `const block` or import. Conditionally omitting them requires complete binding analysis, including imports and destructuring. Wrapping the user module in a scope would need to preserve imports, exports, top-level await, and source mappings. Explicit imports avoid both transformations and work when the virtual output is JavaScript.
 
+**Known limitation:** if a project declares a global with a helper's name, TypeScript resolves an unimported Markdown reference to that global without reporting the missing import. The loader can replace that global with the mdeval helper at runtime, so the type and runtime value can differ. Detecting this requires binding analysis; checked Markdown must import its helpers explicitly.
+
 Other tools choose scopes that match their own formats: [MDX language service 0.6.4](https://github.com/mdx-js/mdx-analyzer/blob/%40mdx-js/language-server%400.6.4/packages/language-service/lib/virtual-code.js#L61-L83) creates a component map inside a generated function; [Astro compiler 4.0.0](https://github.com/withastro/compiler/blob/%40astrojs/compiler%404.0.0/internal/printer/print-to-tsx.go#L405-L420) emits a module-local declaration for its `Astro` global. Re-evaluate implicit helpers if TypeScript content mappers gain a per-file ambient environment that supports normal lexical shadowing.
 
 The mapper still declares the reserved `__mdeval_guard` in module scope because generated marker expressions call it. The loader supplies the runtime value; its generic type preserves marker inference without modifying program globals.
