@@ -181,8 +181,9 @@ describe('content mapper', () => {
 	test('uses published types for mdeval runtime helpers', async () => {
 		const result = await typecheckMdeval({
 			'imported.md': '<!--mdeval\nimport { block } from "mdeval";\nblock("hello").toFixed();\n-->',
-			'global.md': [
+			'helpers.md': [
 				'<!--mdeval',
+				'import { block, $ } from "mdeval";',
 				'const output: string = (await $`echo`).stdout;',
 				'-->',
 				'<!--mdeval block("hello").toFixed()-->old<!--/mdeval-->',
@@ -192,17 +193,18 @@ describe('content mapper', () => {
 		expect(result).toStrictEqual({
 			exitCode: 2,
 			output: [
-				"global.md(4,27): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+				"helpers.md(5,27): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
 				"imported.md(3,16): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
 			].join('\n'),
 		});
 	});
 
-	test('checks a project that uses helper globals across files without errors', async () => {
+	test('checks a project that imports helpers across files without errors', async () => {
 		const result = await typecheckMdeval({
 			'README.md': [
 				'# Project',
 				'<!--mdeval',
+				'import { block, $ } from "mdeval";',
 				'import { contacts } from "./docs/contacts.md";',
 				'const branch: string = (await $`git branch --show-current`).stdout;',
 				'-->',
@@ -211,6 +213,7 @@ describe('content mapper', () => {
 			].join('\n'),
 			'docs/contacts.md': [
 				'<!--mdeval',
+				'import { block } from "mdeval";',
 				'type Contact = { name: string };',
 				'export const contacts: Contact[] = [{ name: "a" }];',
 				'-->',
@@ -226,6 +229,27 @@ describe('content mapper', () => {
 			exitCode: 0,
 			output: '',
 		});
+	});
+
+	test('does not conflict with unrelated project globals', async () => {
+		const result = await typecheckMdeval({
+			'README.md': '<!--mdeval\nimport { block } from "mdeval";\n-->\n<!--mdeval block(42)-->42<!--/mdeval-->',
+			'globals.d.ts': 'export {}; declare global { var $: number; }',
+			'main.ts': 'console.log($.toFixed());',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('reports unimported helpers', async () => {
+		const result = await typecheckMdeval({
+			'example.md': '<!--mdeval block(42)-->42<!--/mdeval-->',
+		});
+		expect(result.exitCode).toBe(2);
+		// The diagnostic code varies with the lib's spelling suggestions (TS2304 or TS2552)
+		expect(result.output).toMatch(/^example\.md\(1,12\): error TS\d+: Cannot find name 'block'\./);
 	});
 
 	test('preserves evaluate-once control flow for repeated expressions', async () => {
