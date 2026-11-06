@@ -231,11 +231,34 @@ describe('content mapper', () => {
 		});
 	});
 
-	test('does not conflict with unrelated project globals', async () => {
+	test('reports a conflicting project global', async () => {
 		const result = await typecheckMdeval({
 			'README.md': '<!--mdeval\nimport { block } from "mdeval";\n-->\n<!--mdeval block(42)-->42<!--/mdeval-->',
 			'globals.d.ts': 'export {}; declare global { var $: number; }',
 			'main.ts': 'console.log($.toFixed());',
+		});
+		expect(result.exitCode).toBe(2);
+		expect(result.output).toMatch(/error TS2403:/);
+	});
+
+	test('checks unimported helpers', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					erasableSyntaxOnly: true,
+					noEmit: true,
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				include: ['*.md', '*.ts'],
+			}),
+			'example.md': '<!--mdeval\nconst output: string = (await $`echo`).stdout;\n-->\n<!--mdeval block(42)-->42<!--/mdeval-->',
+			'main.ts': 'const result: string = block(42); void result;',
 		});
 		expect(result).toStrictEqual({
 			exitCode: 0,
@@ -243,13 +266,27 @@ describe('content mapper', () => {
 		});
 	});
 
-	test('reports unimported helpers', async () => {
-		const result = await typecheckMdeval({
+	test('resolves helper types through the package export', async () => {
+		await using fixture = await createFixture({
+			'package.json': JSON.stringify({ type: 'module' }),
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['example.md'],
+			}),
+			'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
 			'example.md': '<!--mdeval block(42)-->42<!--/mdeval-->',
 		});
-		expect(result.exitCode).toBe(2);
-		// The diagnostic code varies with the lib's spelling suggestions (TS2304 or TS2552)
-		expect(result.output).toMatch(/^example\.md\(1,12\): error TS\d+: Cannot find name 'block'\./);
+		const result = await tsc(['--runExternalCode', '--pretty', 'false', '--traceResolution'], fixture.path);
+		expect(result.exitCode).toBe(0);
+		expect(result.output).toMatch(/dist\/globals\.d\.mts/);
 	});
 
 	test('preserves evaluate-once control flow for repeated expressions', async () => {
