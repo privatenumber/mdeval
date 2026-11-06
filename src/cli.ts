@@ -4,6 +4,7 @@ import { styleText } from 'node:util';
 import { cli } from 'cleye';
 import { glob } from 'tinyglobby';
 import './loader.ts';
+import packageJson from '../package.json' with { type: 'json' };
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 import { findRenderedLeaks } from './validate-rendering/index.ts';
@@ -12,7 +13,9 @@ import { findRenderedLeaks } from './validate-rendering/index.ts';
 const WARNING_PREFIX = styleText('yellow', 'Warning:', { stream: process.stderr });
 
 const argv = cli({
-	name: 'mdeval',
+	name: packageJson.name,
+	version: packageJson.version,
+	strictFlags: true,
 	parameters: ['<files...>'],
 });
 
