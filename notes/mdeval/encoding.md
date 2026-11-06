@@ -30,3 +30,15 @@ The CLI spec covers the main case ("rejects invalid UTF-8 without changing bytes
 ## Byte order marks
 
 Node's `'utf8'` decoding keeps a leading U+FEFF, so a rewritten file keeps its BOM. `TextDecoder` strips it unless `ignoreBOM: true` is set, which is why the loader sets it. The CLI spec "preserves a UTF-8 byte order mark when rewriting" catches a change to a stripping decoder.
+
+## Line endings
+
+Verified 2026-11-06 on Node.js 24.14.0.
+
+**Decision:** [`processSource`](../../src/process-source.ts) rewrites line breaks in every generated value to the document's line ending. It counts CRLF and lone LF once per document; CRLF wins only when it is strictly more frequent, and LF is used for a tie or a file without line breaks. A lone CR is left as is. Text outside marker values is never changed.
+
+- **Why every value, not only `block()`:** CommonMark treats LF, CR, and CRLF as equivalent line endings, so converting a value never changes how it renders. `block()` returns a plain string, so `processSource` cannot tell its wrapper newlines from newlines in the value.
+- **Why a majority, not the first line ending:** the first line break can sit inside a stale value that an earlier run wrote with the wrong ending, which would make that run's mistake permanent. A majority converges on the next run. [VS Code 1.105.1](https://github.com/microsoft/vscode/blob/1.105.1/src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBufferBuilder.ts#L27-L40) also chooses by count, though it counts a lone CR with CRLF.
+- **Alternatives:** [Prettier's `endOfLine: "auto"`](https://prettier.io/docs/options#end-of-line) documents the first line's ending, and its [3.6.2 implementation](https://github.com/prettier/prettier/blob/3.6.2/src/common/end-of-line.js#L1-L7) looks for the first CR. [embedme 1.22.1](https://github.com/zakhenry/embedme/blob/v1.22.1/src/embedme.lib.ts) picks CRLF if any CRLF occurs.
+
+The count is one linear pass. On a 10 MB CRLF document with 10,000 markers, the median `processSource` time was 1,822 ms before and 1,823 ms after (one repeated expression), and 1,882 ms and 1,910 ms with 10,000 distinct expressions, over five fresh processes each.

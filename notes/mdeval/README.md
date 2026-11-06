@@ -1,7 +1,7 @@
 # mdeval integration references
 
 - [Runtime compatibility](./runtime-compatibility.md): development runtime versus consumer support, why `engines.node` has its bounds, and how CI tests them.
-- [Encoding](./encoding.md): why the loader, not the CLI, rejects invalid UTF-8, and how byte order marks survive a rewrite.
+- [Encoding](./encoding.md): why the loader, not the CLI, rejects invalid UTF-8, how byte order marks survive a rewrite, and how generated values follow the document's line endings.
 - [Error reporting](./error-reporting.md): why the error-location formatter must not throw, and why it scans only stack frames.
 - [Performance](./performance.md): measured CLI time and memory for large files, and the four parses per file.
 - [CLI tests](./cli-tests.md): why the stderr-flushing test pipes the CLI through `sh` instead of reading the child's stderr with `node:child_process` or nano-spawn.
