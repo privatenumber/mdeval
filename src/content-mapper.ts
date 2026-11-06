@@ -37,7 +37,7 @@ const javascriptFormat = {
 	}],
 };
 
-// Node resolves symlinks before loading, so classify the file it will load
+// Unless run with --preserve-symlinks, Node resolves symlinks before loading
 const resolveRealPath = (fileName: string) => {
 	try {
 		return fs.realpathSync(fileName);
@@ -47,12 +47,16 @@ const resolveRealPath = (fileName: string) => {
 	}
 };
 
-runContentMapper({
+runContentMapper<Record<string, unknown>, boolean>({
 	diagnosticSource: 'mdeval',
 	positionEncoding: 'utf-16',
-	transform: ({ content, fileName }) => {
+	openProject: ({ compilerOptions }) => ({
+		project: compilerOptions.preserveSymlinks === true,
+	}),
+	transform: ({ content, fileName }, { project: preserveSymlinks }) => {
 		// Match the loader's URL representation, but the filename has no query or fragment.
-		const format = nodeModulesPattern.test(pathToFileURL(resolveRealPath(fileName)).href)
+		const path = preserveSymlinks ? fileName : resolveRealPath(fileName);
+		const format = nodeModulesPattern.test(pathToFileURL(path).href)
 			? javascriptFormat
 			: typescriptFormat;
 		let chunks;

@@ -77,6 +77,9 @@
 	},
 	"typescript": {
 		"contentMapper": {
+			"compilerOptions": [
+				"preserveSymlinks"
+			],
 			"exec": [
 				"node",
 				"dist/content-mapper.mjs"
