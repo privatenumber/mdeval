@@ -558,6 +558,7 @@ describe('content mapper', () => {
 					module: 'nodenext',
 					target: 'esnext',
 					noEmit: true,
+					preserveSymlinks: false,
 					types: [],
 				},
 				contentMappers: [{
@@ -572,6 +573,58 @@ describe('content mapper', () => {
 		expect(result).toStrictEqual({
 			exitCode: 0,
 			output: '',
+		});
+	});
+
+	test('checks symlinks to node_modules as TypeScript when preserving symlinks', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					preserveSymlinks: true,
+					skipLibCheck: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['docs/dep/data.md'],
+			}),
+			'node_modules/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'docs/dep': ({ symlink, getPath }) => symlink(getPath('node_modules/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('checks workspace symlinks in node_modules as JavaScript when preserving symlinks', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					preserveSymlinks: true,
+					skipLibCheck: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['node_modules/dep/data.md'],
+			}),
+			'packages/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'node_modules/dep': ({ symlink, getPath }) => symlink(getPath('packages/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: 'node_modules/dep/data.md(2,17): error TS8010: Type annotations can only be used in TypeScript files.',
 		});
 	});
 
