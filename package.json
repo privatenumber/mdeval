@@ -27,6 +27,9 @@
 			"types": "./dist/runtime.d.mts",
 			"default": "./dist/runtime.mjs"
 		},
+		"./globals": {
+			"types": "./dist/globals.d.mts"
+		},
 		"./loader": "./dist/loader.mjs"
 	},
 	"imports": {

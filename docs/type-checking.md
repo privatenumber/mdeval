@@ -4,7 +4,7 @@ TypeScript 7.1 can check the code inside mdeval comments and report errors at th
 
 - Script blocks in a file share one module scope, and imports resolve relative to the Markdown file.
 - A marker expression that appears more than once is checked once, and its errors point to the first occurrence.
-- Import the helpers used in each checked file: `import { block, $ } from 'mdeval'`.
+- The `block` and `$` helpers are available without imports. Explicit imports also work.
 - Fenced code blocks, inline code, and the rendered values between markers are not checked.
 
 ## Setup
@@ -69,6 +69,6 @@ A namespace import of a `.md` file without exports, such as `import * as data fr
 
 ## Limitations
 
-If the project declares its own global `block` or `$`, an unimported use in Markdown resolves to that global and is not reported; import the helpers explicitly.
+The helper types are visible throughout the TypeScript program, including files outside Markdown. A conflicting global `block` or `$`, including full zx's globals, can cause TS2403. Check Markdown with a separate `tsconfig.json` that excludes the conflicting globals.
 
 The content mapper API in TypeScript 7.1 is experimental. This integration is tested with `typescript@7.1.0-beta`. Whether an editor checks Markdown depends on its TypeScript integration; the configuration above enables command-line checking.

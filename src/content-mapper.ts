@@ -2,6 +2,8 @@ import { MappedCodeBuilder, runContentMapper } from 'ts-content-mapper';
 import { generateModule } from './generate-module.ts';
 import { MarkdownParseError, COMMENT_TAG } from './parse-markdown.ts';
 
+const globalsReference = '/// <reference types="mdeval/globals" />\n';
+
 runContentMapper({
 	diagnosticSource: 'mdeval',
 	positionEncoding: 'utf-16',
@@ -14,7 +16,7 @@ runContentMapper({
 				throw error;
 			}
 			return {
-				text: 'export {};\n',
+				text: `${globalsReference}export {};\n`,
 				extension: '.mts',
 				diagnostics: [{
 					messageText: error.message,
@@ -26,6 +28,7 @@ runContentMapper({
 		}
 
 		const out = new MappedCodeBuilder(content);
+		out.append(globalsReference);
 		for (const { text, sourceOffset } of chunks) {
 			if (sourceOffset === undefined) {
 				out.append(text);
