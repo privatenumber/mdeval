@@ -12,7 +12,10 @@ export type Point = (offset: number) => Position;
 export const buildLineIndex = (source: string): number[] => {
 	const newlines: number[] = [];
 	for (let index = 0; index < source.length; index += 1) {
-		if (source[index] === '\n') {
+		if (source[index] === '\r' && source[index + 1] === '\n') {
+			index += 1;
+			newlines.push(index);
+		} else if (source[index] === '\r' || source[index] === '\n') {
 			newlines.push(index);
 		}
 	}
@@ -42,9 +45,11 @@ export const offsetToLineColumn = (
 };
 
 // Advance a (line, column) by walking `length` chars of `value`, resetting
-// column on each newline. Used when source-byte lookup can't map a marker —
+// column on each LF, CRLF, or CR. Used when source-byte lookup can't map a marker —
 // e.g. an entity-decoded `&lt;!--mdeval` whose `value` offset has no literal
-// `<` in source.
+// `<` in source. The walk is approximate: `value` is decoded, so a character
+// reference such as `&#10;` or `&#xD;` counts as a line break, and entities
+// shift columns by their source length.
 export const advanceByValue = (
 	startLine: number,
 	startColumn: number,
@@ -54,7 +59,10 @@ export const advanceByValue = (
 	let line = startLine;
 	let column = startColumn;
 	for (let index = 0; index < length; index += 1) {
-		if (value[index] === '\n') {
+		if (value[index] === '\r' || value[index] === '\n') {
+			if (value[index] === '\r' && value[index + 1] === '\n' && index + 1 < length) {
+				index += 1;
+			}
 			line += 1;
 			column = 1;
 		} else {

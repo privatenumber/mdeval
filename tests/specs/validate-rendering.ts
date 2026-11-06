@@ -1,7 +1,60 @@
 import { describe, test, expect } from 'manten';
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import { findRenderedLeaks } from '../../src/validate-rendering/index.ts';
 
 describe('validate-rendering', () => {
+	for (const [name, separator] of [['CR', '\r\r'], ['CRLF', '\r\n\r\n'], ['mixed', '\r\n\r']]) {
+		test(`${name} line endings match the Markdown link position`, () => {
+			const source = `x${separator}[a](/u "<!--mdeval 1-->1<!--/mdeval-->")`;
+			const [, paragraph] = fromMarkdown(source).children;
+			if (paragraph.type !== 'paragraph') {
+				throw new Error('Expected a link in the second paragraph');
+			}
+			const [link] = paragraph.children;
+			if (link.type !== 'link') {
+				throw new Error('Expected a link in the second paragraph');
+			}
+			const { line, column } = link.position!.start;
+			expect({
+				line,
+				column,
+			}).toStrictEqual({
+				line: 3,
+				column: 1,
+			});
+			expect(findRenderedLeaks(source)).toStrictEqual([{
+				kind: 'link title',
+				line,
+				column,
+			}]);
+		});
+	}
+
+	test('CR line endings locate a decoded marker on a later line', () => {
+		expect(findRenderedLeaks('First\rSecond &lt;!--mdeval x-->old<!--/mdeval-->')).toStrictEqual([{
+			kind: 'text',
+			line: 2,
+			column: 8,
+		}]);
+	});
+
+	test('CR line endings exclude marker text in fenced code info', () => {
+		const source = '```js <!--mdeval info-->\r<!--mdeval x-->1<!--/mdeval-->\r```';
+		expect(findRenderedLeaks(source)).toStrictEqual([{
+			kind: 'code block',
+			line: 2,
+			column: 1,
+		}]);
+	});
+
+	test('CR line endings locate decoded raw HTML text', () => {
+		const source = '<div>first\rnext &lt;!--mdeval x-->old<!--/mdeval-->\r</div>';
+		expect(findRenderedLeaks(source)).toStrictEqual([{
+			kind: 'raw html',
+			line: 2,
+			column: 6,
+		}]);
+	});
 	test('source with no marker text at all short-circuits', () => {
 		expect(findRenderedLeaks('# Just markdown\n\nNothing to see.')).toStrictEqual([]);
 	});
