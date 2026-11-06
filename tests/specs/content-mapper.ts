@@ -422,6 +422,30 @@ describe('content mapper', () => {
 		}
 	});
 
+	test('checks unimported helpers in JavaScript node_modules Markdown', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					erasableSyntaxOnly: true,
+					noEmit: true,
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['node_modules/example/data.md'],
+			}),
+			'node_modules/example/data.md': '<!--mdeval\nconst output = (await $`echo`).stdout;\n-->\n<!--mdeval block(output)-->old<!--/mdeval-->',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
 	test('checks JavaScript marker expressions in node_modules by default', async () => {
 		const result = await typecheckMdeval({
 			'tsconfig.json': JSON.stringify({
