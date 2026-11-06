@@ -15,25 +15,25 @@ const [step, shape, size] = process.argv.slice(2);
 const source = await fixture(shape, size);
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'mdeval-bench-'));
 const input = path.join(directory, 'input.md');
-fs.writeFileSync(input, source);
 let counter = 0;
 try {
+	fs.writeFileSync(input, source);
 	const operations: Record<string, (file: string) => unknown> = {
 		parse: () => do_not_optimize(parseMarkdown(source)),
 		generate: () => do_not_optimize(generateModule(source)),
 		leaks: () => do_not_optimize(findRenderedLeaks(source)),
 		process: file => processSource(source, file).then(do_not_optimize),
-		cli: () => spawn(process.execPath, ['dist/cli.mjs', input], { stdio: 'ignore' }),
+		cli: file => spawn(process.execPath, ['dist/cli.mjs', file], { stdio: 'ignore' }),
 	};
 	const operation = operations[step];
 	const hasMarkers = step === 'process' && parseMarkdown(source).markers.length > 0;
-	// Each iteration gets a different path before timing: import() caches module URLs,
-	// and a query string cannot replace a fresh file for the Markdown loader.
+	// Fresh paths avoid import() cache hits; processSource's pathToFileURL escapes '?' in paths.
+	// A fresh CLI copy ensures every sample with stale values measures the rewrite.
 	// Mitata's types omit its supported computed-parameter object yields.
 	const benchmark = function* () {
 		yield {
 			0: () => {
-				if (step !== 'process' || !hasMarkers) {
+				if (step !== 'cli' && (step !== 'process' || !hasMarkers)) {
 					return input;
 				}
 				const file = path.join(directory, `${counter += 1}.md`);
@@ -43,14 +43,18 @@ try {
 			bench: operation,
 		};
 	};
-	const stats = await measure(benchmark as unknown as () => Generator<() => unknown>, {
-		min_samples: 4,
-		max_samples: 4,
-		min_cpu_time: 0,
-		batch_threshold: 0,
-		warmup_threshold: 0,
-		gc: false,
-	});
+	// Adaptive sampling stabilizes fast, side-effect-free steps. Limit expensive, stateful steps.
+	const options = step === 'process' || step === 'cli'
+		? {
+			min_samples: 4,
+			max_samples: 4,
+			min_cpu_time: 0,
+			batch_threshold: 0,
+			warmup_threshold: 0,
+			gc: false,
+		}
+		: { gc: false };
+	const stats = await measure(benchmark as unknown as () => Generator<() => unknown>, options);
 	let rss = process.resourceUsage().maxRSS / 1024;
 	if (step === 'cli') {
 		const result = await spawn(process.execPath, ['--import', './bench/cli-memory.ts', 'dist/cli.mjs', input]);
