@@ -421,4 +421,79 @@ describe('content mapper', () => {
 			});
 		}
 	});
+
+	test('checks JavaScript marker expressions in node_modules by default', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['node_modules/example/data.md'],
+			}),
+			'node_modules/example/data.md': '<!--mdeval Promise.resolve<number>(1)-->old<!--/mdeval-->',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: [
+				"node_modules/example/data.md(1,12): error TS2365: Operator '>' cannot be applied to types 'boolean' and 'number'.",
+				"node_modules/example/data.md(1,28): error TS2693: 'number' only refers to a type, but is being used as a value here.",
+			].join('\n'),
+		});
+	});
+
+	test('checks symlinks to node_modules as JavaScript', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['docs/dep/data.md'],
+			}),
+			'node_modules/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'docs/dep': ({ symlink, getPath }) => symlink(getPath('node_modules/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: 'docs/dep/data.md(2,17): error TS8010: Type annotations can only be used in TypeScript files.',
+		});
+	});
+
+	test('checks workspace symlinks in node_modules as TypeScript', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['node_modules/dep/data.md'],
+			}),
+			'packages/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'node_modules/dep': ({ symlink, getPath }) => symlink(getPath('packages/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
 });
