@@ -279,6 +279,19 @@ describe('validate-rendering', () => {
 			}]);
 		});
 
+		test('repeated references preserve each marker in the title', () => {
+			const source = '[r] [r]\n\n[r]: /url "<!--mdeval 1-->1<!--/mdeval--> <!--mdeval 2-->2<!--/mdeval-->"';
+			expect(findRenderedLeaks(source)).toStrictEqual([{
+				kind: 'link title',
+				line: 3,
+				column: 1,
+			}, {
+				kind: 'link title',
+				line: 3,
+				column: 1,
+			}]);
+		});
+
 		test('reference link label retains its own position', () => {
 			const source = '[`<!--mdeval x-->old<!--/mdeval-->`][ref]\n\n[ref]: /url';
 			expect(findRenderedLeaks(source)).toStrictEqual([{
