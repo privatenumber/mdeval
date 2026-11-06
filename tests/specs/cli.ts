@@ -19,6 +19,16 @@ const mdeval = (
 describe('cli', () => {
 	const source = '# Test\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
 
+	test('absolute exclusion patterns exclude relative literal files', async () => {
+		await using fixture = await createFixture({
+			'a.md': source,
+			'b.md': source,
+		});
+		const result = await mdeval(['a.md', 'b.md', `!${fixture.path}/a*.md`], { cwd: fixture.path });
+		expect(result.stdout).toBe('b.md');
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+	});
+
 	test('brace alternatives do not opt into node_modules', async () => {
 		await using fixture = await createFixture({
 			'docs/a.md': source,

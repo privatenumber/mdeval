@@ -1,13 +1,8 @@
 import type { LoadHookSync } from 'node:module';
-import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { generateModule } from './generate-module.ts';
 import { createSourceBuilder } from './source-builder.ts';
-
-const utf8Decoder = new TextDecoder('utf-8', {
-	fatal: true,
-	ignoreBOM: true,
-});
+import { InvalidUtf8Error, readUtf8FileSync } from './utils/read-utf8-file.ts';
 
 const nodeModulesPattern = /[\\/]node_modules[\\/]/;
 
@@ -19,12 +14,14 @@ export const load: LoadHookSync = (url, context, nextLoad) => {
 	}
 
 	const filePath = fileURLToPath(moduleUrl);
-	const bytes = fs.readFileSync(filePath);
 	let source: string;
 	try {
-		source = utf8Decoder.decode(bytes);
-	} catch {
-		throw new Error(`${filePath}: not valid UTF-8`);
+		source = readUtf8FileSync(filePath);
+	} catch (error) {
+		if (error instanceof InvalidUtf8Error) {
+			throw new Error(`${filePath}: not valid UTF-8`);
+		}
+		throw error;
 	}
 	const out = createSourceBuilder(filePath, source);
 	for (const { text, sourceOffset } of generateModule(source)) {
