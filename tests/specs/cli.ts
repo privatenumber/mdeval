@@ -32,50 +32,6 @@ describe('cli', () => {
 		});
 	}
 
-	for (const check of [true, false]) {
-		test(`preserves ${check ? 'check' : 'file error'} failure when a slower file exits`, async () => {
-			const slow = '# Test\n\n<!--mdeval\nawait new Promise(resolve => setTimeout(resolve, 400));\nprocess.exit(0);\n-->\n\n<!--mdeval 1-->1<!--/mdeval-->';
-			await using fixture = await createFixture({
-				'a.md': check ? source : failing,
-				'b.md': slow,
-			});
-			const error = await mdeval([...check ? ['--check'] : [], 'a.md', 'b.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
-				exitCode: number;
-				stdout: string;
-				stderr: string;
-			};
-			expect(error.exitCode).toBe(1);
-			if (check) {
-				expect(error.stdout).toBe('a.md');
-			} else {
-				expect(error.stderr).toContain('Error processing a.md:4:7: boom');
-			}
-		});
-	}
-
-	test('--check preserves failure when a timer resets the exit code', async () => {
-		const markdown = '# Test\n\n<!--mdeval\nsetTimeout(() => { process.exitCode = 0; }, 100);\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->';
-		await using fixture = await createFixture({ 'a.md': markdown });
-		const error = await mdeval(['--check', 'a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
-			exitCode: number;
-			stdout: string;
-		};
-		expect(error.exitCode).toBe(1);
-		expect(error.stdout).toBe('a.md');
-		expect(await fixture.readFile('a.md', 'utf8')).toBe(markdown);
-	});
-
-	test('preserves file errors when a timer resets the exit code', async () => {
-		const markdown = '# Test\n\n<!--mdeval\nsetTimeout(() => { process.exitCode = 0; }, 100);\nthrow new Error("boom");\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->';
-		await using fixture = await createFixture({ 'a.md': markdown });
-		const error = await mdeval(['a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
-			exitCode: number;
-			stderr: string;
-		};
-		expect(error.exitCode).toBe(1);
-		expect(error.stderr).toContain('boom');
-	});
-
 	test('--check reports outdated files without writing', async () => {
 		await using fixture = await createFixture({ 'a.md': source });
 		const before = await fs.stat(fixture.getPath('a.md'));

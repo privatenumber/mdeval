@@ -5,7 +5,6 @@ import { cli } from 'cleye';
 import './loader.ts';
 import packageJson from '../package.json' with { type: 'json' };
 import { formatErrorLocation } from './cli/error-location.ts';
-import { createExitStatus } from './cli/exit-status.ts';
 import { resolveFiles } from './cli/resolve-files.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
@@ -39,7 +38,15 @@ if (errors.length > 0) {
 	process.exitCode = 1;
 }
 
-const status = createExitStatus();
+// Markdown scripts can call process.exit() or reset process.exitCode, so the code is
+// decided on exit: 0 only when every file finished and none failed
+let failed = false;
+let completed = false;
+process.on('exit', () => {
+	if (failed || !completed) {
+		process.exitCode = 1;
+	}
+});
 await Promise.all(files.map(async (file) => {
 	try {
 		if (path.extname(file) !== '.md') {
@@ -59,7 +66,7 @@ await Promise.all(files.map(async (file) => {
 
 		if (output !== source) {
 			if (argv.flags.check) {
-				status.fail();
+				failed = true;
 			} else {
 				await fs.writeFile(resolvedPath, output, 'utf8');
 			}
@@ -74,7 +81,7 @@ await Promise.all(files.map(async (file) => {
 		}
 	} catch (error) {
 		console.error(`Error processing ${formatErrorLocation(error, file)}:`, error instanceof Error ? error.message : error);
-		status.fail();
+		failed = true;
 	}
 }));
-status.complete();
+completed = true;
