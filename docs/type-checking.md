@@ -59,7 +59,7 @@ Count: <!--mdeval count.toUpperCase()-->42<!--/mdeval-->
 
 ## TypeScript rules
 
-mdeval checks each Markdown file as a TypeScript module, so JSDoc type annotations are not checked. `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
+mdeval checks Markdown outside `node_modules` as a TypeScript module, so JSDoc type annotations there are not checked. Markdown under `node_modules` is checked as JavaScript because Node runs it as JavaScript. `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
 
 Marker expressions are checked inside a function, so TypeScript does not narrow a script-block `let` reassigned by another function. For example, after `let x: string | number = 0; const set = () => { x = "a"; };`, a marker containing `(set(), x.toFixed())` is still checked against `string | number`. Names beginning with `__mdeval_` are reserved for generated code.
 

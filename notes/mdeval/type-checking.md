@@ -41,6 +41,12 @@ The installed `zx@8.8.5-lite` exports no `zx/globals`. On 2026-11-07, a temporar
 node_modules/.pnpm/zx@8.8.5/node_modules/zx/build/globals.d.ts(7,9): error TS2403: Subsequent variable declarations must have the same type.  Variable '$' must be of type '$', but here has type '$'.
 ```
 
+## Markdown under `node_modules` is JavaScript
+
+**Decision:** return `.mjs` virtual code for Markdown under `node_modules`, and `.mts` elsewhere. [Node.js 24.14.1 refuses to strip types in dependencies](https://nodejs.org/docs/v24.14.1/api/typescript.html#type-stripping-in-dependencies), so the loader runs that Markdown as JavaScript. The `ts-content-mapper@0.1.1` protocol supplies a [filename per transform and supports both extensions](https://github.com/sxzz/ts-content-mapper/blob/v0.1.1/src/protocol.ts#L46-L54) in each [response](https://github.com/sxzz/ts-content-mapper/blob/v0.1.1/src/protocol.ts#L130-L147). The [content-mapper spec](../../tests/specs/content-mapper.ts) checks the resulting syntax diagnostics and JSDoc types.
+
+The loader and mapper share the same segment predicate, matching [Node's `isUnderNodeModules`](https://github.com/nodejs/node/blob/v24.14.1/lib/internal/util.js#L562-L565). The loader tests a full URL, including its query and fragment, but the mapper receives only a filename. A query containing `/node_modules/` can therefore select JavaScript at runtime while the same file is checked as TypeScript.
+
 ## Packaging requirements
 
 The published mapper depends on each of these package settings.

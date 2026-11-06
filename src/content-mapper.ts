@@ -1,11 +1,15 @@
 import { MappedCodeBuilder, runContentMapper } from 'ts-content-mapper';
 import { generateModule } from './generate-module.ts';
 import { MarkdownParseError, COMMENT_TAG } from './parse-markdown.ts';
+import { nodeModulesPattern } from './node-modules.ts';
 
 runContentMapper({
 	diagnosticSource: 'mdeval',
 	positionEncoding: 'utf-16',
-	transform: ({ content }) => {
+	transform: ({ content, fileName }) => {
+		// The loader tests the full URL, including query and fragment; the mapper only has a filename.
+		const isJavaScript = nodeModulesPattern.test(fileName);
+		const extension = isJavaScript ? '.mjs' : '.mts';
 		let chunks;
 		try {
 			chunks = generateModule(content);
@@ -15,7 +19,7 @@ runContentMapper({
 			}
 			return {
 				text: 'export {};\n',
-				extension: '.mts',
+				extension,
 				diagnostics: [{
 					messageText: error.message,
 					start: error.offset,
@@ -33,7 +37,6 @@ runContentMapper({
 				out.appendVerbatim(sourceOffset, sourceOffset + text.length);
 			}
 		}
-		// The loader runs Markdown as TypeScript ESM, including script-only files.
 		// The CLI and loader seed the helpers on `globalThis`. Declaring them as
 		// globals, not module bindings, lets an explicit import or a local
 		// `block` shadow them, the same as at runtime. With `skipLibCheck`, the
@@ -42,13 +45,17 @@ runContentMapper({
 		out.append([
 			'',
 			'export {};',
-			'declare global {',
-			'\tvar block: typeof import(\'mdeval\').block;',
-			'\tvar $: typeof import(\'mdeval\').$;',
-			'}',
-			'declare const __mdeval_guard: <T>(value: T) => T;',
+			...(isJavaScript ? [] : [
+				'declare global {',
+				'\tvar block: typeof import(\'mdeval\').block;',
+				'\tvar $: typeof import(\'mdeval\').$;',
+				'}',
+			]),
+			isJavaScript
+				? '/** @type {<T>(value: T) => T} */ const __mdeval_guard = value => value;'
+				: 'declare const __mdeval_guard: <T>(value: T) => T;',
 			'',
 		].join('\n'));
-		return out.build('.mts');
+		return out.build(extension);
 	},
 });
