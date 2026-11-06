@@ -59,6 +59,7 @@ const typecheckMdeval = async (files: FileTree) => {
 	return await tsc(['--runExternalCode', '--pretty', 'false'], fixture.path);
 };
 
+// Each test starts tsc and a mapper process; TypeScript gives the mapper 5 s to initialize
 describe('content mapper', () => {
 	test('checks overload declarations and implementations across script blocks', async () => {
 		const result = await typecheckMdeval({
@@ -521,4 +522,4 @@ describe('content mapper', () => {
 			output: '',
 		});
 	});
-});
+}, { parallel: 'auto' });
