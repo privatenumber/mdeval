@@ -13,6 +13,26 @@ const mdeval = (
 ) => spawn(process.execPath, [cliPath, ...arguments_], options);
 
 describe('cli', () => {
+	test('rejects unknown flags without rewriting', async () => {
+		const source = '<!--mdeval\nconst x = 1 + 1;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': source });
+		for (const flag of ['--check', '--dry-run']) {
+			const error = await mdeval([flag, 'a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+				exitCode: number;
+				stderr: string;
+			};
+			expect(error.exitCode).toBe(1);
+			expect(error.stderr).toContain(`Unknown flag: ${flag}`);
+			expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+		}
+	});
+
+	test('prints the package version', async () => {
+		const packageJson = JSON.parse(await fs.readFile(path.resolve(import.meta.dirname, '../../package.json'), 'utf8')) as { version: string };
+		const result = await mdeval(['--version']);
+		expect(result.stdout).toBe(packageJson.version);
+	});
+
 	test('updates file in-place', async () => {
 		await using fixture = await createFixture({
 			'test.md': '<!--mdeval\nconst x = 1 + 1;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->',
