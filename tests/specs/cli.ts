@@ -17,6 +17,68 @@ const mdeval = (
 describe('cli', () => {
 	const source = '# Test\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
 
+	test('reports original errors when the stack is not a string', async () => {
+		const markdown = '# Test\n\n<!--mdeval\nError.prepareStackTrace = () => [];\nthrow new Error("boom");\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': markdown });
+		const error = await mdeval(['a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('Error processing a.md: boom');
+	});
+
+	test('reports full mapped paths containing parentheses', async () => {
+		await using fixture = await createFixture({ 'notes (2).md': '# Test\n\n<!--mdeval\nthrow new Error("boom");\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->' });
+		const error = await mdeval(['notes (2).md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as { stderr: string };
+		expect(error.stderr).toContain('Error processing notes (2).md:4:7: boom');
+	});
+
+	test('rejects invalid UTF-8 without changing bytes and continues', async () => {
+		const invalid = Buffer.concat([Buffer.from(source), Buffer.from([0xE9])]);
+		await using fixture = await createFixture({
+			'bad.md': invalid,
+			'good.md': source,
+		});
+		const error = await mdeval(['bad.md', 'good.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('Error processing bad.md: not valid UTF-8');
+		expect(await fixture.readFile('bad.md')).toStrictEqual(invalid);
+		expect(await fixture.readFile('good.md', 'utf8')).toBe(source.replace('old', '2'));
+	});
+
+	test('reports mapped markdown location for script errors', async () => {
+		await using fixture = await createFixture({ 'err.md': '# Test\n\n<!--mdeval\nconst x = null;\nx.value;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->' });
+		const error = await mdeval(['err.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('err.md:5:3: Cannot read properties of null');
+	});
+
+	test('reports the location in an imported markdown file', async () => {
+		await using fixture = await createFixture({
+			'a.md': '# Test\n\n<!--mdeval\nimport "./other file.md";\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->',
+			'other file.md': '# Other\n\n<!--mdeval\nthrow new Error("boom");\n-->',
+		});
+		const error = await mdeval(['a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('Error processing other file.md:4:7: boom');
+	});
+
+	test('preserves a UTF-8 byte order mark when rewriting', async () => {
+		await using fixture = await createFixture({ 'bom.md': `\uFEFF${source}` });
+		await mdeval(['bom.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('bom.md', 'utf8')).toBe(`\uFEFF${source.replace('old', '2')}`);
+	});
+
 	test('a node_modules directory opts in and exclusions apply to both groups', async () => {
 		await using fixture = await createFixture({
 			'a.md': source,

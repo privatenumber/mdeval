@@ -4,9 +4,11 @@ import { styleText } from 'node:util';
 import { cli } from 'cleye';
 import './loader.ts';
 import packageJson from '../package.json' with { type: 'json' };
+import { formatErrorLocation } from './cli/error-location.ts';
 import { resolveFiles } from './cli/resolve-files.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
+import { readUtf8File } from './utils/read-utf8-file.ts';
 import { findRenderedLeaks } from './validate-rendering/index.ts';
 
 // Warnings go to stderr, so color depends on stderr, not stdout
@@ -37,7 +39,7 @@ await Promise.all(files.map(async (file) => {
 			throw new Error('mdeval only processes .md files');
 		}
 		const resolvedPath = path.resolve(file);
-		const source = await fs.readFile(resolvedPath, 'utf8');
+		const source = await readUtf8File(resolvedPath);
 		const parsed = parseMarkdown(source);
 
 		if (isOnlyMdeval(source, parsed)) {
@@ -61,7 +63,7 @@ await Promise.all(files.map(async (file) => {
 			);
 		}
 	} catch (error) {
-		console.error(`Error processing ${file}:`, error instanceof Error ? error.message : error);
+		console.error(`Error processing ${formatErrorLocation(error, file)}:`, error instanceof Error ? error.message : error);
 		process.exitCode = 1;
 	}
 }));
