@@ -357,4 +357,68 @@ describe('content mapper', () => {
 			output: 'example.md(3,1): error mdeval1: mdeval: unclosed script block at offset 11 (missing `-->`)',
 		});
 	});
+
+	test('rejects TypeScript syntax in node_modules Markdown', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					erasableSyntaxOnly: true,
+					allowJs: true,
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				include: ['node_modules/example/data.md'],
+			}),
+			'node_modules/example/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: 'node_modules/example/data.md(2,17): error TS8010: Type annotations can only be used in TypeScript files.',
+		});
+	});
+
+	test('checks JavaScript node_modules Markdown and its exports', async () => {
+		for (const checkJs of [false, true]) {
+			const result = await typecheckMdeval({
+				'tsconfig.json': JSON.stringify({
+					compilerOptions: {
+						module: 'nodenext',
+						target: 'esnext',
+						strict: true,
+						checkJs,
+						noEmit: true,
+						types: [],
+					},
+					contentMappers: [{
+						package: 'mdeval',
+						extensions: ['.md'],
+					}],
+					include: ['node_modules/example/data.md', 'main.ts'],
+				}),
+				'node_modules/example/data.md': [
+					'<!--mdeval',
+					'import { block } from "mdeval";',
+					'/** @param {number} value */',
+					'export const f = value => value;',
+					'/** @param {42} value */',
+					'const literal = value => value;',
+					'-->',
+					'<!--mdeval 42-->42<!--/mdeval-->',
+					'<!--mdeval block(literal(__mdeval_0))-->42<!--/mdeval-->',
+				].join('\n'),
+				'main.ts': 'import { f } from "./node_modules/example/data.md";\nf(42);\n// @ts-expect-error: f requires a number\nf("x");',
+			});
+			expect(result).toStrictEqual({
+				exitCode: 0,
+				output: '',
+			});
+		}
+	});
 });
