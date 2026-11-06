@@ -436,9 +436,10 @@ describe('content mapper', () => {
 					package: 'mdeval',
 					extensions: ['.md'],
 				}],
-				files: ['node_modules/example/data.md'],
+				files: ['node_modules/example/data.md', 'workspace.md'],
 			}),
 			'node_modules/example/data.md': '<!--mdeval\nconst output = (await $`echo`).stdout;\n-->\n<!--mdeval block(output)-->old<!--/mdeval-->',
+			'workspace.md': '<!--mdeval block(42)-->old<!--/mdeval-->',
 		});
 		expect(result).toStrictEqual({
 			exitCode: 0,

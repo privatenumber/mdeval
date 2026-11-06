@@ -62,12 +62,14 @@ runContentMapper({
 		out.append([
 			'',
 			'export {};',
-			...(isJavaScript ? [] : [
-				'declare global {',
-				'\tvar block: typeof import(\'mdeval\').block;',
-				'\tvar $: typeof import(\'mdeval\').$;',
-				'}',
-			]),
+			...(isJavaScript
+				? []
+				: [
+					'declare global {',
+					'\tvar block: typeof import(\'mdeval\').block;',
+					'\tvar $: typeof import(\'mdeval\').$;',
+					'}',
+				]),
 			isJavaScript
 				? '/** @type {<T>(value: T) => T} */ const __mdeval_guard = value => value;'
 				: 'declare const __mdeval_guard: <T>(value: T) => T;',
