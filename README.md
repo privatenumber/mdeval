@@ -110,7 +110,7 @@ In `.js` and `.ts` files, import them instead: `import { block, $ } from 'mdeval
   })()-->odd<!--/mdeval-->
   ```
 
-- **Script blocks share one module.** Variables and imports from every block in a file are visible to all of its markers. Blocks are joined in order, so a block starting with `(`, `[`, or a template literal can continue the previous block's last statement unless that statement ends with a semicolon. Use script blocks for imports and values that several markers share, and place them at the top of the file.
+- **Script blocks share one module.** Variables and imports from every block in a file are visible to all of its markers. Use script blocks for imports and values that several markers share, and place them at the top of the file.
 
 ### Importing other `.md` files
 
@@ -147,24 +147,31 @@ mdeval accepts files and glob patterns, and updates each file in place. It print
 
 Globs skip `node_modules` and hidden directories. To include them, start the pattern with their path, such as `"node_modules/pkg/*.md"` or `".github/**/*.md"`.
 
+To check values in CI without rewriting files, run:
+
+```bash
+npx mdeval --check "**/*.md"
+```
+
+This prints paths that would change and exits with code 1 if any are outdated or a file fails. It still evaluates the Markdown code, which can have side effects.
+
 ### Git hook
 
-To keep values current, run mdeval before every commit. With [Lefthook](https://github.com/evilmartians/lefthook):
+To catch stale values before they are committed, run the check in a pre-commit hook. With [Lefthook](https://github.com/evilmartians/lefthook):
 
 ```yaml
 # lefthook.yml
 pre-commit:
   jobs:
     - name: mdeval
-      # lefthook's default `gobwas` matcher requires `**` to span 1+ dirs,
-      # so `**/*.md` alone misses root-level files like README.md
-      glob: ["*.md", "**/*.md"]
-      run: |
-        files=$(npx mdeval "**/*.md")
-        [ -z "$files" ] || git add $files
+      run: npx mdeval --check "**/*.md"
 ```
 
-The hook re-stages only the files mdeval changed. `$files` relies on shell word splitting, so it assumes paths without spaces.
+When the check fails, the commit stops. mdeval itself writes and stages nothing, but the Markdown scripts still run with full access and can change files. Run `npx mdeval "**/*.md"`, review and stage the updates, and commit again.
+
+Lefthook hides unstaged hunks in partially staged files while the job runs, so the hook checks their staged versions. If the check fails because of such a file, stage it fully or stash its unstaged hunks before running `npx mdeval` and committing again.
+
+The job runs on every commit that stages files, so a change to a non-Markdown input, such as `package.json`, is checked too. The hook checks your working tree, so a staged file can still differ from what it checked; the CI check on the committed files is the reliable one.
 
 ## Importing `.md` files from scripts
 
