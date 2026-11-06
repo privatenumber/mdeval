@@ -8,7 +8,6 @@ import { formatErrorLocation } from './cli/error-location.ts';
 import { resolveFiles } from './cli/resolve-files.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
-import { readUtf8File } from './utils/read-utf8-file.ts';
 import { findRenderedLeaks } from './validate-rendering/index.ts';
 
 // Warnings go to stderr, so color depends on stderr, not stdout
@@ -39,7 +38,9 @@ await Promise.all(files.map(async (file) => {
 			throw new Error('mdeval only processes .md files');
 		}
 		const resolvedPath = path.resolve(file);
-		const source = await readUtf8File(resolvedPath);
+		// Lenient decoding is safe: evaluating the file runs the loader's strict decoder,
+		// which throws on invalid UTF-8 before anything is written
+		const source = await fs.readFile(resolvedPath, 'utf8');
 		const parsed = parseMarkdown(source);
 
 		if (isOnlyMdeval(source, parsed)) {

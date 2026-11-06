@@ -45,7 +45,7 @@ describe('cli', () => {
 			stderr: string;
 		};
 		expect(error.exitCode).toBe(1);
-		expect(error.stderr).toContain('Error processing bad.md: not valid UTF-8');
+		expect(error.stderr).toMatch(/Error processing bad\.md: .*bad\.md: not valid UTF-8/);
 		expect(await fixture.readFile('bad.md')).toStrictEqual(invalid);
 		expect(await fixture.readFile('good.md', 'utf8')).toBe(source.replace('old', '2'));
 	});
