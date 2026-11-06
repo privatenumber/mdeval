@@ -69,6 +69,6 @@ A namespace import of a `.md` file without exports, such as `import * as data fr
 
 ## Limitations
 
-The helper types are visible throughout the TypeScript program, including files outside Markdown. A conflicting global `block` or `$`, including full zx's globals, can cause TS2403. Check Markdown with a separate `tsconfig.json` that excludes the conflicting globals.
+The helper types are visible throughout the TypeScript program, including files outside Markdown. A conflicting global `block` or `$`, including full zx's globals, can cause TS2403. With `skipLibCheck`, TypeScript reports a conflict when it checks the Markdown declaration after the conflicting `.d.ts` declaration; the reverse order can hide it. Check Markdown with a separate `tsconfig.json` that excludes the conflicting globals, including from the Markdown files' import graph.
 
 The content mapper API in TypeScript 7.1 is experimental. This integration is tested with `typescript@7.1.0-beta`. Whether an editor checks Markdown depends on its TypeScript integration; the configuration above enables command-line checking.

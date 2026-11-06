@@ -49,7 +49,7 @@ Use script blocks for imports and for values that several markers share.
 | `block(value)` | Puts the value on its own lines. Required for headings, lists, tables, and other block Markdown. |
 | `$` | Runs a shell command with [zx](https://google.github.io/zx/): `` $`git branch --show-current` `` |
 
-Both are globals in `.md` files at runtime and when type-checked, without imports. Their types are visible throughout the TypeScript program; use a separate tsconfig for Markdown if another global conflicts. In `.js` and `.ts` files, import the helpers used: `import { block, $ } from 'mdeval'`.
+Both are globals in `.md` files at runtime and when type-checked, without imports. Their types are visible throughout the TypeScript program; if another global conflicts, use a separate tsconfig for Markdown whose import graph excludes the conflicting declaration. In `.js` and `.ts` files, import the helpers used: `import { block, $ } from 'mdeval'`.
 
 ## Patterns
 

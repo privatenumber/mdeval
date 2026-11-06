@@ -284,9 +284,22 @@ describe('content mapper', () => {
 	test('checks unimported helper types', async () => {
 		const result = await typecheckMdeval({
 			'example.md': '<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
+			'shell.md': '<!--mdeval (await $`echo`).stdout.toFixed()-->old<!--/mdeval-->',
 		});
 		expect(result.exitCode).toBe(2);
 		expect(result.output).toMatch(/^example\.md\(1,22\): error TS2551:/);
+		expect(result.output).toMatch(/shell\.md\(1,35\): error TS2551:/);
+	});
+
+	test('keeps the marker guard out of other modules', async () => {
+		const result = await typecheckMdeval({
+			'example.md': '<!--mdeval 42-->old<!--/mdeval-->',
+			'main.ts': '__mdeval_guard(42);',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: "main.ts(1,1): error TS2304: Cannot find name '__mdeval_guard'.",
+		});
 	});
 
 	test('resolves helper types through paths for Markdown outside the project', async () => {

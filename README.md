@@ -91,7 +91,7 @@ Two helpers are available as globals in `.md` files:
 | `block(value)` | Puts the value on its own lines, so block-level Markdown such as headings, lists, and tables renders |
 | `$` | Runs shell commands with [zx](https://google.github.io/zx/): `` $`git branch --show-current` `` |
 
-Type-checked `.md` files can use these helpers without imports. Their types are visible throughout the TypeScript program; if another global conflicts, check Markdown with a separate tsconfig. In `.js` and `.ts` files, import the helpers you use: `import { block, $ } from 'mdeval'`. The import has no side effects.
+Type-checked `.md` files can use these helpers without imports. Their types are visible throughout the TypeScript program; if another global conflicts, check Markdown with a separate tsconfig, provided its import graph does not include the conflicting declaration. In `.js` and `.ts` files, import the helpers you use: `import { block, $ } from 'mdeval'`. The import has no side effects.
 
 ### Markers
 

@@ -36,9 +36,9 @@ runContentMapper({
 		// The loader runs Markdown as TypeScript ESM, including script-only files.
 		// The CLI and loader seed the helpers on `globalThis`. Declaring them as
 		// globals, not module bindings, lets an explicit import or a local
-		// `block` shadow them, the same as at runtime. The declarations stay in
-		// the mapped module, not a .d.ts, so `skipLibCheck` cannot hide a
-		// conflicting global. The guard is internal, so it stays module-local.
+		// `block` shadow them, the same as at runtime. With `skipLibCheck`, a
+		// conflict is reported only if the mapped declaration follows the .d.ts
+		// declaration. The guard is internal, so it stays module-local.
 		out.append([
 			'',
 			'export {};',
