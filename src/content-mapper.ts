@@ -1,14 +1,27 @@
+import fs from 'node:fs';
 import { MappedCodeBuilder, runContentMapper } from 'ts-content-mapper';
 import { generateModule } from './generate-module.ts';
 import { MarkdownParseError, COMMENT_TAG } from './parse-markdown.ts';
 import { nodeModulesPattern } from './node-modules.ts';
+
+const globalsReference = '/// <reference types="mdeval/globals" />\n';
+
+// Node resolves symlinks before loading, so classify the file it will load
+const resolveRealPath = (fileName: string) => {
+	try {
+		return fs.realpathSync(fileName);
+	} catch {
+		// Virtual files may not exist on disk
+		return fileName;
+	}
+};
 
 runContentMapper({
 	diagnosticSource: 'mdeval',
 	positionEncoding: 'utf-16',
 	transform: ({ content, fileName }) => {
 		// The loader tests the full URL, including query and fragment; the mapper only has a filename.
-		const isJavaScript = nodeModulesPattern.test(fileName);
+		const isJavaScript = nodeModulesPattern.test(resolveRealPath(fileName));
 		const extension = isJavaScript ? '.mjs' : '.mts';
 		let chunks;
 		try {
@@ -18,7 +31,7 @@ runContentMapper({
 				throw error;
 			}
 			return {
-				text: 'export {};\n',
+				text: `${isJavaScript ? `// @ts-check\n${globalsReference}` : ''}export {};\n`,
 				extension,
 				diagnostics: [{
 					messageText: error.message,
@@ -30,6 +43,10 @@ runContentMapper({
 		}
 
 		const out = new MappedCodeBuilder(content);
+		if (isJavaScript) {
+			out.append('// @ts-check\n');
+			out.append(globalsReference);
+		}
 		for (const { text, sourceOffset } of chunks) {
 			if (sourceOffset === undefined) {
 				out.append(text);
