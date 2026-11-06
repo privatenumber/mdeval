@@ -5,10 +5,10 @@ import { styleText } from 'node:util';
 import { cli } from 'cleye';
 import { convertPathToPattern, glob, isDynamicPattern } from 'tinyglobby';
 import './loader.ts';
+import packageJson from '../package.json' with { type: 'json' };
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 import { findRenderedLeaks } from './validate-rendering/index.ts';
-import packageJson from '../package.json' with { type: 'json' };
 
 // Warnings go to stderr, so color depends on stderr, not stdout
 const WARNING_PREFIX = styleText('yellow', 'Warning:', { stream: process.stderr });

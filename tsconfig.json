@@ -2,11 +2,11 @@
 	"compilerOptions": {
 		"target": "esnext",
 		"module": "nodenext",
+		"resolveJsonModule": true,
 		"types": [
 			"node",
 		],
 		"allowImportingTsExtensions": true,
-		"resolveJsonModule": true,
 		"erasableSyntaxOnly": true,
 		"strict": true,
 		"noEmit": true,
