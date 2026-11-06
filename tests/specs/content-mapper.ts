@@ -1,5 +1,7 @@
 import path from 'node:path';
-import { describe, test, expect } from 'manten';
+import {
+	describe, test, expect, skip,
+} from 'manten';
 import { createFixture, type FileTree } from 'fs-fixture';
 import spawn, { SubprocessError } from 'nano-spawn';
 
@@ -566,6 +568,33 @@ describe('content mapper', () => {
 			}),
 			'packages/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
 			'node_modules/dep': ({ symlink, getPath }) => symlink(getPath('packages/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('checks a symlink target with literal backslashes as TypeScript', async () => {
+		if (process.platform === 'win32') {
+			skip('Backslashes are path separators on Windows');
+		}
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['docs/dep/data.md'],
+			}),
+			'a\\node_modules\\pkg/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'docs/dep': ({ symlink, getPath }) => symlink(getPath(String.raw`a\node_modules\pkg`)),
 		});
 		expect(result).toStrictEqual({
 			exitCode: 0,

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { MappedCodeBuilder, runContentMapper } from 'ts-content-mapper';
 import { generateModule } from './generate-module.ts';
 import { MarkdownParseError, COMMENT_TAG } from './parse-markdown.ts';
@@ -10,10 +11,31 @@ const globalDeclarations = [
 	'\tvar $: typeof import(\'mdeval\').$;',
 	'}',
 ].join('\n');
-const supplemental = [{
-	text: `export {};\n${globalDeclarations}\n`,
+
+// The CLI and loader seed the helpers on `globalThis`. Declaring them as
+// globals, not module bindings, lets an explicit import or a local
+// `block` shadow them, the same as at runtime. With `skipLibCheck`, the
+// first declaration determines the type and later .d.ts conflicts can be skipped.
+// The guard's type declaration is module-local; its runtime value is global.
+const typescriptFormat = {
 	extension: '.mts' as const,
-}];
+	preamble: '',
+	declarations: [globalDeclarations, 'declare const __mdeval_guard: <T>(value: T) => T;'],
+	supplemental: undefined,
+};
+
+// Node runs Markdown under node_modules as JavaScript. `// @ts-check` enables semantic
+// checks without `checkJs`, and JavaScript cannot contain `declare global`, so a virtual
+// .mts file carries the helper declarations.
+const javascriptFormat = {
+	extension: '.mjs' as const,
+	preamble: '// @ts-check\n',
+	declarations: ['/** @type {<T>(value: T) => T} */ const __mdeval_guard = value => value;'],
+	supplemental: [{
+		text: `export {};\n${globalDeclarations}\n`,
+		extension: '.mts' as const,
+	}],
+};
 
 // Node resolves symlinks before loading, so classify the file it will load
 const resolveRealPath = (fileName: string) => {
@@ -29,9 +51,10 @@ runContentMapper({
 	diagnosticSource: 'mdeval',
 	positionEncoding: 'utf-16',
 	transform: ({ content, fileName }) => {
-		// The loader tests the full URL, including query and fragment; the mapper only has a filename.
-		const isJavaScript = nodeModulesPattern.test(resolveRealPath(fileName));
-		const extension = isJavaScript ? '.mjs' : '.mts';
+		// Match the loader's URL representation, but the filename has no query or fragment.
+		const format = nodeModulesPattern.test(pathToFileURL(resolveRealPath(fileName)).href)
+			? javascriptFormat
+			: typescriptFormat;
 		let chunks;
 		try {
 			chunks = generateModule(content);
@@ -40,8 +63,8 @@ runContentMapper({
 				throw error;
 			}
 			return {
-				text: `${isJavaScript ? '// @ts-check\n' : ''}export {};\n`,
-				extension,
+				text: `${format.preamble}export {};\n`,
+				extension: format.extension,
 				diagnostics: [{
 					messageText: error.message,
 					start: error.offset,
@@ -52,9 +75,7 @@ runContentMapper({
 		}
 
 		const out = new MappedCodeBuilder(content);
-		if (isJavaScript) {
-			out.append('// @ts-check\n');
-		}
+		out.append(format.preamble);
 		for (const { text, sourceOffset } of chunks) {
 			if (sourceOffset === undefined) {
 				out.append(text);
@@ -62,24 +83,10 @@ runContentMapper({
 				out.appendVerbatim(sourceOffset, sourceOffset + text.length);
 			}
 		}
-		// The CLI and loader seed the helpers on `globalThis`. Declaring them as
-		// globals, not module bindings, lets an explicit import or a local
-		// `block` shadow them, the same as at runtime. With `skipLibCheck`, the
-		// first declaration determines the type and later .d.ts conflicts can be skipped.
-		// The guard's type declaration is module-local; its runtime value is global.
-		out.append([
-			'',
-			'export {};',
-			...(isJavaScript ? [] : [globalDeclarations]),
-			isJavaScript
-				? '/** @type {<T>(value: T) => T} */ const __mdeval_guard = value => value;'
-				: 'declare const __mdeval_guard: <T>(value: T) => T;',
-			'',
-		].join('\n'));
+		out.append(['', 'export {};', ...format.declarations, ''].join('\n'));
 		return {
-			...out.build(extension),
-			// JavaScript cannot contain `declare global`, so a virtual .mts file carries it
-			supplemental: isJavaScript ? supplemental : undefined,
+			...out.build(format.extension),
+			supplemental: format.supplemental,
 		};
 	},
 });
