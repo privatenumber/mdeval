@@ -1,7 +1,11 @@
 import fs from 'node:fs/promises';
+import { spawn as spawnChild } from 'node:child_process';
+import { once } from 'node:events';
 import path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
-import { describe, test, expect } from 'manten';
+import {
+	describe, test, expect, skip,
+} from 'manten';
 import { createFixture } from 'fs-fixture';
 import spawn, { type Options } from 'nano-spawn';
 
@@ -13,9 +17,127 @@ const mdeval = (
 ) => spawn(process.execPath, [cliPath, ...arguments_], options);
 
 describe('cli', () => {
-	test('rejects unknown flags without rewriting', async () => {
-		const source = '<!--mdeval\nconst x = 1 + 1;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+	const source = '# Test\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+
+	test('exclusions only narrow globs, not named files', async () => {
+		await using fixture = await createFixture({
+			'a.md': source,
+			'b.md': source,
+		});
+		const result = await mdeval(['a.md', '*.md', '!a.md'], { cwd: fixture.path });
+		expect(result.stdout.split('\n').sort()).toStrictEqual(['a.md', 'b.md']);
+	});
+
+	test('deduplicates resolved paths and keeps the first spelling', async () => {
 		await using fixture = await createFixture({ 'a.md': source });
+		const result = await mdeval(['./a.md', 'a.md'], { cwd: fixture.path });
+		expect(result.stdout).toBe('./a.md');
+	});
+
+	test('reports stat errors and later missing paths without processing', async () => {
+		await using fixture = await createFixture({
+			'a.md': source,
+			'preload.cjs': 'const fs = require("node:fs/promises"); const stat = fs.stat; fs.stat = (...args) => args[0] === "denied.md" ? Promise.reject(Object.assign(new Error("denied"), { code: "EACCES" })) : stat(...args);',
+		});
+		const error = await spawn(process.execPath, ['--import', fixture.getPath('preload.cjs'), cliPath, 'a.md', 'denied.md', 'missing.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('denied.md: EACCES');
+		expect(error.stderr).toContain('missing.md: file does not exist');
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+	});
+
+	test('uses literal file spelling on case-insensitive filesystems', async () => {
+		await using fixture = await createFixture({
+			'REAdme.md': source,
+			'other.md': source,
+		});
+		if (!await fixture.exists('readme.md')) {
+			skip('Requires a case-insensitive filesystem');
+		}
+		const result = await mdeval(['readme.md', 'other.md'], { cwd: fixture.path });
+		expect(result.stdout.split('\n').sort()).toStrictEqual(['other.md', 'readme.md']);
+		expect(await fixture.readFile('REAdme.md', 'utf8')).toBe(source.replace('old', '2'));
+	});
+
+	test('expands directory arguments to visible markdown files', async () => {
+		await using fixture = await createFixture({
+			'docs/a.md': source,
+			'docs/sub/b.md': source,
+			'docs/note.txt': source,
+			'docs/.hidden/a.md': source,
+			'docs/node_modules/pkg/a.md': source,
+		});
+		const result = await mdeval(['docs'], { cwd: fixture.path });
+		expect(result.stdout.split('\n').sort()).toStrictEqual(['docs/a.md', 'docs/sub/b.md']);
+		expect(await fixture.readFile('docs/note.txt', 'utf8')).toBe(source);
+		expect(await fixture.readFile('docs/.hidden/a.md', 'utf8')).toBe(source);
+		expect(await fixture.readFile('docs/node_modules/pkg/a.md', 'utf8')).toBe(source);
+	});
+
+	test('flushes all missing-file errors to a slow stderr pipe', async () => {
+		await using fixture = await createFixture({ 'a.md': source });
+		const missing = Array.from({ length: 3200 }, (_, index) => `x${index}`);
+		const child = spawnChild(process.execPath, [cliPath, 'a.md', ...missing], { cwd: fixture.path });
+		const exit = once(child, 'close');
+		await setTimeout(1000);
+		let stderr = '';
+		for await (const chunk of child.stderr) {
+			stderr += chunk;
+		}
+		const [code] = await exit;
+		expect(code).toBe(1);
+		expect(stderr.trim().split('\n')).toHaveLength(missing.length);
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+	});
+
+	test('reports all missing literal paths before processing', async () => {
+		await using fixture = await createFixture({ 'a.md': source });
+		const error = await mdeval(['a.md', 'missing.md', 'other.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
+			exitCode: number;
+			stderr: string;
+		};
+		expect(error.exitCode).toBe(1);
+		expect(error.stderr).toContain('missing.md');
+		expect(error.stderr).toContain('other.md');
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+	});
+
+	test('treats existing glob-shaped filenames literally', async () => {
+		await using fixture = await createFixture({
+			'[a].md': source,
+			'a.md': source,
+		});
+		await mdeval(['[a].md'], { cwd: fixture.path });
+		expect(await fixture.readFile('[a].md', 'utf8')).toBe(source.replace('old', '2'));
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+	});
+
+	test('allows an unmatched glob when another pattern matches', async () => {
+		await using fixture = await createFixture({ 'a.md': source });
+		await mdeval(['a.md', 'missing/*.md'], { cwd: fixture.path });
+		expect(await fixture.readFile('a.md', 'utf8')).toBe(source.replace('old', '2'));
+	});
+
+	test('rejects named and matched non-markdown files clearly', async () => {
+		await using fixture = await createFixture({ 'notes.markdown': source });
+		for (const argument of ['notes.markdown', '*.markdown']) {
+			const error = await mdeval([argument], { cwd: fixture.path })
+				.catch((error_: unknown) => error_) as {
+				exitCode: number;
+				stderr: string;
+			};
+			expect(error.exitCode).toBe(1);
+			expect(error.stderr).toContain('notes.markdown: mdeval only processes .md files');
+			expect(await fixture.readFile('notes.markdown', 'utf8')).toBe(source);
+		}
+	});
+
+	test('rejects unknown flags without rewriting', async () => {
+		const markdown = '<!--mdeval\nconst x = 1 + 1;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'a.md': markdown });
 		for (const flag of ['--check', '--dry-run']) {
 			const error = await mdeval([flag, 'a.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
 				exitCode: number;
@@ -23,7 +145,7 @@ describe('cli', () => {
 			};
 			expect(error.exitCode).toBe(1);
 			expect(error.stderr).toContain(`Unknown flag: ${flag}`);
-			expect(await fixture.readFile('a.md', 'utf8')).toBe(source);
+			expect(await fixture.readFile('a.md', 'utf8')).toBe(markdown);
 		}
 	});
 

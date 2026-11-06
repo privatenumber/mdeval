@@ -2,9 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { styleText } from 'node:util';
 import { cli } from 'cleye';
-import { glob } from 'tinyglobby';
 import './loader.ts';
 import packageJson from '../package.json' with { type: 'json' };
+import { resolveFiles } from './cli/resolve-files.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
 import { findRenderedLeaks } from './validate-rendering/index.ts';
@@ -19,19 +19,23 @@ const argv = cli({
 	parameters: ['<files...>'],
 });
 
-const patterns = argv._.files;
-const targetsNodeModules = patterns.some(pattern => pattern.includes('node_modules'));
-const files = await glob(patterns, {
-	ignore: targetsNodeModules ? [] : ['**/node_modules/**'],
-});
+const { files, errors } = await resolveFiles(argv._.files);
 
-if (files.length === 0) {
+if (errors.length > 0) {
+	for (const error of errors) {
+		console.error(error);
+	}
+	process.exitCode = 1;
+} else if (files.length === 0) {
 	console.error('No files matched the given patterns');
-	process.exit(1);
+	process.exitCode = 1;
 }
 
 await Promise.all(files.map(async (file) => {
 	try {
+		if (path.extname(file) !== '.md') {
+			throw new Error('mdeval only processes .md files');
+		}
 		const resolvedPath = path.resolve(file);
 		const source = await fs.readFile(resolvedPath, 'utf8');
 		const parsed = parseMarkdown(source);
