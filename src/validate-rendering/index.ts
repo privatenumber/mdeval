@@ -3,7 +3,7 @@ import { gfmFootnote } from 'micromark-extension-gfm-footnote';
 import { gfmFootnoteFromMarkdown } from 'mdast-util-gfm-footnote';
 import { gfmTable } from 'micromark-extension-gfm-table';
 import { gfmTableFromMarkdown } from 'mdast-util-gfm-table';
-import { toHast } from 'mdast-util-to-hast';
+import { defaultHandlers, toHast, type Handler } from 'mdast-util-to-hast';
 import { visitParents } from 'unist-util-visit-parents';
 import type { Node, Parent } from 'unist';
 import type { RenderedLeak, WalkNode } from './types.ts';
@@ -105,15 +105,55 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		mdastExtensions: [gfmFootnoteFromMarkdown(), gfmTableFromMarkdown()],
 	});
 	const leaks: RenderedLeak[] = [];
+	// Keep the element's position for descendants and use-site attributes.
+	const referenceDefinitions = new WeakMap<Node, Node>();
+	const referenceHandler: Handler = (state, node) => {
+		const result = node.type === 'linkReference'
+			? defaultHandlers.linkReference(state, node)
+			: defaultHandlers.imageReference(state, node);
+		const definition = state.definitionById.get(String(node.identifier).toUpperCase());
+		if (definition && !Array.isArray(result) && result.type === 'element') {
+			referenceDefinitions.set(result, definition);
+		}
+		return result;
+	};
 
-	const hast = toHast(mdast, { allowDangerousHtml: true });
+	const hast = toHast(mdast, {
+		allowDangerousHtml: true,
+		handlers: {
+			linkReference: referenceHandler,
+			imageReference: referenceHandler,
+		},
+	});
+	// Multiple uses of one definition render the same title leak.
+	const referenceTitleLeaks = new Set<string>();
 
 	visitParents(hast as Node, (node, ancestors) => {
 		const walkable = node as WalkNode;
+		const definition = referenceDefinitions.get(node);
+		const attributes = elementAttributeLeaks(point, walkable);
 		leaks.push(
 			...textNodeLeaks(body, point, walkable, ancestors),
 			...rawNodeLeaks(body, point, walkable),
-			...elementAttributeLeaks(point, walkable),
+			...attributes.flatMap((leak) => {
+				if (!definition || (leak.kind !== 'link title' && leak.kind !== 'image title')) {
+					return [leak];
+				}
+				const offset = definition.position?.start.offset;
+				if (offset === undefined) {
+					return [leak];
+				}
+				const position = point(offset);
+				const key = `${leak.kind}:${position.line}:${position.column}`;
+				if (referenceTitleLeaks.has(key)) {
+					return [];
+				}
+				referenceTitleLeaks.add(key);
+				return [{
+					...leak,
+					...position,
+				}];
+			}),
 		);
 	});
 
