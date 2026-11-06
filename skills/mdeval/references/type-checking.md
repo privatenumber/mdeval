@@ -50,7 +50,7 @@ npx tsc --noEmit --runExternalCode
 
 - Each `.md` file is a TypeScript module. Annotate with TypeScript syntax, such as `const count: number = 42`. JSDoc types are not checked.
 - `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
-- The `block` and `$` globals are typed. Do not add an import only to satisfy `tsc`.
+- Import the helpers used in each checked file: `import { block, $ } from 'mdeval'`.
 - A repeated marker expression is checked once, and its errors point to the first occurrence.
 - Fenced code, inline code, and rendered marker values are not checked.
 - A `.ts` file that imports a `.md` file is checked against the `.md` exports' types when the `.ts` file is in `include`.

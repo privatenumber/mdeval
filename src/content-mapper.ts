@@ -34,17 +34,11 @@ runContentMapper({
 			}
 		}
 		// The loader runs Markdown as TypeScript ESM, including script-only files.
-		// The CLI and loader seed the helpers on `globalThis`. Declaring them as
-		// globals, not module bindings, lets an explicit import or a local
-		// `block` shadow them, the same as at runtime.
+		// The generated marker code uses this reserved runtime guard.
 		out.append([
 			'',
 			'export {};',
-			'declare global {',
-			'\tvar block: typeof import(\'mdeval\').block;',
-			'\tvar $: typeof import(\'mdeval\').$;',
-			'\tvar __mdeval_guard: <T>(value: T) => T;',
-			'}',
+			'declare const __mdeval_guard: <T>(value: T) => T;',
 			'',
 		].join('\n'));
 		return out.build('.mts');

@@ -4,7 +4,7 @@ TypeScript 7.1 can check the code inside mdeval comments and report errors at th
 
 - Script blocks in a file share one module scope, and imports resolve relative to the Markdown file.
 - A marker expression that appears more than once is checked once, and its errors point to the first occurrence.
-- The `block` and `$` globals are typed, so checked files can use them without an import.
+- Import the helpers used in each checked file: `import { block, $ } from 'mdeval'`.
 - Fenced code blocks, inline code, and the rendered values between markers are not checked.
 
 ## Setup

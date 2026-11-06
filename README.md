@@ -91,7 +91,7 @@ Two helpers are available as globals in `.md` files:
 | `block(value)` | Puts the value on its own lines, so block-level Markdown such as headings, lists, and tables renders |
 | `$` | Runs shell commands with [zx](https://google.github.io/zx/): `` $`git branch --show-current` `` |
 
-In `.js` and `.ts` files, import them instead: `import { block, $ } from 'mdeval'`. The import has no side effects.
+In type-checked `.md` files and in `.js` and `.ts` files, import the helpers you use: `import { block, $ } from 'mdeval'`. The import has no side effects.
 
 ### Markers
 

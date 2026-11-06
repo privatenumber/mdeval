@@ -10,24 +10,19 @@ TypeScript 7.1 adds content mappers: a project registers a package for a file ex
 
 **Decision:** keep one generator. Script scope, imports between `.md` files, and evaluate-once deduplication of repeated marker expressions then cannot drift between what the checker sees and what runs. [The content-mapper spec](../../tests/specs/content-mapper.ts) locks these behaviors, including the rule that a repeated expression reports errors only at its first occurrence.
 
-## Helper globals are declared with `declare global`
+## Type-checked files import helpers
 
-The CLI and `mdeval/loader` put `block` and `$` on `globalThis`, so `.md` files call them without an import. The checker cannot see that assignment. Without a declaration, it reported `Cannot find name 'block'` for every file that used a helper (observed 2026-11-05 with `typescript@7.1.0-beta`).
+**Decision:** type-checked Markdown imports the helpers it uses from `mdeval`. The CLI and loader still assign `block` and `$` to `globalThis` at runtime, but the mapper does not declare them globally. The [content-mapper spec](../../tests/specs/content-mapper.ts) checks imports, local shadowing, an unimported helper, and an unrelated project global named `$`.
 
-**Decision:** [the content mapper](../../src/content-mapper.ts) appends `declare global { var block: typeof import('mdeval').block; var $: typeof import('mdeval').$; }` to each virtual file. The types come from the published `mdeval` entry, so they cannot drift from the runtime.
+A global declaration affects every file in the TypeScript program, even files that never run through the loader. With `typescript@7.1.0-beta`, a Markdown file declaring the helper globally and a separate `declare global { var $: number }` produced TS2403 and made `$.toFixed()` report TS2339. The [loader](../../src/loader.ts) assigns `$` unconditionally when it runs, so a global helper type cannot also describe the unrelated project's `$`. Documenting that conflict would not prevent unrelated files from receiving incorrect types.
 
-- **Global, not a module binding:** an injected `import { block } from 'mdeval'` or `declare const block` would conflict with a user's own import or `const block`. A global is shadowed by those declarations, the same as at runtime. [The content-mapper spec](../../tests/specs/content-mapper.ts) locks the global, imported, and shadowed cases.
-- **Repeated declarations are allowed:** every `.md` file declares the same `var`s, and TypeScript merges `var` declarations with identical types.
-- **The cost is about 3 KB of memory per file, and no measurable time.** Measured 2026-11-05 with `typescript@7.1.0-beta` on Node.js 24.14.0, macOS arm64. Each file imported the helpers explicitly, so the same files checked cleanly with and without the declaration. Medians of 5 interleaved `tsc --runExternalCode --extendedDiagnostics` runs after a warmup:
+Module-local helper declarations avoid the program-wide conflict but conflict with a Markdown file's own `const block` or import. Conditionally omitting them requires complete binding analysis, including imports and destructuring. Wrapping the user module in a scope would need to preserve imports, exports, top-level await, and source mappings. Explicit imports avoid both transformations and work when the virtual output is JavaScript.
 
-  | `.md` files | Total time without / with | Memory without / with |
-  | --- | --- | --- |
-  | 1 | 0.212 s / 0.211 s | 112.2 MB / 112.5 MB |
-  | 1,000 | 0.304 s / 0.309 s | 121.9 MB / 125.0 MB |
-  | 10,000 | 1.292 s / 1.316 s | 219.8 MB / 245.6 MB |
+Other tools choose scopes that match their own formats: [MDX language service 0.6.4](https://github.com/mdx-js/mdx-analyzer/blob/%40mdx-js/language-server%400.6.4/packages/language-service/lib/virtual-code.js#L61-L83) creates a component map inside a generated function; [Astro compiler 4.0.0](https://github.com/withastro/compiler/blob/%40astrojs/compiler%404.0.0/internal/printer/print-to-tsx.go#L405-L420) emits a module-local declaration for its `Astro` global. Re-evaluate implicit helpers if TypeScript content mappers gain a per-file ambient environment that supports normal lexical shadowing.
 
-  The time differences are within run-to-run noise: a second 1,000-file run measured 0.322 s without and 0.316 s with. If memory matters for very large projects, one shared declaration file would replace the per-file copies.
-- **Accepted trade-off:** the augmentation is visible to every file in the program, including `.ts` files. Those files see the globals only when the loader runs them, and [Node.js usage](../../docs/node.md#helpers-without-the-loader) recommends the explicit import there.
+The mapper still declares the reserved `__mdeval_guard` in module scope because generated marker expressions call it. The loader supplies the runtime value; its generic type preserves marker inference without modifying program globals.
+
+On 2026-11-06, a generated project with 1,000 Markdown files, each importing both helpers and using markers, was checked with `typescript@7.1.0-beta` and Node.js 24.14.1 on macOS arm64. Across five interleaved `/usr/bin/time -l node <tsc> --noEmit --runExternalCode --pretty false` runs after a warmup, median wall time was 0.39 s both before and after removing the global declarations. The reported maximum resident set size was 210,878,464 bytes before and 207,601,664 bytes after. This is the maximum reported by `time` for a process, not the sum of the compiler and mapper processes.
 
 ## Packaging requirements
 
