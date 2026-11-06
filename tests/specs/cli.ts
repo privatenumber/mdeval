@@ -80,6 +80,7 @@ describe('cli', () => {
 	test('flushes all missing-file errors to a slow stderr pipe', async () => {
 		await using fixture = await createFixture({ 'a.md': source });
 		const missing = Array.from({ length: 3200 }, (_, index) => `x${index}`);
+		// Not nano-spawn: it reads stderr immediately, so the pipe never fills and a lost write would go unnoticed
 		const child = spawnChild(process.execPath, [cliPath, 'a.md', ...missing], { cwd: fixture.path });
 		const exit = once(child, 'close');
 		await setTimeout(1000);
