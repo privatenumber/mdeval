@@ -240,6 +240,66 @@ describe('validate-rendering', () => {
 				expect(leaks[0].kind).toBe(kind);
 			});
 		}
+
+		test('reference title reports the marker in its definition', () => {
+			const leaks = findRenderedLeaks('[x][ref]\n\n[ref]: https://example.com "<!--mdeval \'new\'-->old<!--/mdeval-->"\n');
+			expect(leaks).toStrictEqual([{
+				kind: 'link title',
+				line: 3,
+				column: 1,
+			}]);
+		});
+
+		const referenceTitleCases = [
+			['image', '![x][ref]', 'image title', '"<!--mdeval x-->old<!--/mdeval-->"'],
+			['shortcut', '[ref]', 'link title', '"<!--mdeval x-->old<!--/mdeval-->"'],
+			['title on next line', '[ref]', 'link title', '\n  "<!--mdeval x-->old<!--/mdeval-->"'],
+		];
+		for (const [name, reference, kind, title] of referenceTitleCases) {
+			test(`${name} reference title reports the marker in its definition`, () => {
+				const leaks = findRenderedLeaks(`${reference}\n\n[ref]: /url ${title}`);
+				expect(leaks).toStrictEqual([{
+					kind,
+					line: 3,
+					column: 1,
+				}]);
+			});
+		}
+
+		test('repeated references report the definition once per leak kind', () => {
+			const source = '[ref] [ref] ![x][ref] ![x][ref]\n\n[ref]: /url "<!--mdeval x-->old<!--/mdeval-->"';
+			expect(findRenderedLeaks(source)).toStrictEqual([{
+				kind: 'link title',
+				line: 3,
+				column: 1,
+			}, {
+				kind: 'image title',
+				line: 3,
+				column: 1,
+			}]);
+		});
+
+		test('reference link label retains its own position', () => {
+			const source = '[`<!--mdeval x-->old<!--/mdeval-->`][ref]\n\n[ref]: /url';
+			expect(findRenderedLeaks(source)).toStrictEqual([{
+				kind: 'inline code',
+				line: 1,
+				column: 3,
+			}]);
+		});
+
+		test('reference image alt and title use their own source positions', () => {
+			const source = '![<!--mdeval x-->old<!--/mdeval-->][ref]\n\n[ref]: /url "<!--mdeval y-->old<!--/mdeval-->"';
+			expect(findRenderedLeaks(source)).toStrictEqual([{
+				kind: 'image alt',
+				line: 1,
+				column: 1,
+			}, {
+				kind: 'image title',
+				line: 3,
+				column: 1,
+			}]);
+		});
 	});
 
 	describe('raw html', () => {
