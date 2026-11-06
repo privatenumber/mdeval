@@ -2,8 +2,6 @@ import { MappedCodeBuilder, runContentMapper } from 'ts-content-mapper';
 import { generateModule } from './generate-module.ts';
 import { MarkdownParseError, COMMENT_TAG } from './parse-markdown.ts';
 
-const globalsReference = '/// <reference types="mdeval/globals" />\n';
-
 runContentMapper({
 	diagnosticSource: 'mdeval',
 	positionEncoding: 'utf-16',
@@ -16,7 +14,7 @@ runContentMapper({
 				throw error;
 			}
 			return {
-				text: `${globalsReference}export {};\n`,
+				text: 'export {};\n',
 				extension: '.mts',
 				diagnostics: [{
 					messageText: error.message,
@@ -28,7 +26,6 @@ runContentMapper({
 		}
 
 		const out = new MappedCodeBuilder(content);
-		out.append(globalsReference);
 		for (const { text, sourceOffset } of chunks) {
 			if (sourceOffset === undefined) {
 				out.append(text);
@@ -37,10 +34,18 @@ runContentMapper({
 			}
 		}
 		// The loader runs Markdown as TypeScript ESM, including script-only files.
-		// The generated marker code uses this reserved runtime guard.
+		// The CLI and loader seed the helpers on `globalThis`. Declaring them as
+		// globals, not module bindings, lets an explicit import or a local
+		// `block` shadow them, the same as at runtime. The declarations stay in
+		// the mapped module, not a .d.ts, so `skipLibCheck` cannot hide a
+		// conflicting global. The guard is internal, so it stays module-local.
 		out.append([
 			'',
 			'export {};',
+			'declare global {',
+			'\tvar block: typeof import(\'mdeval\').block;',
+			'\tvar $: typeof import(\'mdeval\').$;',
+			'}',
 			'declare const __mdeval_guard: <T>(value: T) => T;',
 			'',
 		].join('\n'));

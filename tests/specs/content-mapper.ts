@@ -232,13 +232,28 @@ describe('content mapper', () => {
 	});
 
 	test('reports a conflicting project global', async () => {
-		const result = await typecheckMdeval({
-			'README.md': '<!--mdeval\nimport { block } from "mdeval";\n-->\n<!--mdeval block(42)-->42<!--/mdeval-->',
-			'globals.d.ts': 'export {}; declare global { var $: number; }',
-			'main.ts': 'console.log($.toFixed());',
-		});
-		expect(result.exitCode).toBe(2);
-		expect(result.output).toMatch(/error TS2403:/);
+		for (const skipLibraryCheck of [false, true]) {
+			const result = await typecheckMdeval({
+				'tsconfig.json': JSON.stringify({
+					compilerOptions: {
+						module: 'nodenext',
+						target: 'esnext',
+						noEmit: true,
+						skipLibCheck: skipLibraryCheck,
+						types: [],
+					},
+					contentMappers: [{
+						package: 'mdeval',
+						extensions: ['.md'],
+					}],
+					files: ['globals.d.ts', 'example.md'],
+				}),
+				'globals.d.ts': 'export {}; declare global { var block: (value: unknown) => number; }',
+				'example.md': '<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
+			});
+			expect(result.exitCode).toBe(2);
+			expect(result.output).toMatch(/error TS2403:/);
+		}
 	});
 
 	test('checks unimported helpers', async () => {
@@ -266,27 +281,40 @@ describe('content mapper', () => {
 		});
 	});
 
-	test('resolves helper types through the package export', async () => {
+	test('checks unimported helper types', async () => {
+		const result = await typecheckMdeval({
+			'example.md': '<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
+		});
+		expect(result.exitCode).toBe(2);
+		expect(result.output).toMatch(/^example\.md\(1,22\): error TS2551:/);
+	});
+
+	test('resolves helper types through paths for Markdown outside the project', async () => {
 		await using fixture = await createFixture({
-			'package.json': JSON.stringify({ type: 'module' }),
-			'tsconfig.json': JSON.stringify({
+			'project/package.json': JSON.stringify({ type: 'module' }),
+			'project/tsconfig.json': JSON.stringify({
 				compilerOptions: {
 					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
 					noEmit: true,
 					types: [],
+					paths: { mdeval: ['./node_modules/mdeval/dist/runtime.d.mts'] },
 				},
 				contentMappers: [{
 					package: 'mdeval',
 					extensions: ['.md'],
 				}],
-				files: ['example.md'],
+				include: ['../README.md'],
 			}),
-			'node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
-			'example.md': '<!--mdeval block(42)-->42<!--/mdeval-->',
+			'project/node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
+			'README.md': '<!--mdeval block(42)-->42<!--/mdeval-->',
 		});
-		const result = await tsc(['--runExternalCode', '--pretty', 'false', '--traceResolution'], fixture.path);
-		expect(result.exitCode).toBe(0);
-		expect(result.output).toMatch(/dist\/globals\.d\.mts/);
+		const result = await tsc(['--runExternalCode', '--pretty', 'false'], path.join(fixture.path, 'project'));
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
 	});
 
 	test('preserves evaluate-once control flow for repeated expressions', async () => {
