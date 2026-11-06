@@ -6,7 +6,7 @@ import { gfmTableFromMarkdown } from 'mdast-util-gfm-table';
 import { defaultHandlers, toHast, type Handler } from 'mdast-util-to-hast';
 import { visitParents } from 'unist-util-visit-parents';
 import type { Node, Parent } from 'unist';
-import type { RenderedLeak, WalkNode } from './types.ts';
+import type { LeakKind, RenderedLeak, WalkNode } from './types.ts';
 import { buildLineIndex, offsetToLineColumn, type Point } from './line-index.ts';
 import { findRawHtmlLeaks } from './raw-html.ts';
 import { classifyAttributeLeak, classifyTextLeak } from './classifiers.ts';
@@ -125,8 +125,8 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 			imageReference: referenceHandler,
 		},
 	});
-	// Multiple uses of one definition render the same title leak.
-	const referenceTitleLeaks = new Set<string>();
+	// Keep every marker from the first use of each definition and title kind.
+	const referenceTitleUses = new WeakMap<Node, Map<LeakKind, Node>>();
 
 	visitParents(hast as Node, (node, ancestors) => {
 		const walkable = node as WalkNode;
@@ -143,15 +143,19 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 				if (offset === undefined) {
 					return [leak];
 				}
-				const position = point(offset);
-				const key = `${leak.kind}:${position.line}:${position.column}`;
-				if (referenceTitleLeaks.has(key)) {
+				let uses = referenceTitleUses.get(definition);
+				if (!uses) {
+					uses = new Map();
+					referenceTitleUses.set(definition, uses);
+				}
+				const firstUse = uses.get(leak.kind);
+				if (firstUse && firstUse !== node) {
 					return [];
 				}
-				referenceTitleLeaks.add(key);
+				uses.set(leak.kind, node);
 				return [{
 					...leak,
-					...position,
+					...point(offset),
 				}];
 			}),
 		);
