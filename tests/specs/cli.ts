@@ -16,6 +16,7 @@ const mdeval = (
 
 describe('cli', () => {
 	const source = '# Test\n\n<!--mdeval\nconst x = 2;\n-->\n\n<!--mdeval x-->old<!--/mdeval-->';
+	const failing = '# Test\n\n<!--mdeval\nthrow new Error("boom");\n-->\n\n<!--mdeval 1-->old<!--/mdeval-->';
 
 	for (const check of [true, false]) {
 		test(`fails when a file exits before ${check ? 'check' : 'normal'} processing completes`, async () => {
@@ -35,7 +36,7 @@ describe('cli', () => {
 		test(`preserves ${check ? 'check' : 'file error'} failure when a slower file exits`, async () => {
 			const slow = '# Test\n\n<!--mdeval\nawait new Promise(resolve => setTimeout(resolve, 400));\nprocess.exit(0);\n-->\n\n<!--mdeval 1-->1<!--/mdeval-->';
 			await using fixture = await createFixture({
-				'a.md': check ? source : Buffer.from([0xE9]),
+				'a.md': check ? source : failing,
 				'b.md': slow,
 			});
 			const error = await mdeval([...check ? ['--check'] : [], 'a.md', 'b.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
@@ -47,7 +48,7 @@ describe('cli', () => {
 			if (check) {
 				expect(error.stdout).toBe('a.md');
 			} else {
-				expect(error.stderr).toContain('not valid UTF-8');
+				expect(error.stderr).toContain('Error processing a.md:4:7: boom');
 			}
 		});
 	}
@@ -94,7 +95,7 @@ describe('cli', () => {
 		const slow = '# Test\n\n<!--mdeval\nawait new Promise(resolve => setTimeout(resolve, 300));\nprocess.exitCode = 0;\n-->\n\n<!--mdeval 1-->1<!--/mdeval-->';
 		for (const check of [true, false]) {
 			await using fixture = await createFixture({
-				'a.md': check ? source : Buffer.from([0xE9]),
+				'a.md': check ? source : failing,
 				'b.md': slow,
 			});
 			const error = await mdeval([...check ? ['--check'] : [], 'a.md', 'b.md'], { cwd: fixture.path }).catch((error_: unknown) => error_) as {
@@ -106,7 +107,7 @@ describe('cli', () => {
 			if (check) {
 				expect(error.stdout).toBe('a.md');
 			} else {
-				expect(error.stderr).toContain('not valid UTF-8');
+				expect(error.stderr).toContain('Error processing a.md:4:7: boom');
 			}
 		}
 	});
