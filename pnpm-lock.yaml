@@ -199,6 +199,9 @@ importers:
       parse5:
         specifier: ^8.1.0
         version: 8.1.0
+      picomatch:
+        specifier: ^4.0.4
+        version: 4.0.4
       tinyglobby:
         specifier: ^0.2.17
         version: 0.2.17
@@ -212,6 +215,9 @@ importers:
       '@types/node':
         specifier: ^26.6.6
         version: 26.6.6
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       '@types/unist':
         specifier: ^3.0.3
         version: 3.0.3
@@ -876,6 +882,9 @@ packages:
 
   '@types/node@26.6.6':
     resolution: {integrity: sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
@@ -3494,6 +3503,8 @@ snapshots:
   '@types/node@26.6.6':
     dependencies:
       undici-types: 8.9.0
+
+  '@types/picomatch@4.0.3': {}
 
   '@types/resolve@1.20.2': {}
 

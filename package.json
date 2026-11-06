@@ -55,12 +55,14 @@
 		"micromark-extension-gfm-footnote": "^2.1.0",
 		"micromark-extension-gfm-table": "^2.1.2",
 		"parse5": "^8.1.0",
+		"picomatch": "^4.0.4",
 		"tinyglobby": "^0.2.17",
 		"unist-util-visit-parents": "^6.1.0",
 		"zx": "8.8.5-lite"
 	},
 	"devDependencies": {
 		"@types/node": "^26.6.6",
+		"@types/picomatch": "^4.0.3",
 		"@types/unist": "^3.0.3",
 		"clean-pkg-json": "^2.1.0",
 		"fs-fixture": "^2.16.0",

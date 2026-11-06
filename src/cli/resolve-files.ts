@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import picomatch from 'picomatch';
 import { convertPathToPattern, glob, isDynamicPattern } from 'tinyglobby';
 
 const classifyArgument = async (argument: string) => {
@@ -38,12 +39,25 @@ export const resolveFiles = async (args: string[]) => {
 	const patterns = classified.flatMap(result => (
 		result.pattern === undefined ? [] : [result.pattern]
 	));
-	const targetsNodeModules = args.some(argument => argument.includes('node_modules'));
-	const matches = patterns.length > 0
-		? await glob(patterns, { ignore: targetsNodeModules ? [] : ['**/node_modules/**'] })
-		: [];
+	const exclusions: string[] = [];
+	const normal: string[] = [];
+	const dependencies: string[] = [];
+	for (const pattern of patterns) {
+		const scan = picomatch.scan(pattern);
+		if (scan.negated) {
+			exclusions.push(pattern);
+		} else if (scan.base.split('/').includes('node_modules')) {
+			dependencies.push(pattern);
+		} else {
+			normal.push(pattern);
+		}
+	}
+	const [normalMatches, dependencyMatches] = await Promise.all([
+		normal.length > 0 ? glob([...normal, ...exclusions], { ignore: ['**/node_modules/**'] }) : [],
+		dependencies.length > 0 ? glob([...dependencies, ...exclusions]) : [],
+	]);
 	const seen = new Set<string>();
-	const files = [...literals, ...matches].filter((file) => {
+	const files = [...literals, ...normalMatches, ...dependencyMatches].filter((file) => {
 		const resolved = path.resolve(file);
 		if (seen.has(resolved)) {
 			return false;
