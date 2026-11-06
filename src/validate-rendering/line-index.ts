@@ -12,7 +12,10 @@ export type Point = (offset: number) => Position;
 export const buildLineIndex = (source: string): number[] => {
 	const newlines: number[] = [];
 	for (let index = 0; index < source.length; index += 1) {
-		if (source[index] === '\n') {
+		if (source[index] === '\r' && source[index + 1] === '\n') {
+			index += 1;
+			newlines.push(index);
+		} else if (source[index] === '\r' || source[index] === '\n') {
 			newlines.push(index);
 		}
 	}
@@ -54,7 +57,10 @@ export const advanceByValue = (
 	let line = startLine;
 	let column = startColumn;
 	for (let index = 0; index < length; index += 1) {
-		if (value[index] === '\n') {
+		if (value[index] === '\r' || value[index] === '\n') {
+			if (value[index] === '\r' && value[index + 1] === '\n' && index + 1 < length) {
+				index += 1;
+			}
 			line += 1;
 			column = 1;
 		} else {

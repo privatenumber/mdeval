@@ -66,8 +66,10 @@ const findContentStart = (
 			}
 			return cursor;
 		}
-		const newlineIndex = source.indexOf('\n', range.startOffset);
-		return newlineIndex === -1 ? range.startOffset : newlineIndex + 1;
+		const lineEnding = /\r\n?|\n/g;
+		lineEnding.lastIndex = range.startOffset;
+		const match = lineEnding.exec(source);
+		return match ? match.index + match[0].length : range.startOffset;
 	}
 	if (kind === 'inline code') {
 		// Skip the opening backtick run.
