@@ -636,9 +636,9 @@ describe('cli', () => {
 		await mdeval([fixture.getPath('test.md')]);
 	});
 
-	test('warns when file has only mdeval blocks and no markdown content', async () => {
+	test('warns when file has only script blocks and no markdown content', async () => {
 		await using fixture = await createFixture({
-			'test.md': '<!--mdeval\nconst x = 1;\n-->\n\n<!--mdeval x-->1<!--/mdeval-->',
+			'test.md': '<!--mdeval\nconst x = 1;\n-->\n\n<!--mdeval\nconst y = 2;\n-->',
 		});
 		const result = await mdeval([fixture.getPath('test.md')]);
 		expect(result.stderr).toContain('no markdown content');
