@@ -145,6 +145,8 @@ mdeval README.md "docs/**/*.md"
 
 mdeval accepts files and glob patterns, and updates each file in place. It prints the path of every file it changes.
 
+Line breaks in a value use the same line endings as the rest of the file.
+
 Globs skip `node_modules` and hidden directories. To include them, start the pattern with their path, such as `"node_modules/pkg/*.md"` or `".github/**/*.md"`.
 
 To check values in CI without rewriting files, run:
