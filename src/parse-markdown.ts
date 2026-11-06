@@ -327,21 +327,17 @@ export const isOnlyMdeval = (
 	source: string,
 	{ scriptBlocks, markers }: ParseResult,
 ): boolean => {
-	if (scriptBlocks.length === 0 && markers.length === 0) {
+	// Marker values render as page content, so only a file of script blocks renders nothing
+	if (scriptBlocks.length === 0 || markers.length > 0) {
 		return false;
 	}
 
-	const ranges = [
-		...scriptBlocks.map((block): [number, number] => [block.start, block.end]),
-		...markers.map((marker): [number, number] => [marker.start, marker.end]),
-	].sort((a, b) => a[0] - b[0]);
-
 	let cursor = 0;
-	for (const [start, end] of ranges) {
-		if (source.slice(cursor, start).trim() !== '') {
+	for (const block of scriptBlocks) {
+		if (source.slice(cursor, block.start).trim() !== '') {
 			return false;
 		}
-		cursor = end;
+		cursor = block.end;
 	}
 	return source.slice(cursor).trim() === '';
 };
