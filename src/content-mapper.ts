@@ -37,7 +37,8 @@ const javascriptFormat = {
 	}],
 };
 
-// Unless run with --preserve-symlinks, Node resolves symlinks before loading
+// Unless run with --preserve-symlinks (imports) or --preserve-symlinks-main (entry point),
+// Node resolves symlinks before loading
 const resolveRealPath = (fileName: string) => {
 	try {
 		return fs.realpathSync(fileName);

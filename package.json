@@ -82,6 +82,7 @@
 			],
 			"exec": [
 				"node",
+				"--no-preserve-symlinks",
 				"dist/content-mapper.mjs"
 			]
 		}
