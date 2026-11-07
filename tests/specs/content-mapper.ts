@@ -11,10 +11,15 @@ const compiler = path.join(projectRoot, 'node_modules/typescript7/bin/tsc');
 const tsc = async (
 	args: string[],
 	cwd: string,
+	env?: Record<string, string>,
 ) => {
 	try {
 		const result = await spawn(process.execPath, [compiler, ...args], {
 			cwd,
+			env: env && {
+				...process.env,
+				...env,
+			},
 			// About 1s alone, but over 12s on Node.js 20 under full-suite load
 			timeout: 60_000,
 		});
@@ -34,7 +39,7 @@ const tsc = async (
 	}
 };
 
-const typecheckMdeval = async (files: FileTree) => {
+const typecheckMdeval = async (files: FileTree, env?: Record<string, string>) => {
 	await using fixture = await createFixture({
 		'package.json': JSON.stringify({ type: 'module' }),
 		'tsconfig.json': JSON.stringify({
@@ -58,7 +63,7 @@ const typecheckMdeval = async (files: FileTree) => {
 		...files,
 	});
 	// Await before `fixture` is disposed at scope exit
-	return await tsc(['--runExternalCode', '--pretty', 'false'], fixture.path);
+	return await tsc(['--runExternalCode', '--pretty', 'false'], fixture.path, env);
 };
 
 // Each test starts tsc and a mapper process; TypeScript gives the mapper 5 s to initialize
@@ -558,6 +563,7 @@ describe('content mapper', () => {
 					module: 'nodenext',
 					target: 'esnext',
 					noEmit: true,
+					preserveSymlinks: false,
 					types: [],
 				},
 				contentMappers: [{
@@ -572,6 +578,71 @@ describe('content mapper', () => {
 		expect(result).toStrictEqual({
 			exitCode: 0,
 			output: '',
+		});
+	});
+
+	test('starts the mapper when NODE_OPTIONS preserves symlinks', async () => {
+		// pnpm's layout breaks the mapper's own imports when Node preserves symlinks
+		const result = await typecheckMdeval({
+			'example.md': '<!--mdeval 1-->old<!--/mdeval-->',
+		}, { NODE_OPTIONS: '--preserve-symlinks' });
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('checks symlinks to node_modules as TypeScript when preserving symlinks', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					preserveSymlinks: true,
+					// pnpm's layout breaks declaration resolution when symlinks are preserved
+					skipLibCheck: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['docs/dep/data.md'],
+			}),
+			'node_modules/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'docs/dep': ({ symlink, getPath }) => symlink(getPath('node_modules/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('checks workspace symlinks in node_modules as JavaScript when preserving symlinks', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					preserveSymlinks: true,
+					// pnpm's layout breaks declaration resolution when symlinks are preserved
+					skipLibCheck: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['node_modules/dep/data.md'],
+			}),
+			'packages/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'node_modules/dep': ({ symlink, getPath }) => symlink(getPath('packages/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: 'node_modules/dep/data.md(2,17): error TS8010: Type annotations can only be used in TypeScript files.',
 		});
 	});
 

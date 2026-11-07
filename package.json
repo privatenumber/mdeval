@@ -80,8 +80,12 @@
 	},
 	"typescript": {
 		"contentMapper": {
+			"compilerOptions": [
+				"preserveSymlinks"
+			],
 			"exec": [
 				"node",
+				"--no-preserve-symlinks",
 				"dist/content-mapper.mjs"
 			]
 		}
