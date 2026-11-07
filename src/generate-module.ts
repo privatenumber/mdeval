@@ -1,4 +1,6 @@
-import { parseMarkdown, EXPORT_PREFIX, MARKER_OPEN } from './parse-markdown.ts';
+import {
+	parseMarkdown, EXPORT_PREFIX, MARKER_OPEN, type ParseResult,
+} from './parse-markdown.ts';
 
 type SourceChunk = {
 	text: string;
@@ -8,8 +10,9 @@ type SourceChunk = {
 // Both execution and type checking use the same evaluate-once module.
 export const generateModule = (
 	source: string,
+	parsed: ParseResult = parseMarkdown(source),
 ): SourceChunk[] => {
-	const { scriptBlocks, markers } = parseMarkdown(source);
+	const { scriptBlocks, markers } = parsed;
 	const chunks: SourceChunk[] = [];
 	for (const block of scriptBlocks) {
 		chunks.push({

@@ -1,14 +1,18 @@
 # Performance
 
-## A file with an active marker is parsed four times
+## Parsing an active file
 
-For a file with an active marker, the CLI parses the file with [`parseMarkdown`](../../src/parse-markdown.ts) in [`cli.ts`](../../src/cli.ts), again in [`processSource`](../../src/process-source.ts), and again in the loader through [`generateModule`](../../src/generate-module.ts). [`findRenderedLeaks`](../../src/validate-rendering/index.ts) then runs `fromMarkdown` on the output. Files without markers can take fast paths and skip some of these parses.
+The CLI parses each input with [`parseMarkdown`](../../src/parse-markdown.ts) and passes the result to [`processSource`](../../src/process-source.ts). When that processing loads the file, the loader reuses the result only if its strict UTF-8 read matches the original source; it parses again if the file changed. An earlier import from another Markdown file can still parse the target separately. [`findRenderedLeaks`](../../src/validate-rendering/index.ts) separately parses the output with `fromMarkdown`. Files without markers can take fast paths and skip some of these parses.
+
+The loader hand-off keys file URLs by real path. On macOS, for example, `/var` can resolve to `/private/var`; using the original file URL misses the hand-off. It does not call `import.meta.resolve()`: that would invoke registered resolve hooks before the import and could change what a stateful hook loads. Cached modules and imports of other Markdown files work without a hand-off.
 
 An earlier one-off measurement on 2026-11-06 used Node.js 24.14.0 on macOS and the built CLI on a 52.5 MB Markdown file with one marker and repeated plain text lines. It took 129 s and 5.1 GB maximum resident memory. This fixture and runtime differ from the benchmarks below.
 
 ## Reproducible step benchmarks
 
-Measured 2026-11-07 on an Apple M2 Max, macOS arm64, Node.js 26.13.0, using the marker-heavy fixture. Each marker has the same expression and occurs about once per kilobyte. The source steps run from TypeScript; the built CLI writes the stale values to disk. See [`bench/README.md`](../../bench/README.md) for fixture definitions, sample counts, RSS semantics, and limitations. Times are milliseconds; RSS is MiB. Each case runs in its own process, but RSS includes all its samples and process initialization. CLI RSS comes from a separate invocation.
+With the parse hand-off, an interleaved comparison on 2026-11-07 used Node.js 26.13.0 and the same 10 MB marker fixture. The median of four samples fell from 5,141.7 ms to 2,708.2 ms for the built CLI and from 2,375.7 ms to 1,194.9 ms for `processSource`. The corresponding peak RSS readings were 920.1 to 481.7 MiB for the CLI and 1,027.5 to 826.5 MiB for `processSource`. These single peak readings vary with garbage collection. The benchmark normally prints averages, so this comparison calculated the median from the sorted `stats.samples` returned by `bench/worker.ts`.
+
+Measured before the parse hand-off, 2026-11-07 on an Apple M2 Max, macOS arm64, Node.js 26.13.0, using the marker-heavy fixture. Each marker has the same expression and occurs about once per kilobyte. The source steps run from TypeScript; the built CLI writes the stale values to disk. See [`bench/README.md`](../../bench/README.md) for fixture definitions, sample counts, RSS semantics, and limitations. Times are milliseconds; RSS is MiB. Each case runs in its own process, but RSS includes all its samples and process initialization. CLI RSS comes from a separate invocation.
 
 ```sh
 pnpm bench

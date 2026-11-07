@@ -2,9 +2,10 @@ import { pathToFileURL } from 'node:url';
 import './loader.ts';
 import {
 	parseMarkdown, COMMENT_TAG, MARKER_OPEN, MARKER_CLOSE,
-	COMMENT_CLOSE, EXPORT_PREFIX, buildExpressionMap, type Marker,
+	COMMENT_CLOSE, EXPORT_PREFIX, buildExpressionMap, type Marker, type ParseResult,
 } from './parse-markdown.ts';
 import { coerceValue } from './coerce-value.ts';
+import { handoffKey, parsedHandoffs } from './parsed-handoff.ts';
 
 const getLineEnding = (source: string, markers: Marker[]): string => {
 	const unchangedParts: string[] = [];
@@ -35,8 +36,9 @@ const getLineEnding = (source: string, markers: Marker[]): string => {
 export const processSource = async (
 	source: string,
 	filePath: string,
+	parsed: ParseResult = parseMarkdown(source),
 ): Promise<string> => {
-	const { markers } = parseMarkdown(source);
+	const { markers } = parsed;
 
 	if (markers.length === 0) {
 		return source;
@@ -44,7 +46,15 @@ export const processSource = async (
 
 	const lineEnding = getLineEnding(source, markers);
 
-	const rawValues = await import(pathToFileURL(filePath).href);
+	const url = pathToFileURL(filePath).href;
+	const resolvedUrl = handoffKey(url);
+	parsedHandoffs.set(resolvedUrl, {
+		source,
+		parsed,
+	});
+	const rawValues = await import(url).finally(() => {
+		parsedHandoffs.delete(resolvedUrl);
+	});
 	const expressionMap = buildExpressionMap(markers);
 	const markerValues: unknown[] = await rawValues[`${EXPORT_PREFIX}markers`]();
 
