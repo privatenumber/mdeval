@@ -2,9 +2,10 @@ import { pathToFileURL } from 'node:url';
 import './loader.ts';
 import {
 	parseMarkdown, COMMENT_TAG, MARKER_OPEN, MARKER_CLOSE,
-	COMMENT_CLOSE, EXPORT_PREFIX, buildExpressionMap, type Marker,
+	COMMENT_CLOSE, EXPORT_PREFIX, buildExpressionMap, type Marker, type ParseResult,
 } from './parse-markdown.ts';
 import { coerceValue } from './coerce-value.ts';
+import { handoffKey, parsedHandoffs } from './parsed-handoff.ts';
 
 const getLineEnding = (source: string, markers: Marker[]): string => {
 	const unchangedParts: string[] = [];
@@ -35,8 +36,9 @@ const getLineEnding = (source: string, markers: Marker[]): string => {
 export const processSource = async (
 	source: string,
 	filePath: string,
+	parsed: ParseResult = parseMarkdown(source),
 ): Promise<string> => {
-	const { markers } = parseMarkdown(source);
+	const { markers } = parsed;
 
 	if (markers.length === 0) {
 		return source;
@@ -44,7 +46,25 @@ export const processSource = async (
 
 	const lineEnding = getLineEnding(source, markers);
 
-	const rawValues = await import(pathToFileURL(filePath).href);
+	const url = pathToFileURL(filePath).href;
+	const key = handoffKey(url);
+	const handoff = {
+		source,
+		parsed,
+	};
+	parsedHandoffs.set(key, handoff);
+	// Await the import directly, not through .finally() or an async helper. Each
+	// extra promise reaction lets un-awaited work in script blocks settle before
+	// the markers evaluate, which changes their values.
+	let rawValues;
+	try {
+		rawValues = await import(url);
+	} finally {
+		// An overlapping call for the same file may have replaced the entry.
+		if (parsedHandoffs.get(key) === handoff) {
+			parsedHandoffs.delete(key);
+		}
+	}
 	const expressionMap = buildExpressionMap(markers);
 	const markerValues: unknown[] = await rawValues[`${EXPORT_PREFIX}markers`]();
 

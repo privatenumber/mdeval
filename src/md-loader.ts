@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { generateModule } from './generate-module.ts';
 import { createSourceBuilder } from './source-builder.ts';
 import { nodeModulesPattern } from './node-modules.ts';
+import { handoffKey, parsedHandoffs } from './parsed-handoff.ts';
 
 const utf8Decoder = new TextDecoder('utf-8', {
 	fatal: true,
@@ -25,8 +26,18 @@ export const load: LoadHookSync = (url, context, nextLoad) => {
 	} catch {
 		throw new Error(`${filePath}: not valid UTF-8`);
 	}
+	// Standalone `mdeval/loader` imports never register a hand-off; skip the realpath.
+	let parsed;
+	if (parsedHandoffs.size > 0) {
+		const key = handoffKey(url);
+		const handoff = parsedHandoffs.get(key);
+		parsedHandoffs.delete(key);
+		if (handoff?.source === source) {
+			parsed = handoff.parsed;
+		}
+	}
 	const out = createSourceBuilder(filePath, source);
-	for (const { text, sourceOffset } of generateModule(source)) {
+	for (const { text, sourceOffset } of generateModule(source, parsed)) {
 		if (sourceOffset === undefined) {
 			out.appendSynthetic(text);
 		} else {

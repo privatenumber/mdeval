@@ -119,7 +119,7 @@ const findCodeRanges = (source: string) => {
 	};
 };
 
-type ParseResult = {
+export type ParseResult = {
 	scriptBlocks: ScriptBlock[];
 	markers: Marker[];
 };

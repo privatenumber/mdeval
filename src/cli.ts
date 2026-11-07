@@ -62,7 +62,7 @@ await Promise.all(files.map(async (file) => {
 			console.warn(`${WARNING_PREFIX} ${file} has no markdown content outside of mdeval blocks`);
 		}
 
-		const output = await processSource(source, resolvedPath);
+		const output = await processSource(source, resolvedPath, parsed);
 
 		if (output !== source) {
 			if (argv.flags.check) {
