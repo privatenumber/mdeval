@@ -6,25 +6,15 @@ The CLI parses each input with [`parseMarkdown`](../../src/parse-markdown.ts) an
 
 The loader hand-off keys file URLs by real path. On macOS, for example, `/var` can resolve to `/private/var`; using the original file URL misses the hand-off. It does not call `import.meta.resolve()`: that would invoke registered resolve hooks before the import and could change what a stateful hook loads. Cached modules and imports of other Markdown files work without a hand-off.
 
-## CLI compile cache
+## Rejected: enabling Node's compile cache by default
 
-The CLI entry calls [`module.enableCompileCache()`](https://nodejs.org/download/release/v22.21.1/docs/api/module.html#moduleenablecompilecachecachedir) before dynamically importing the rest of the CLI. Node added the API in 22.8.0, before the minimum supported version. Node uses its default cache location unless `NODE_COMPILE_CACHE` specifies one; `NODE_DISABLE_COMPILE_CACHE=1` disables it. Cached code can produce less precise V8 coverage, so disable it for coverage runs.
+On 2026-11-07, calling [`module.enableCompileCache()`](https://nodejs.org/download/release/v22.21.1/docs/api/module.html#moduleenablecompilecachecachedir) in a minimal CLI entry, before importing the rest, saved about 3 to 6 ms per warm run on the default CLI fixtures with Node.js 26.13.0. On the README it saved 0 to 8 ms, depending on machine load. mdeval does not enable it, because the cache is process-wide and has these costs:
 
-On 2026-11-07, an interleaved comparison used Node.js 26.13.0 on macOS arm64, the `bench/fixtures.ts` default CLI fixtures, seven fresh processes per build and fixture, and a warmed cache. Each process received a fresh copy of the fixture. Times are median milliseconds, comparing the build with only the parse hand-off to the build that also enables the cache. `uptime` load averages were 127.34 / 58.27 / 32.96 before and 96.99 / 55.78 / 32.66 after. The high load limits confidence in differences of a few milliseconds. The comparison timed individual processes instead of using the benchmark's four-sample aggregate.
+- **It copies user code outside the workspace.** Node caches the type-stripped source of the loader's `module-typescript` output by filename, so Markdown script blocks and marker expressions persist in the temporary cache, also with `--check`. See the [type-stripping cache lookup](https://github.com/nodejs/node/blob/v24.14.1/lib/internal/modules/typescript.js#L192-L216).
+- **A shared temporary directory allows cache poisoning.** The default cache is `os.tmpdir()/node-compile-cache`. Node creates it with `MKDirpSync` and accepts an existing directory (`UV_EEXIST`) without an ownership check, and cache entries carry only checksums. On a multi-user Linux machine with a shared `/tmp`, another user can create the directory first and plant code that runs as the mdeval user. See the [directory creation](https://github.com/nodejs/node/blob/v24.14.1/src/compile_cache.cc#L575-L587).
+- **It reduces V8 coverage precision** for jobs that run mdeval under coverage, which Node's documentation warns about.
 
-| Fixture | Size | Without cache | Compile cache |
-| --- | ---: | ---: | ---: |
-| Prose | 10 kB | 99.4 | 95.8 |
-| Prose | 100 kB | 97.6 | 91.9 |
-| Markers | 10 kB | 132.5 | 128.5 |
-| Markers | 100 kB | 169.1 | 163.2 |
-| Scripts | 10 kB | 133.6 | 129.7 |
-| Scripts | 100 kB | 166.8 | 160.7 |
-| GFM | 10 kB | 143.6 | 140.3 |
-| GFM | 100 kB | 206.4 | 206.0 |
-| README | 8.3 kB | 121.9 | 122.0 |
-
-An earlier seven-sample README comparison under lower load measured 123.0 to 115.2 ms, consistent with a 10 ms `NODE_COMPILE_CACHE` probe during the audit. These comparisons measure warm cache only; they do not establish cold-start cost or tail latency.
+Users can opt in for their own runs with `NODE_COMPILE_CACHE=<dir>`. Evaluate again if Node scopes the default cache to a per-user, owner-checked directory and if the API can exclude user modules.
 
 An earlier one-off measurement on 2026-11-06 used Node.js 24.14.0 on macOS and the built CLI on a 52.5 MB Markdown file with one marker and repeated plain text lines. It took 129 s and 5.1 GB maximum resident memory. This fixture and runtime differ from the benchmarks below.
 
