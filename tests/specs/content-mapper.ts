@@ -181,8 +181,9 @@ describe('content mapper', () => {
 	test('uses published types for mdeval runtime helpers', async () => {
 		const result = await typecheckMdeval({
 			'imported.md': '<!--mdeval\nimport { block } from "mdeval";\nblock("hello").toFixed();\n-->',
-			'global.md': [
+			'helpers.md': [
 				'<!--mdeval',
+				'import { block, $ } from "mdeval";',
 				'const output: string = (await $`echo`).stdout;',
 				'-->',
 				'<!--mdeval block("hello").toFixed()-->old<!--/mdeval-->',
@@ -192,17 +193,18 @@ describe('content mapper', () => {
 		expect(result).toStrictEqual({
 			exitCode: 2,
 			output: [
-				"global.md(4,27): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+				"helpers.md(5,27): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
 				"imported.md(3,16): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
 			].join('\n'),
 		});
 	});
 
-	test('checks a project that uses helper globals across files without errors', async () => {
+	test('checks a project that imports helpers across files without errors', async () => {
 		const result = await typecheckMdeval({
 			'README.md': [
 				'# Project',
 				'<!--mdeval',
+				'import { block, $ } from "mdeval";',
 				'import { contacts } from "./docs/contacts.md";',
 				'const branch: string = (await $`git branch --show-current`).stdout;',
 				'-->',
@@ -211,6 +213,7 @@ describe('content mapper', () => {
 			].join('\n'),
 			'docs/contacts.md': [
 				'<!--mdeval',
+				'import { block } from "mdeval";',
 				'type Contact = { name: string };',
 				'export const contacts: Contact[] = [{ name: "a" }];',
 				'-->',
@@ -222,6 +225,105 @@ describe('content mapper', () => {
 				'export default names;',
 			].join('\n'),
 		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('reports a conflicting project global', async () => {
+		for (const skipLibraryCheck of [false, true]) {
+			const result = await typecheckMdeval({
+				'tsconfig.json': JSON.stringify({
+					compilerOptions: {
+						module: 'nodenext',
+						target: 'esnext',
+						noEmit: true,
+						skipLibCheck: skipLibraryCheck,
+						types: [],
+					},
+					contentMappers: [{
+						package: 'mdeval',
+						extensions: ['.md'],
+					}],
+					files: ['globals.d.ts', 'example.md'],
+				}),
+				'globals.d.ts': 'export {}; declare global { var block: (value: unknown) => number; }',
+				'example.md': '<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
+			});
+			expect(result.exitCode).toBe(2);
+			expect(result.output).toMatch(/error TS2403:/);
+		}
+	});
+
+	test('checks unimported helpers', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					erasableSyntaxOnly: true,
+					noEmit: true,
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				include: ['*.md', '*.ts'],
+			}),
+			'example.md': '<!--mdeval\nconst output: string = (await $`echo`).stdout;\n-->\n<!--mdeval block(42)-->42<!--/mdeval-->',
+			'main.ts': 'const result: string = block(42); void result;',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('checks unimported helper types', async () => {
+		const result = await typecheckMdeval({
+			'example.md': '<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
+			'shell.md': '<!--mdeval (await $`echo`).stdout.toFixed()-->old<!--/mdeval-->',
+		});
+		expect(result.exitCode).toBe(2);
+		expect(result.output).toMatch(/^example\.md\(1,22\): error TS2551:/);
+		expect(result.output).toMatch(/shell\.md\(1,35\): error TS2551:/);
+	});
+
+	test('keeps the marker guard out of other modules', async () => {
+		const result = await typecheckMdeval({
+			'example.md': '<!--mdeval 42-->old<!--/mdeval-->',
+			'main.ts': '__mdeval_guard(42);',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: "main.ts(1,1): error TS2304: Cannot find name '__mdeval_guard'.",
+		});
+	});
+
+	test('resolves helper types through paths for Markdown outside the project', async () => {
+		await using fixture = await createFixture({
+			'project/package.json': JSON.stringify({ type: 'module' }),
+			'project/tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					noEmit: true,
+					types: [],
+					paths: { mdeval: ['./node_modules/mdeval/dist/runtime.d.mts'] },
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				include: ['../README.md'],
+			}),
+			'project/node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
+			'README.md': '<!--mdeval block(42)-->42<!--/mdeval-->',
+		});
+		const result = await tsc(['--runExternalCode', '--pretty', 'false'], path.join(fixture.path, 'project'));
 		expect(result).toStrictEqual({
 			exitCode: 0,
 			output: '',

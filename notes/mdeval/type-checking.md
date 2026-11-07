@@ -10,24 +10,36 @@ TypeScript 7.1 adds content mappers: a project registers a package for a file ex
 
 **Decision:** keep one generator. Script scope, imports between `.md` files, and evaluate-once deduplication of repeated marker expressions then cannot drift between what the checker sees and what runs. [The content-mapper spec](../../tests/specs/content-mapper.ts) locks these behaviors, including the rule that a repeated expression reports errors only at its first occurrence.
 
-## Helper globals are declared with `declare global`
+## Global helper types
 
-The CLI and `mdeval/loader` put `block` and `$` on `globalThis`, so `.md` files call them without an import. The checker cannot see that assignment. Without a declaration, it reported `Cannot find name 'block'` for every file that used a helper (observed 2026-11-05 with `typescript@7.1.0-beta`).
+**Decision:** Markdown must type-check with `block` and `$` without imports. Each mapped TypeScript module declares both globals using `typeof import('mdeval')`, so their types come from the runtime exports. Imports and local shadowing remain valid. Explicit imports were tried and rejected because they violate this requirement. The [content-mapper spec](../../tests/specs/content-mapper.ts) tests these cases and a conflicting global.
 
-**Decision:** [the content mapper](../../src/content-mapper.ts) appends `declare global { var block: typeof import('mdeval').block; var $: typeof import('mdeval').$; }` to each virtual file. The types come from the published `mdeval` entry, so they cannot drift from the runtime.
+The declarations affect the entire TypeScript program, including files that do not run through the loader. A different global `block` or `$` can produce TS2403 or describe a different runtime value. Use a separate tsconfig for Markdown that excludes conflicting declarations from all loaded files, including root files, the import graph, and `compilerOptions.types` inherited through `extends` (for example, `zx/globals`), as [Cypress recommends for conflicting test globals](https://docs.cypress.io/app/tooling/typescript-support). TypeScript has no per-file global environment: [#37053](https://github.com/microsoft/TypeScript/issues/37053) has been open since 2020 and is labeled Awaiting More Feedback; in [#60751](https://github.com/microsoft/TypeScript/issues/60751#issuecomment-2539658042), Ryan Cavanaugh explains why scoped types are not practical or well-defined.
 
-- **Global, not a module binding:** an injected `import { block } from 'mdeval'` or `declare const block` would conflict with a user's own import or `const block`. A global is shadowed by those declarations, the same as at runtime. [The content-mapper spec](../../tests/specs/content-mapper.ts) locks the global, imported, and shadowed cases.
-- **Repeated declarations are allowed:** every `.md` file declares the same `var`s, and TypeScript merges `var` declarations with identical types.
-- **The cost is about 3 KB of memory per file, and no measurable time.** Measured 2026-11-05 with `typescript@7.1.0-beta` on Node.js 24.14.0, macOS arm64. Each file imported the helpers explicitly, so the same files checked cleanly with and without the declaration. Medians of 5 interleaved `tsc --runExternalCode --extendedDiagnostics` runs after a warmup:
+**Scope:** the declarations reach every file in the TypeScript program, not only Markdown. A `main.ts` with `const result: string = block(42);` and no import type-checks (the content-mapper spec's "checks unimported helpers" case). This mirrors runtime: [the loader](../../src/loader.ts) runs `Object.assign(globalThis, { block, $ })`, so every module in a process that loads it, through the CLI or `--import mdeval/loader`, can use the helpers without imports. The types are accurate for code that runs under the loader and too permissive for code that also runs elsewhere:
 
-  | `.md` files | Total time without / with | Memory without / with |
-  | --- | --- | --- |
-  | 1 | 0.212 s / 0.211 s | 112.2 MB / 112.5 MB |
-  | 1,000 | 0.304 s / 0.309 s | 121.9 MB / 125.0 MB |
-  | 10,000 | 1.292 s / 1.316 s | 219.8 MB / 245.6 MB |
+| Where a `.ts` file runs | `block` / `$` at runtime | Global types |
+| --- | --- | --- |
+| Imported by Markdown, under the CLI or loader | Present | Accurate |
+| Its own process, without the loader | `undefined` | Too permissive |
 
-  The time differences are within run-to-run noise: a second 1,000-file run measured 0.322 s without and 0.316 s with. If memory matters for very large projects, one shared declaration file would replace the per-file copies.
-- **Accepted trade-off:** the augmentation is visible to every file in the program, including `.ts` files. Those files see the globals only when the loader runs them, and [Node.js usage](../../docs/node.md#helpers-without-the-loader) recommends the explicit import there.
+A tsconfig that does not include Markdown never runs the mapper, so it declares nothing. Checking Markdown under its own tsconfig keeps the rest of the project free of these globals. Files that Markdown imports are still loaded into the Markdown program, where the globals exist, but the main program checks them without the globals.
+
+**Rejected alternative:** a shared `mdeval/globals` declaration referenced by each mapped file. With `typescript@7.1.0-beta`, `skipLibCheck: true`, `files: ["globals.d.ts", "example.md"]`, a project declaration of `var block: (value: unknown) => number`, and the marker `block(42).toFixed()`, the shared declaration reported no error. The competing type silently won. The per-file declaration reports TS2403 in this order, even with `skipLibCheck`, because the later declaration is in the mapped `.mts` module. Reversing the order suppresses TS2403 on the later `.d.ts`; in this example the marker instead reports TS2551 because the Markdown declaration's string return type wins. The mapper cannot control file order. Also, with `../README.md` outside a project's installation tree and a `paths` mapping for `mdeval`, the shared type reference reported TS2688 and TS2552. A mapped-module `typeof import('mdeval')` honors the mapping. The [regression tests](../../tests/specs/content-mapper.ts) cover the reporting order and `paths` case.
+
+[svelte2tsx 0.7.63](https://github.com/sveltejs/language-tools/blob/svelte2tsx%400.7.63/packages/svelte2tsx/src/svelte2tsx/index.ts#L293) references [Svelte 5.57.3's global rune types](https://github.com/sveltejs/svelte/blob/svelte%405.57.3/packages/svelte/types/index.d.ts#L3341); its reference assumes Svelte is installed and resolvable from the component. [zx 8.8.5](https://github.com/google/zx/blob/8.8.5/src/globals.ts#L15-L25) and [Vitest](https://vitest.dev/config/globals) also provide global types, but those examples do not avoid the two mdeval failures above.
+
+Module-local declarations would conflict with imports and local declarations unless the mapper performs binding analysis. [ts-content-mapper 0.1.1](https://github.com/sxzz/ts-content-mapper/blob/v0.1.1/src/protocol.ts#L46-L51) supplies source text and a filename, not a parser. Vue's language service instead uses TypeScript's parser and rewrites identifiers. [MDX 0.6.4](https://github.com/mdx-js/mdx-analyzer/blob/%40mdx-js/language-server%400.6.4/packages/language-service/lib/virtual-code.js#L61-L83) uses a function scope for its component while keeping imports and exports outside it. That scope cannot cover helper uses in mdeval script blocks, which [run at module scope](../../src/generate-module.ts). [Astro 4.0.0](https://github.com/withastro/compiler/blob/%40astrojs/compiler%404.0.0/internal/printer/print-to-tsx.go#L405-L420) uses a module-local declaration for the reserved `Astro` name; mdeval helpers can be shadowed. Revisit this decision if TypeScript adds scoped globals or conflicts are reported in practice.
+
+The mapper still declares the reserved `__mdeval_guard` in module scope because generated marker expressions call it. The loader supplies the runtime value; its generic type preserves marker inference without modifying program globals.
+
+On 2026-11-05, `typescript@7.1.0-beta` on Node.js 24.14.0 and macOS arm64 checked files importing both helpers with and without per-file declarations. Median of five interleaved `tsc --runExternalCode --extendedDiagnostics` runs after a warmup: 10,000 files used 219.8 MB without declarations and 245.6 MB with them, about 3 KB per file; total time was 1.292 s and 1.316 s respectively. These are TypeScript's reported memory figures, not combined process RSS.
+
+The installed `zx@8.8.5-lite` exports no `zx/globals`. On 2026-11-07, a temporary project tested the shared-reference implementation with full zx installed using `pnpm add zx@8.8.5 @types/node@26.6.6 @types/fs-extra@11.0.4`, symlinked `node_modules/mdeval` to the built project, and checked a Markdown marker using `$` with `types: ["zx/globals"]`. With TypeScript 7.1.0-beta and Node.js 24.14.1, `node <typescript7/bin/tsc> --noEmit --runExternalCode --pretty false` exited 2 with:
+
+```text
+node_modules/.pnpm/zx@8.8.5/node_modules/zx/build/globals.d.ts(7,9): error TS2403: Subsequent variable declarations must have the same type.  Variable '$' must be of type '$', but here has type '$'.
+```
 
 ## Packaging requirements
 
