@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'manten';
 import { createFixture } from 'fs-fixture';
+import spawn from 'nano-spawn';
 import { processSource } from '../../src/process-source.ts';
 
 // Fixtures that import a relative module declare their module type. The suite also
@@ -14,6 +15,36 @@ const processMarkdown = async (source: string) => {
 };
 
 describe('processSource', () => {
+	test('respects a stateful module resolve hook', async () => {
+		const source = '<!--mdeval\nconst x = 0;\n-->\n<!--mdeval x-->old<!--/mdeval-->';
+		const runner = `
+			import { registerHooks } from 'node:module';
+			import { fileURLToPath } from 'node:url';
+			const { processSource } = await import(${JSON.stringify(new URL('../../src/process-source.ts', import.meta.url).href)});
+			const root = new URL('.', import.meta.url);
+			const input = new URL('0.md', root);
+			let index = 0;
+			registerHooks({ resolve(specifier, context, next) {
+				return next(specifier === input.href ? new URL(String(++index) + '.md', root).href : specifier, context);
+			} });
+			console.log(await processSource(${JSON.stringify(source)}, fileURLToPath(input)));
+		`;
+		await using fixture = await createFixture({
+			'0.md': source,
+			'1.md': source.replace('= 0', '= 1'),
+			'2.md': source.replace('= 0', '= 2'),
+			'run.mjs': runner,
+		});
+		const result = await spawn(process.execPath, ['--import', 'tsx', fixture.getPath('run.mjs')]);
+		expect(result.stdout).toBe(source.replace('old', '1'));
+	});
+
+	test('evaluates the file on disk when it differs from the source', async () => {
+		const source = '<!--mdeval\nconst x = 1;\n-->\n<!--mdeval x-->old<!--/mdeval-->';
+		await using fixture = await createFixture({ 'test.md': source.replace('= 1', '= 22') });
+		expect(await processSource(source, fixture.getPath('test.md'))).toBe(source.replace('old', '22'));
+	});
+
 	test('replaces marker with computed value', async () => {
 		const source = '<!--mdeval\nconst x = 1 + 1;\n-->\n\nResult: <!--mdeval x-->old<!--/mdeval-->';
 		const output = await processMarkdown(source);
