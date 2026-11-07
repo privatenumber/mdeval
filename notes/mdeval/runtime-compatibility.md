@@ -52,6 +52,6 @@ pnpm dlx node@22.21.1 --import tsx tests/index.ts
 pnpm dlx node@24.11.0 tests/index.ts
 ```
 
-Node.js 22 cannot parse `await using` in the test suite (`SyntaxError: Unexpected identifier 'fixture'` on 22.18.0), so [tsx](https://tsx.is) runs it there. `pnpm dlx node@<version>` also puts that binary first on `PATH` for child processes, so the CLI, recipe, source-map, and content-mapper specs run the real loader and mapper on that version. Each run reported `214 passed`.
+Node.js 22 cannot parse `await using` in the test suite (`SyntaxError: Unexpected identifier 'fixture'` on 22.18.0), so [tsx](https://tsx.hirok.io) runs it there. `pnpm dlx node@<version>` also puts that binary first on `PATH` for child processes, so the CLI, recipe, source-map, and content-mapper specs run the real loader and mapper on that version. Each run reported `214 passed`.
 
 The `process-source` fixtures that import a relative `.js` or `.ts` module include `{"type": "module"}`. Without it, tsx on Node.js 22.x releases through 22.22 parses an ESM `.js` file in a directory without a package type as CommonJS, while Node.js itself detects it as ESM ([privatenumber/tsx#867](https://github.com/privatenumber/tsx/issues/867)). Remove the field from those fixtures when tsx fixes that issue.
