@@ -6,7 +6,7 @@ The CLI parses each input with [`parseMarkdown`](../../src/parse-markdown.ts) an
 
 ### Hand-off design
 
-[`parsed-handoff.ts`](../../src/parsed-handoff.ts) holds a `Map` from a file's real path to `{ source, parsed }`. `processSource` adds the entry right before `import()` and deletes it when the import settles; the loader takes and deletes the entry for the file it loads. The entry never outlives `processSource`'s own reference to the parse result, so it adds no memory. These decisions were checked on 2026-11-07 with Node.js 22.21.1 and 26.13.0:
+[`parsed-handoff.ts`](../../src/parsed-handoff.ts) holds a `Map` from a file's real path to `{ source, parsed }`. `processSource` adds the entry right before `import()`. The first load of that file takes and deletes it, which can happen before a module with top-level await settles. If no load takes it, for example because the module is already cached, `processSource` deletes it when the import settles, unless an overlapping call for the same file replaced it. The entry references the same source string and parse result that `processSource` holds, so it keeps no extra copy; its own cost is one small object and a path key. Reuse is best-effort: another import of the same file can take the entry first, and the loader then parses as before. The source comparison keeps the output correct in every case. These decisions were checked on 2026-11-07 with Node.js 22.21.1 and 26.13.0:
 
 - **The channel is a module-level `Map`.** Import attributes cannot carry the hand-off: `import(url, { with: { handoff: '1' } })` throws `ERR_IMPORT_ATTRIBUTE_UNSUPPORTED` on both versions. A query string would make a separate module instance with a different `import.meta.url`. The load hook runs in the same thread (`module.registerHooks()` in [`loader.ts`](../../src/loader.ts)), so the `Map` is visible to it.
 - **The key is the real filesystem path, without the URL's query or fragment.** On macOS, `/var` resolves to `/private/var`. A resolve hook can also add a query, such as `?v=1`, to the same file. Keying by URL missed the hand-off in both cases and parsed again. The source comparison keeps reuse correct whichever URL loads the file.
@@ -22,7 +22,7 @@ Stress test, 2026-11-07, Node.js 26.13.0, built CLI on `*.md` with every file re
 | 100 × 100 kB marker fixture | 4.62 s | 2.58 s | 246 to 351 MiB |
 | 10,000 one-marker files | 2.64 s | 2.28 s | 317 to 324 MiB |
 
-The CLI starts all imports concurrently, so every pending file has an entry at once, and each Markdown load calls `realpathSync.native` once while entries exist. That cost does not show at 10,000 files. Standalone `mdeval/loader` use skips the lookup when the `Map` is empty.
+The CLI starts all imports concurrently, so many entries can exist at once, and each Markdown load calls `realpathSync.native` once while any entry exists. That cost does not show at 10,000 files. Standalone `mdeval/loader` use skips the lookup when the `Map` is empty.
 
 ## Rejected: enabling Node's compile cache by default
 

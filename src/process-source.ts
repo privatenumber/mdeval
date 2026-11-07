@@ -48,10 +48,11 @@ export const processSource = async (
 
 	const url = pathToFileURL(filePath).href;
 	const key = handoffKey(url);
-	parsedHandoffs.set(key, {
+	const handoff = {
 		source,
 		parsed,
-	});
+	};
+	parsedHandoffs.set(key, handoff);
 	// Await the import directly, not through .finally() or an async helper. Each
 	// extra promise reaction lets un-awaited work in script blocks settle before
 	// the markers evaluate, which changes their values.
@@ -59,7 +60,10 @@ export const processSource = async (
 	try {
 		rawValues = await import(url);
 	} finally {
-		parsedHandoffs.delete(key);
+		// An overlapping call for the same file may have replaced the entry.
+		if (parsedHandoffs.get(key) === handoff) {
+			parsedHandoffs.delete(key);
+		}
 	}
 	const expressionMap = buildExpressionMap(markers);
 	const markerValues: unknown[] = await rawValues[`${EXPORT_PREFIX}markers`]();
