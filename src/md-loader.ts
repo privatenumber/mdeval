@@ -26,11 +26,17 @@ export const load: LoadHookSync = (url, context, nextLoad) => {
 	} catch {
 		throw new Error(`${filePath}: not valid UTF-8`);
 	}
-	const key = handoffKey(url);
-	const handoff = parsedHandoffs.get(key);
-	parsedHandoffs.delete(key);
+	// Standalone `mdeval/loader` imports never register a hand-off; skip the realpath.
+	let parsed;
+	if (parsedHandoffs.size > 0) {
+		const key = handoffKey(url);
+		const handoff = parsedHandoffs.get(key);
+		parsedHandoffs.delete(key);
+		if (handoff?.source === source) {
+			parsed = handoff.parsed;
+		}
+	}
 	const out = createSourceBuilder(filePath, source);
-	const parsed = handoff?.source === source ? handoff.parsed : undefined;
 	for (const { text, sourceOffset } of generateModule(source, parsed)) {
 		if (sourceOffset === undefined) {
 			out.appendSynthetic(text);

@@ -3,7 +3,7 @@
 - [Runtime compatibility](./runtime-compatibility.md): development runtime versus consumer support, why `engines.node` has its bounds, and how CI tests them.
 - [Encoding](./encoding.md): why the loader, not the CLI, rejects invalid UTF-8, how byte order marks survive a rewrite, and how generated values follow the document's line endings.
 - [Error reporting](./error-reporting.md): why the error-location formatter must not throw, and why it scans only stack frames.
-- [Performance](./performance.md): measured CLI time and memory for large files, and the four parses per file.
+- [Performance](./performance.md): measured CLI time and memory for large files, and how the CLI hands one parse result to the loader.
 - [CLI tests](./cli-tests.md): why the stderr-flushing test pipes the CLI through `sh` instead of reading the child's stderr with `node:child_process` or nano-spawn.
 - [cleye](./cleye.md): why the cleye minimum stays at `^2.3.0`, the separate ansis copy that renders `--help`, and why warnings detect color on stderr with `util.styleText()`.
 - [Git hook](./git-hook.md): why the pre-commit recipe only runs `--check`, with the scenarios that rule out staging or rewriting in the hook.
