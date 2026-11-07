@@ -3,13 +3,12 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { generateModule } from './generate-module.ts';
 import { createSourceBuilder } from './source-builder.ts';
+import { nodeModulesPattern } from './node-modules.ts';
 
 const utf8Decoder = new TextDecoder('utf-8', {
 	fatal: true,
 	ignoreBOM: true,
 });
-
-const nodeModulesPattern = /[\\/]node_modules[\\/]/;
 
 // For module.registerHooks(), which runs hooks synchronously in-thread
 export const load: LoadHookSync = (url, context, nextLoad) => {

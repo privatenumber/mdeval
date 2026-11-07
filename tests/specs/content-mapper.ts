@@ -1,5 +1,7 @@
 import path from 'node:path';
-import { describe, test, expect } from 'manten';
+import {
+	describe, test, expect, skip,
+} from 'manten';
 import { createFixture, type FileTree } from 'fs-fixture';
 import spawn, { SubprocessError } from 'nano-spawn';
 
@@ -59,6 +61,7 @@ const typecheckMdeval = async (files: FileTree) => {
 	return await tsc(['--runExternalCode', '--pretty', 'false'], fixture.path);
 };
 
+// Each test starts tsc and a mapper process; TypeScript gives the mapper 5 s to initialize
 describe('content mapper', () => {
 	test('checks overload declarations and implementations across script blocks', async () => {
 		const result = await typecheckMdeval({
@@ -357,4 +360,245 @@ describe('content mapper', () => {
 			output: 'example.md(3,1): error mdeval1: mdeval: unclosed script block at offset 11 (missing `-->`)',
 		});
 	});
-});
+
+	test('rejects TypeScript syntax in node_modules Markdown', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					erasableSyntaxOnly: true,
+					allowJs: true,
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				include: ['node_modules/example/data.md'],
+			}),
+			'node_modules/example/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: 'node_modules/example/data.md(2,17): error TS8010: Type annotations can only be used in TypeScript files.',
+		});
+	});
+
+	test('checks JavaScript node_modules Markdown and its exports', async () => {
+		for (const checkJs of [false, true]) {
+			const result = await typecheckMdeval({
+				'tsconfig.json': JSON.stringify({
+					compilerOptions: {
+						module: 'nodenext',
+						target: 'esnext',
+						strict: true,
+						checkJs,
+						noEmit: true,
+						types: [],
+					},
+					contentMappers: [{
+						package: 'mdeval',
+						extensions: ['.md'],
+					}],
+					include: ['node_modules/example/data.md', 'main.ts'],
+				}),
+				'node_modules/example/data.md': [
+					'<!--mdeval',
+					'import { block } from "mdeval";',
+					'/** @param {number} value */',
+					'export const f = value => value;',
+					'/** @param {42} value */',
+					'const literal = value => value;',
+					'-->',
+					'<!--mdeval 42-->42<!--/mdeval-->',
+					'<!--mdeval block(literal(__mdeval_0))-->42<!--/mdeval-->',
+				].join('\n'),
+				'main.ts': 'import { f } from "./node_modules/example/data.md";\nf(42);\n// @ts-expect-error: f requires a number\nf("x");',
+			});
+			expect(result).toStrictEqual({
+				exitCode: 0,
+				output: '',
+			});
+		}
+	});
+
+	test('checks unimported helpers in JavaScript node_modules Markdown', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					erasableSyntaxOnly: true,
+					noEmit: true,
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['node_modules/example/data.md'],
+			}),
+			'node_modules/example/data.md': '<!--mdeval\nconst output = (await $`echo`).stdout;\n-->\n<!--mdeval block(output)-->old<!--/mdeval-->\n<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: "node_modules/example/data.md(5,22): error TS2551: Property 'toFixed' does not exist on type 'string'. Did you mean 'fixed'?",
+		});
+	});
+
+	test('reports a conflicting project global for JavaScript node_modules Markdown', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					skipLibCheck: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['globals.d.ts', 'node_modules/example/data.md'],
+			}),
+			'globals.d.ts': 'export {}; declare global { var block: (value: unknown) => number; }',
+			'node_modules/example/data.md': '<!--mdeval block(42).toFixed()-->old<!--/mdeval-->',
+		});
+		expect(result.exitCode).toBe(2);
+		expect(result.output).toMatch(/^node_modules\/example\/data\.md\(3,6\): error TS2403:/);
+	});
+
+	test('resolves helper types through paths for JavaScript Markdown outside the project', async () => {
+		await using fixture = await createFixture({
+			'project/package.json': JSON.stringify({ type: 'module' }),
+			'project/tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					noEmit: true,
+					types: [],
+					paths: { mdeval: ['./node_modules/mdeval/dist/runtime.d.mts'] },
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['../node_modules/example/data.md'],
+			}),
+			'project/node_modules/mdeval': ({ symlink }) => symlink(projectRoot),
+			'node_modules/example/data.md': '<!--mdeval block(42)-->42<!--/mdeval-->',
+		});
+		const result = await tsc(['--runExternalCode', '--pretty', 'false'], path.join(fixture.path, 'project'));
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('checks JavaScript marker expressions in node_modules by default', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					strict: true,
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['node_modules/example/data.md'],
+			}),
+			'node_modules/example/data.md': '<!--mdeval Promise.resolve<number>(1)-->old<!--/mdeval-->',
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: [
+				"node_modules/example/data.md(1,12): error TS2365: Operator '>' cannot be applied to types 'boolean' and 'number'.",
+				"node_modules/example/data.md(1,28): error TS2693: 'number' only refers to a type, but is being used as a value here.",
+			].join('\n'),
+		});
+	});
+
+	test('checks symlinks to node_modules as JavaScript', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['docs/dep/data.md'],
+			}),
+			'node_modules/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'docs/dep': ({ symlink, getPath }) => symlink(getPath('node_modules/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 2,
+			output: 'docs/dep/data.md(2,17): error TS8010: Type annotations can only be used in TypeScript files.',
+		});
+	});
+
+	test('checks workspace symlinks in node_modules as TypeScript', async () => {
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['node_modules/dep/data.md'],
+			}),
+			'packages/dep/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'node_modules/dep': ({ symlink, getPath }) => symlink(getPath('packages/dep')),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+
+	test('checks a symlink target with literal backslashes as TypeScript', async () => {
+		if (process.platform === 'win32') {
+			skip('Backslashes are path separators on Windows');
+		}
+		const result = await typecheckMdeval({
+			'tsconfig.json': JSON.stringify({
+				compilerOptions: {
+					module: 'nodenext',
+					target: 'esnext',
+					noEmit: true,
+					types: [],
+				},
+				contentMappers: [{
+					package: 'mdeval',
+					extensions: ['.md'],
+				}],
+				files: ['docs/dep/data.md'],
+			}),
+			'a\\node_modules\\pkg/data.md': '<!--mdeval\nexport const n: number = 42;\n-->',
+			'docs/dep': ({ symlink, getPath }) => symlink(getPath(String.raw`a\node_modules\pkg`)),
+		});
+		expect(result).toStrictEqual({
+			exitCode: 0,
+			output: '',
+		});
+	});
+}, { parallel: 'auto' });

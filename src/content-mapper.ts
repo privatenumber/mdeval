@@ -1,11 +1,60 @@
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { MappedCodeBuilder, runContentMapper } from 'ts-content-mapper';
 import { generateModule } from './generate-module.ts';
 import { MarkdownParseError, COMMENT_TAG } from './parse-markdown.ts';
+import { nodeModulesPattern } from './node-modules.ts';
+
+const globalDeclarations = [
+	'declare global {',
+	'\tvar block: typeof import(\'mdeval\').block;',
+	'\tvar $: typeof import(\'mdeval\').$;',
+	'}',
+].join('\n');
+
+// The CLI and loader seed the helpers on `globalThis`. Declaring them as
+// globals, not module bindings, lets an explicit import or a local
+// `block` shadow them, the same as at runtime. With `skipLibCheck`, the
+// first declaration determines the type and later .d.ts conflicts can be skipped.
+// The guard's type declaration is module-local; its runtime value is global.
+const typescriptFormat = {
+	extension: '.mts' as const,
+	preamble: '',
+	declarations: [globalDeclarations, 'declare const __mdeval_guard: <T>(value: T) => T;'],
+	supplemental: undefined,
+};
+
+// Node runs Markdown under node_modules as JavaScript. `// @ts-check` enables semantic
+// checks without `checkJs`, and JavaScript cannot contain `declare global`, so a virtual
+// .mts file carries the helper declarations.
+const javascriptFormat = {
+	extension: '.mjs' as const,
+	preamble: '// @ts-check\n',
+	declarations: ['/** @type {<T>(value: T) => T} */ const __mdeval_guard = value => value;'],
+	supplemental: [{
+		text: `export {};\n${globalDeclarations}\n`,
+		extension: '.mts' as const,
+	}],
+};
+
+// Node resolves symlinks before loading, so classify the file it will load
+const resolveRealPath = (fileName: string) => {
+	try {
+		return fs.realpathSync(fileName);
+	} catch {
+		// Virtual files may not exist on disk
+		return fileName;
+	}
+};
 
 runContentMapper({
 	diagnosticSource: 'mdeval',
 	positionEncoding: 'utf-16',
-	transform: ({ content }) => {
+	transform: ({ content, fileName }) => {
+		// Match the loader's URL representation, but the filename has no query or fragment.
+		const format = nodeModulesPattern.test(pathToFileURL(resolveRealPath(fileName)).href)
+			? javascriptFormat
+			: typescriptFormat;
 		let chunks;
 		try {
 			chunks = generateModule(content);
@@ -14,8 +63,8 @@ runContentMapper({
 				throw error;
 			}
 			return {
-				text: 'export {};\n',
-				extension: '.mts',
+				text: `${format.preamble}export {};\n`,
+				extension: format.extension,
 				diagnostics: [{
 					messageText: error.message,
 					start: error.offset,
@@ -26,6 +75,7 @@ runContentMapper({
 		}
 
 		const out = new MappedCodeBuilder(content);
+		out.append(format.preamble);
 		for (const { text, sourceOffset } of chunks) {
 			if (sourceOffset === undefined) {
 				out.append(text);
@@ -33,22 +83,10 @@ runContentMapper({
 				out.appendVerbatim(sourceOffset, sourceOffset + text.length);
 			}
 		}
-		// The loader runs Markdown as TypeScript ESM, including script-only files.
-		// The CLI and loader seed the helpers on `globalThis`. Declaring them as
-		// globals, not module bindings, lets an explicit import or a local
-		// `block` shadow them, the same as at runtime. With `skipLibCheck`, the
-		// first declaration determines the type and later .d.ts conflicts can be skipped.
-		// The guard's type declaration is module-local; its runtime value is global.
-		out.append([
-			'',
-			'export {};',
-			'declare global {',
-			'\tvar block: typeof import(\'mdeval\').block;',
-			'\tvar $: typeof import(\'mdeval\').$;',
-			'}',
-			'declare const __mdeval_guard: <T>(value: T) => T;',
-			'',
-		].join('\n'));
-		return out.build('.mts');
+		out.append(['', 'export {};', ...format.declarations, ''].join('\n'));
+		return {
+			...out.build(format.extension),
+			supplemental: format.supplemental,
+		};
 	},
 });
