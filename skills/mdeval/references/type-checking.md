@@ -50,7 +50,7 @@ npx tsc --noEmit --runExternalCode
 
 - Each `.md` file is a TypeScript module. Annotate with TypeScript syntax, such as `const count: number = 42`. JSDoc types are not checked.
 - `erasableSyntaxOnly` reports syntax that fails at runtime, such as `enum`, at its Markdown line.
-- `block` and `$` are available without imports; explicit imports also work. Their global types are visible throughout the TypeScript program.
+- `block` and `$` are available without imports; explicit imports also work. Their global types are visible throughout the TypeScript program, including `.ts` and `.js` files, which matches runtime: the loader puts them on `globalThis` for every module in the process. Code that also runs without the loader should import them, or Markdown should be checked under its own tsconfig.
 - For conflicting globals, including full zx's `$`, use a separate tsconfig for Markdown that excludes the conflicting declaration from all loaded files, including root files, the import graph, and `compilerOptions.types` inherited through `extends` (for example, `zx/globals`). With `skipLibCheck`, the first declaration TypeScript checks determines the type, and a conflicting later `.d.ts` declaration can be skipped. For `a.md`, `globals.d.ts`, then `b.md`, the first Markdown declaration establishes the type and TS2403 can be absent.
 - A repeated marker expression is checked once, and its errors point to the first occurrence.
 - Fenced code, inline code, and rendered marker values are not checked.
