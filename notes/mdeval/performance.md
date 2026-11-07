@@ -2,9 +2,27 @@
 
 ## Parsing an active file
 
-The CLI parses each input with [`parseMarkdown`](../../src/parse-markdown.ts) and passes the result to [`processSource`](../../src/process-source.ts). When that processing loads the file, the loader reuses the result only if its strict UTF-8 read matches the original source; it parses again if the file changed. An earlier import from another Markdown file can still parse the target separately. [`findRenderedLeaks`](../../src/validate-rendering/index.ts) separately parses the content on disk with `fromMarkdown`: the rewritten output, or the unchanged source with `--check`. Files without markers can take fast paths and skip some of these parses.
+The CLI parses each input with [`parseMarkdown`](../../src/parse-markdown.ts) and passes the result to [`processSource`](../../src/process-source.ts). When that processing loads the file, the loader reuses the result only if its strict UTF-8 read matches the original source; it parses again if the file changed. An earlier import from another Markdown file can still parse the target separately. [`findRenderedLeaks`](../../src/validate-rendering/index.ts) separately parses the text the CLI holds in memory with `fromMarkdown`: the rewritten output, or the original source with `--check`. It does not reread the file. Files without markers can take fast paths and skip some of these parses.
 
-The loader hand-off keys file URLs by real path. On macOS, for example, `/var` can resolve to `/private/var`; using the original file URL misses the hand-off. It does not call `import.meta.resolve()`: that would invoke registered resolve hooks before the import and could change what a stateful hook loads. Cached modules and imports of other Markdown files work without a hand-off.
+### Hand-off design
+
+[`parsed-handoff.ts`](../../src/parsed-handoff.ts) holds a `Map` from a file's real path to `{ source, parsed }`. `processSource` adds the entry right before `import()` and deletes it when the import settles; the loader takes and deletes the entry for the file it loads. The entry never outlives `processSource`'s own reference to the parse result, so it adds no memory. These decisions were checked on 2026-11-07 with Node.js 22.21.1 and 26.13.0:
+
+- **The channel is a module-level `Map`.** Import attributes cannot carry the hand-off: `import(url, { with: { handoff: '1' } })` throws `ERR_IMPORT_ATTRIBUTE_UNSUPPORTED` on both versions. A query string would make a separate module instance with a different `import.meta.url`. The load hook runs in the same thread (`module.registerHooks()` in [`loader.ts`](../../src/loader.ts)), so the `Map` is visible to it.
+- **The key is the real filesystem path, without the URL's query or fragment.** On macOS, `/var` resolves to `/private/var`. A resolve hook can also add a query, such as `?v=1`, to the same file. Keying by URL missed the hand-off in both cases and parsed again. The source comparison keeps reuse correct whichever URL loads the file.
+- **No `import.meta.resolve()`.** It invokes registered resolve hooks once more before the import, which changed what a stateful hook loaded. [`tests/specs/process-source.ts`](../../tests/specs/process-source.ts) covers this.
+- **`processSource` awaits `import()` directly.** Every extra promise reaction between module evaluation and marker evaluation lets more un-awaited work in a script block finish first. With a script block that sets `x = 1` after an N-step `.then()` chain, the marker read `1` for N ≤ 6 and `0` for N ≥ 7 on develop. `import(url).finally(...)` moved the threshold by three steps and changed the output. `try`/`finally` around `await import(url)` matches develop for every N from 0 to 10 on both versions. An async helper would add steps for the same reason. The source does not use `using`, because Node.js 22.21.1 cannot parse it.
+- **No test counts parse calls.** Reuse changes only speed, which the benchmarks below measure. A test would have to observe internal calls, not output.
+
+Stress test, 2026-11-07, Node.js 26.13.0, built CLI on `*.md` with every file rewritten, five interleaved runs each, load average 4 to 12:
+
+| Files | develop median | hand-off median | Peak RSS, both |
+| --- | ---: | ---: | --- |
+| 1,000 × 10 kB marker fixture | 4.71 s | 2.61 s | 250 to 261 MiB |
+| 100 × 100 kB marker fixture | 4.62 s | 2.58 s | 246 to 351 MiB |
+| 10,000 one-marker files | 2.64 s | 2.28 s | 317 to 324 MiB |
+
+The CLI starts all imports concurrently, so every pending file has an entry at once, and each Markdown load calls `realpathSync.native` once while entries exist. That cost does not show at 10,000 files. Standalone `mdeval/loader` use skips the lookup when the `Map` is empty.
 
 ## Rejected: enabling Node's compile cache by default
 

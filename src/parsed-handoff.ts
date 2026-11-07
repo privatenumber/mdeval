@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { ParseResult } from './parse-markdown.ts';
 
 type ParsedHandoff = {
@@ -9,11 +9,12 @@ type ParsedHandoff = {
 
 export const parsedHandoffs = new Map<string, ParsedHandoff>();
 
+// Keyed by real path, because several URLs can load one file: /var and
+// /private/var on macOS, or a resolve hook that adds a query. The loader
+// still compares the source before it reuses a hand-off.
 export const handoffKey = (url: string): string => {
-	const parsedUrl = new URL(url);
 	try {
-		const resolved = pathToFileURL(realpathSync.native(fileURLToPath(parsedUrl))).href;
-		return resolved + parsedUrl.search + parsedUrl.hash;
+		return realpathSync.native(fileURLToPath(url));
 	} catch {
 		// Leave file errors to the import or load operation.
 		return url;

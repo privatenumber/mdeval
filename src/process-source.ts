@@ -47,14 +47,20 @@ export const processSource = async (
 	const lineEnding = getLineEnding(source, markers);
 
 	const url = pathToFileURL(filePath).href;
-	const resolvedUrl = handoffKey(url);
-	parsedHandoffs.set(resolvedUrl, {
+	const key = handoffKey(url);
+	parsedHandoffs.set(key, {
 		source,
 		parsed,
 	});
-	const rawValues = await import(url).finally(() => {
-		parsedHandoffs.delete(resolvedUrl);
-	});
+	// Await the import directly, not through .finally() or an async helper. Each
+	// extra promise reaction lets un-awaited work in script blocks settle before
+	// the markers evaluate, which changes their values.
+	let rawValues;
+	try {
+		rawValues = await import(url);
+	} finally {
+		parsedHandoffs.delete(key);
+	}
 	const expressionMap = buildExpressionMap(markers);
 	const markerValues: unknown[] = await rawValues[`${EXPORT_PREFIX}markers`]();
 
