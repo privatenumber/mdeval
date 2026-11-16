@@ -18,14 +18,14 @@ const markerContent = (
 };
 
 describe('parseMarkdown', () => {
-	test('ignores a table marker whose closing tag is in another cell', () => {
+	test('reports a table marker whose closing tag is in another cell', () => {
 		const source = '| a | b | c |\n|---|---|---|\n| ` | <!--mdeval 42-->old | `<!--/mdeval-->` |\n';
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed marker open at offset 34 (`<!--/mdeval-->` at offset 57 does not render as a comment on GitHub)');
 	});
 
-	test('ignores a table marker whose closing tag is in code within the same cell', () => {
+	test('reports a table marker whose closing tag is in code within the same cell', () => {
 		const source = '| a |\n|---|\n| <!--mdeval 42-->old `<!--/mdeval-->` |\n';
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed marker open at offset 14 (`<!--/mdeval-->` at offset 35 does not render as a comment on GitHub)');
 	});
 
 	test('bounds delimiter searches for many incomplete table markers', () => {
@@ -297,6 +297,12 @@ describe('parseMarkdown', () => {
 	test('throws on unclosed marker with CRLF line endings', () => {
 		const source = '<!--mdeval a-->some\r\n\r\n<!--mdeval b-->42<!--/mdeval-->';
 		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('reports a closing tag that GitHub renders as fence info', () => {
+		// The last line opens a fence, so `<!--/mdeval-->` is its info string
+		const source = '<!--mdeval x-->```text\na\n```<!--/mdeval-->';
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed marker open at offset 0 (`<!--/mdeval-->` at offset 28 does not render as a comment on GitHub)');
 	});
 
 	test('throws on marker open with missing -->', () => {
