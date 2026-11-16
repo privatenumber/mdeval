@@ -121,7 +121,7 @@ export const parseMarkdown = (source: string): ParseResult => {
 		const afterTag = start + COMMENT_TAG.length;
 		const nextChar = source[afterTag];
 
-		// A comment that GitHub never closes hides the rest of the page.
+		// A comment that GitHub never closes hides the rest of the page or footnote.
 		// Openings that GitHub shows as text, such as examples in code, are not
 		// comments, so they are not reported.
 		if (contentEnd === end) {

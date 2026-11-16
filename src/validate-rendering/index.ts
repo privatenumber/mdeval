@@ -1,3 +1,4 @@
+import { findComments } from 'gfm-comments';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { gfmFootnote } from 'micromark-extension-gfm-footnote';
 import { gfmFootnoteFromMarkdown } from 'mdast-util-gfm-footnote';
@@ -89,7 +90,8 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 	// micromark (and thus mdast/hast) positions are relative to the
 	// BOM-stripped stream. Strip a leading BOM so the source we slice, the
 	// line index, and every reported offset all share one coordinate space.
-	const body = source.codePointAt(0) === 0xFE_FF ? source.slice(1) : source;
+	const bomLength = source.codePointAt(0) === 0xFE_FF ? 1 : 0;
+	const body = source.slice(bomLength);
 
 	const newlines = buildLineIndex(body);
 	const point: Point = offset => offsetToLineColumn(newlines, offset);
@@ -161,5 +163,12 @@ export const findRenderedLeaks = (source: string): RenderedLeak[] => {
 		);
 	});
 
-	return leaks;
+	// micromark follows CommonMark, but GitHub's tagfilter escapes tags such as
+	// `<textarea>`, so a marker in their text renders as a comment there.
+	// A leak at the start of a comment that GitHub renders is not a leak.
+	const renderedComments = new Set(findComments(source).map(({ start }) => {
+		const { line, column } = point(start - bomLength);
+		return `${line}:${column}`;
+	}));
+	return leaks.filter(({ line, column }) => !renderedComments.has(`${line}:${column}`));
 };

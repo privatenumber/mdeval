@@ -486,6 +486,18 @@ describe('validate-rendering', () => {
 			expect(leaks).toHaveLength(1);
 			expect(leaks[0].line).toBe(2);
 		});
+
+		// GitHub's tagfilter escapes these tags, so their text is parsed as
+		// HTML and the marker renders as a comment, unlike in a CommonMark parse.
+		for (const tag of ['textarea', 'title', 'style', 'script', 'iframe']) {
+			test(`marker inside <${tag}> renders as a comment on GitHub`, () => {
+				expect(findRenderedLeaks(`<${tag}><!--mdeval 1-->x<!--/mdeval--></${tag}>`)).toStrictEqual([]);
+			});
+		}
+
+		test('BOM-prefixed marker inside <textarea> on a later line renders as a comment on GitHub', () => {
+			expect(findRenderedLeaks('\uFEFF<textarea>\n<!--mdeval 1-->x<!--/mdeval-->\n</textarea>')).toStrictEqual([]);
+		});
 	});
 
 	describe('references & footnotes', () => {

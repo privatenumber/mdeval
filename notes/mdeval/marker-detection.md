@@ -1,6 +1,6 @@
 # Marker detection
 
-Verified 2026-11-16 on Node.js 26.13.0, Apple M2 Max, with gfm-comments from its `npm/gfm-comments` branch on this repository (gfm-comments commit `6c37c80`).
+Verified 2026-11-16 on Node.js 26.13.0, Apple M2 Max, with gfm-comments from its current `develop` branch (gfm-comments commit `c28cc01`).
 
 An `<!--mdeval` comment is active only when GitHub renders it as an HTML comment. [`parseMarkdown`](../../src/parse-markdown.ts) gets the rendered comments from [gfm-comments](https://github.com/privatenumber/gfm-comments), which follows GitHub's renderer, cmark-gfm 0.29.0.gfm.13, and GitHub's HTML parsing. A marker is a rendered `<!--mdeval expr-->` paired with the next rendered `<!--/mdeval-->`.
 
@@ -19,11 +19,11 @@ Before, `parseMarkdown` searched the text for `<!--mdeval` and dropped candidate
 | prose, 1 MB | 0.024 | 0.023 |
 | readme, 8 kB | 2.25 | 0.07 |
 
-[Rendering validation](../../src/validate-rendering/index.ts) still uses micromark and mdast, because it reports leak kinds and footnotes that gfm-comments does not model.
+[Rendering validation](../../src/validate-rendering/index.ts) still uses micromark and mdast, because it reports where a marker shows as text and what kind of text it is, such as a code block or an image alt. gfm-comments returns only the comments that GitHub renders. Because micromark follows CommonMark, not GitHub's renderer, the check drops a leak at the start of a comment that gfm-comments returns, such as a marker inside `<textarea>`, which GitHub's tagfilter escapes.
 
 ## Unclosed openings
 
-gfm-comments returns every comment GitHub renders, including one that is never closed and runs to the end of the document (`contentEnd === end`). `parseMarkdown` reports that comment as an unclosed opening, because it hides the rest of the page. An opening in code, or an inline `x <!--mdeval y` with no `-->`, renders as text, so it is not a comment and mdeval ignores it, like any other literal example. An opening closed by `--!>` is skipped, because only `-->` closes an opening.
+gfm-comments returns every comment GitHub renders, including one that is never closed and runs to the end of the document or of a footnote definition (`contentEnd === end`). `parseMarkdown` reports that comment as an unclosed opening, because it hides the rest of the page or footnote. An opening in code, or an inline `x <!--mdeval y` with no `-->`, renders as text, so it is not a comment and mdeval ignores it, like any other literal example. An opening closed by `--!>` is skipped, because only `-->` closes an opening.
 
 This replaced a second scan with `\n-->` appended. That scan reported the inline `x <!--mdeval y` as an error, which GitHub shows as text. It also missed an unclosed opening in a blockquote, such as `> <!--mdeval\n> code\n\nrest`, because the appended `-->` landed outside the blockquote. GitHub hides the rest of the page after that opening.
 
@@ -50,4 +50,4 @@ The micromark-based parser accepted all three outputs, because it found `<!--/md
 
 The check costs one more `parseMarkdown` call per updated file, about 1.5 ms per MB of markers in the benchmark above. The one-marker-at-a-time search runs only when the check fails.
 
-Revisit when GitHub's renderer changes, or when a marker needs a context that gfm-comments does not model, such as footnotes.
+Revisit when GitHub's renderer changes, or when a marker needs a context that gfm-comments does not model.
