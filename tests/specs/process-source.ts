@@ -453,9 +453,30 @@ describe('processSource', () => {
 		await expect(processMarkdown(source)).rejects.toThrow('Expression "x" produced a value containing mdeval comment syntax');
 	});
 
+	test('errors when a value turns its closing tag into fence info', async () => {
+		// The value's closing fence and `<!--/mdeval-->` share a line, which
+		// GitHub renders as a new fence whose info string is the closing tag
+		const source = '<!--mdeval\nconst x = "```text\\na\\n```";\n-->\n\n<!--mdeval x-->old<!--/mdeval-->\n';
+		await expect(processMarkdown(source)).rejects.toThrow('Expression "x" produced a value that changes which mdeval comments GitHub renders, so the next run would not find the same markers. Wrap block-level Markdown, such as a code block, in block().');
+	});
+
+	test('blames the value that hides a later marker', async () => {
+		// The unclosed fence in `x` turns the rest of the document into code
+		const source = '<!--mdeval\nconst x = "\\n```text\\na\\n";\n-->\n\n<!--mdeval x-->old<!--/mdeval-->\n\n<!--mdeval 1-->old<!--/mdeval-->\n';
+		await expect(processMarkdown(source)).rejects.toThrow(/^Expression "x" produced a value that changes which mdeval comments GitHub renders, so the next run would not find the same markers\.$/);
+	});
+
+	test('allows a block-level value on its own lines', async () => {
+		const source = '<!--mdeval\nconst x = "\\n```text\\na\\n```\\n";\n-->\n\n<!--mdeval x-->old<!--/mdeval-->\n';
+		expect(await processMarkdown(source)).toBe(source.replace('old', '\n```text\na\n```\n'));
+	});
+
 	test('allows a bare carriage return after the mdeval tag', async () => {
-		const source = '# Test\r<!--mdeval "<" + "!--mdeval\\rabc"-->old<!--/mdeval-->';
-		expect(await processMarkdown(source)).toBe(source.replace('old', '<!--mdeval\rabc'));
+		// In a paragraph, the value's comment can span the CR and still close before
+		// the closing tag. A marker that starts its line would be an HTML block line,
+		// whose comment would swallow the closing tag on GitHub.
+		const source = '# Test\r\rText <!--mdeval "<" + "!--mdeval\\rabc" + String.fromCharCode(45, 45, 62)-->old<!--/mdeval-->';
+		expect(await processMarkdown(source)).toBe(source.replace('old', '<!--mdeval\rabc-->'));
 	});
 
 	test('allows values containing non-matching mdeval substrings', async () => {

@@ -34,4 +34,18 @@ A value marker whose `<!--/mdeval-->` GitHub shows as text or code reports an er
 - In a GFM table, a closing tag in another cell or in a code span. Before, these markers were ignored, so their values stayed stale without a warning.
 - A closing tag after a fence on the same line, as in `<!--mdeval x-->```text\na\n```<!--/mdeval-->`. The last line opens a fence and `<!--/mdeval-->` becomes its info string. The old text search accepted this marker, although GitHub renders the rest of the file as code.
 
+## Values must keep the markers they were written into
+
+**Decision:** before returning the updated document, [`processSource`](../../src/process-source.ts) parses it again. It requires the same script blocks, and the same markers holding exactly the written values. Otherwise it throws, and the CLI leaves the file unchanged. When the check fails, it applies the values one marker at a time to name the first expression that breaks it. A value changes only how the text after it parses, so that expression is the cause.
+
+Without this check, mdeval wrote values that its next run rejected. On Node.js 26.13.0, with synthetic files run twice through the CLI:
+
+- A code block value without `block()`, such as `<!--mdeval v-->` with `v` set to `` ```text\nVALUE\n``` ``, wrote `` ```<!--/mdeval--> `` on one line, with exit 0 and no rendering warning. GitHub `/markdown` on 2026-11-16 rendered the closing tag as the new fence's `lang` and the rest of the file as code. The second run reported the marker as unclosed.
+- A value with an unclosed fence, under `block()`, wrote the file with two "marker leaks into rendered code block" warnings, and the second run failed the same way.
+- A value `<!--mdeval\rabc` in a marker that starts its line opens a comment that runs across the CR into the next line and swallows `<!--/mdeval-->`. GitHub `/markdown` showed only the text after the closing tag. In a paragraph, the same value closes before the closing tag.
+
+The micromark-based parser accepted all three outputs, because it found `<!--/mdeval-->` by text, so the files stayed broken on GitHub without an error.
+
+The check costs one more `parseMarkdown` call per updated file, about 1.5 ms per MB of markers in the benchmark above. The one-marker-at-a-time search runs only when the check fails.
+
 Revisit when GitHub's renderer changes, or when a marker needs a context that gfm-comments does not model, such as footnotes.
