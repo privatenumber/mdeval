@@ -150,5 +150,6 @@ export const processSource = async (
 			);
 		}
 	}
-	return output;
+	// The last pass checks every value, which is `output`, so the loop throws
+	throw new Error('mdeval: the round-trip check failed without a cause');
 };

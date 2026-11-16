@@ -73,29 +73,19 @@ const findNextMdevalOpening = (source: string, from: number): number => {
 const unclosedScriptMessage = (start: number, detail: string) => `mdeval: unclosed script block at offset ${start} (${detail})`;
 const unclosedMarkerMessage = (start: number, detail: string) => `mdeval: unclosed marker open at offset ${start} (${detail})`;
 
-// Returns the index of the rendered `<!--/mdeval-->` that closes a value marker,
-// or -1 when another opening or the end of the document comes first.
-const findMarkerClose = (source: string, comments: Comment[], from: number): number => {
+// Returns the index of the first rendered comment that is an mdeval opening or
+// a `<!--/mdeval-->`, or `comments.length` when there is none.
+const findMarkerBoundary = (source: string, comments: Comment[], from: number): number => {
 	for (let index = from; index < comments.length; index += 1) {
 		const { start, end } = comments[index];
-		if (isOpeningAt(source, start)) {
-			return -1;
-		}
-		if (end - start === MARKER_CLOSE.length && source.startsWith(MARKER_CLOSE, start)) {
+		if (
+			isOpeningAt(source, start)
+			|| (end - start === MARKER_CLOSE.length && source.startsWith(MARKER_CLOSE, start))
+		) {
 			return index;
 		}
 	}
-	return -1;
-};
-
-// A `<!--/mdeval-->` that GitHub shows as text or code does not close a marker,
-// such as one after a fence on the same line, which becomes the fence's info string.
-const describeMissingClose = (source: string, comments: Comment[], index: number) => {
-	const next = comments.slice(index + 1).find(({ start }) => isOpeningAt(source, start));
-	const literal = source.indexOf(MARKER_CLOSE, comments[index].end);
-	return literal !== -1 && literal < (next?.start ?? source.length)
-		? `\`<!--/mdeval-->\` at offset ${literal} does not render as a comment on GitHub`
-		: 'missing `<!--/mdeval-->`';
+	return comments.length;
 };
 
 // Script blocks (`<!--mdeval\n…-->`) and value markers
@@ -160,17 +150,27 @@ export const parseMarkdown = (source: string): ParseResult => {
 
 		// Value marker: <!--mdeval followed by a space. Its value runs to the
 		// next rendered closing comment, and comments in the value are skipped.
-		const close = findMarkerClose(source, comments, index + 1);
-		if (close === -1) {
+		const close = findMarkerBoundary(source, comments, index + 1);
+		const closing = comments[close];
+		if (!closing || isOpeningAt(source, closing.start)) {
+			// A `<!--/mdeval-->` that GitHub shows as text or code does not close a
+			// marker, such as one after a fence on the same line, which becomes the
+			// fence's info string.
+			const literal = source.indexOf(MARKER_CLOSE, end);
 			throw new MarkdownParseError(
-				unclosedMarkerMessage(start, describeMissingClose(source, comments, index)),
+				unclosedMarkerMessage(
+					start,
+					literal !== -1 && literal < (closing?.start ?? source.length)
+						? `\`<!--/mdeval-->\` at offset ${literal} does not render as a comment on GitHub`
+						: 'missing `<!--/mdeval-->`',
+				),
 				start,
 			);
 		}
 		markers.push({
 			expression: source.slice(afterTag + 1, contentEnd),
 			start,
-			end: comments[close].end,
+			end: closing.end,
 		});
 		index = close;
 	}
