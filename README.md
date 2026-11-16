@@ -95,6 +95,8 @@ Type-checked `.md` files can use these helpers without imports. Their types are 
 
 ### Markers
 
+- **Markers run only where GitHub renders them as comments.** mdeval follows GitHub's Markdown renderer, so a marker in code, in a link or image title, or in image alt text stays literal. mdeval warns about each one, because GitHub shows it or encodes it, and mdeval does not run it.
+
 - **Marker expressions are awaited**, so a promise resolves before its value is written:
 
   ```markdown
@@ -135,6 +137,7 @@ TypeScript 7.1 can also type-check mdeval code at its Markdown lines. See [Type 
 
 - **Script code cannot contain `-->`**, because it closes the HTML comment, or `<!--mdeval` followed by a space or newline, because mdeval treats it as an unclosed script. Build the text instead, such as `'<!--' + 'mdeval '`. Rewrite `x-- > y` as `x -= 1; x > y`.
 - **Values cannot contain `<!--mdeval` followed by a space, a newline, or CRLF, or `<!--/mdeval-->`.** mdeval throws instead of writing them, so the file stays parseable.
+- **Values cannot change which markers GitHub renders.** For example, a code block written inline puts the closing fence and `<!--/mdeval-->` on one line, and GitHub reads the closing tag as the fence's language. mdeval throws and leaves the file unchanged. Wrap block-level Markdown in `block()`.
 - **Files processed together share one Node.js process,** including the module cache, `globalThis`, and `process.env`.
 
 ## CLI

@@ -19,7 +19,32 @@ Before, `parseMarkdown` searched the text for `<!--mdeval` and dropped candidate
 | prose, 1 MB | 0.024 | 0.023 |
 | readme, 8 kB | 2.25 | 0.07 |
 
-[Rendering validation](../../src/validate-rendering/index.ts) still uses micromark and mdast, because it reports where a marker shows as text and what kind of text it is, such as a code block or an image alt. gfm-comments returns only the comments that GitHub renders. Because micromark follows CommonMark, not GitHub's renderer, the check drops a leak at the start of a comment that gfm-comments returns, such as a marker inside `<textarea>`, which GitHub's tagfilter escapes.
+## Warnings use the same comments
+
+**Decision:** [`findRenderedLeaks`](../../src/find-rendered-leaks.ts) warns about each `<!--mdeval` opening and each `<!--/mdeval-->` that is not the start of a comment gfm-comments returns, and is not inside one. A whole marker that does not render is one warning, at its opening. It replaced a check that parsed the document with micromark, mdast, hast, and parse5 and reported the kind of construct that showed the marker, such as a code block or an image alt.
+
+Why:
+
+- **One model of GitHub.** The micromark check followed CommonMark, so it disagreed with `parseMarkdown` where GitHub differs. For example, GitHub's tagfilter escapes `<textarea>`, so a marker inside it renders as a comment and runs, but micromark reported it as text. Each disagreement needed its own patch.
+- **The rest of its cases are now errors.** A value that hides or breaks a marker fails the round-trip check below, and a value with mdeval syntax was already rejected. What is left to warn about is mdeval syntax in the source that GitHub does not render as a comment.
+- **Cost.** It removed nine runtime dependencies. `pnpm bench --step leaks --size 1m`, Node.js 26.13.0, Apple M2 Max, 2026-11-17, avg ms against `develop` at `8cf528f`:
+
+| Shape | micromark check | gfm-comments |
+| --- | ---: | ---: |
+| markers, 1 MB | 142.3 | 5.7 |
+| gfm, 1 MB | 297.8 | 9.1 |
+| prose, 1 MB | 0.023 | 0.046 |
+| readme, 8 kB | 3.26 | 0.18 |
+
+Peak RSS fell from 327 to 150 MiB on markers and from 599 to 156 MiB on gfm.
+
+Accepted differences, from running both checks on every input in the old test suite:
+
+- **Warnings lost the construct kind.** They name the delimiter and its position.
+- **Entity-encoded openings, such as `&lt;!--mdeval`, are not reported.** They are not mdeval syntax in the source, and writing one is how a document shows the syntax as text. A backslash-escaped `\<!--mdeval` is still reported, because its `<!--mdeval` is in the source.
+- **Markers that never run are reported even where GitHub hides them,** such as in a fence info string, an unused reference definition, or an unreferenced footnote. The old check reported only text that readers see.
+- **Warnings point at the delimiter,** not at the start of the construct, such as the `[` of a reference definition.
+- **A marker in `<![CDATA[` that GitHub turns into a bogus comment is reported** ([privatenumber/gfm-comments#1](https://github.com/privatenumber/gfm-comments/issues/1), which is about the closing comment after it that gfm-comments misses). mdeval does not run that marker either way.
 
 ## Unclosed openings
 

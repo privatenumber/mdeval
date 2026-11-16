@@ -48,7 +48,7 @@ export type ParseResult = {
 
 // `<!--mdeval` followed by a space, LF, or CRLF opens a marker or script block.
 // Strings like `<!--mdevalfoo` are not openings.
-const isOpeningAt = (source: string, position: number): boolean => {
+export const isOpeningAt = (source: string, position: number): boolean => {
 	if (!source.startsWith(COMMENT_TAG, position)) {
 		return false;
 	}

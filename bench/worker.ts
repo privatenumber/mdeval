@@ -8,7 +8,7 @@ import spawn from 'nano-spawn';
 import { parseMarkdown } from '../src/parse-markdown.ts';
 import { generateModule } from '../src/generate-module.ts';
 import { processSource } from '../src/process-source.ts';
-import { findRenderedLeaks } from '../src/validate-rendering/index.ts';
+import { findRenderedLeaks } from '../src/find-rendered-leaks.ts';
 import { fixture } from './fixtures.ts';
 
 const [step, shape, size] = process.argv.slice(2);
