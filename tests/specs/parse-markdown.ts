@@ -327,6 +327,25 @@ describe('parseMarkdown', () => {
 		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
 	});
 
+	test('throws on unclosed script block in a blockquote', () => {
+		// GitHub hides the rest of the page, including text after the blockquote
+		const source = '> <!--mdeval\n> const x = 1;\n\nrest';
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed script block at offset 2 (missing `-->`)');
+	});
+
+	test('does not throw on an unclosed opening that GitHub shows as text', () => {
+		// An inline `<!--` without `-->` is not raw HTML, so GitHub shows it as text
+		const { scriptBlocks, markers } = parseMarkdown('x <!--mdeval y');
+		expect(scriptBlocks).toStrictEqual([]);
+		expect(markers).toStrictEqual([]);
+	});
+
+	test('does not treat an opening closed by --!> as a marker', () => {
+		const { scriptBlocks, markers } = parseMarkdown('<!--mdeval 1--!>x<!--/mdeval-->');
+		expect(scriptBlocks).toStrictEqual([]);
+		expect(markers).toStrictEqual([]);
+	});
+
 	test('throws on unclosed script block with intervening script open', () => {
 		const source = '<!--mdeval\nconst x = 1;\n\n<!--mdeval\nconst y = 2;\n-->';
 		expect(() => parseMarkdown(source)).toThrow(/offset 0/);

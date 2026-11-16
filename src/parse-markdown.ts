@@ -73,29 +73,6 @@ const findNextMdevalOpening = (source: string, from: number): number => {
 const unclosedScriptMessage = (start: number, detail: string) => `mdeval: unclosed script block at offset ${start} (${detail})`;
 const unclosedMarkerMessage = (start: number, detail: string) => `mdeval: unclosed marker open at offset ${start} (${detail})`;
 
-// An opening that GitHub shows as text is either literal, such as an example in
-// code, or the start of a comment that never closes. Closing the document
-// tells them apart: only an unclosed comment then renders.
-const assertNoUnclosedOpening = (source: string, openings: Set<number>) => {
-	let position = findNextMdevalOpening(source, 0);
-	while (position !== -1 && openings.has(position)) {
-		position = findNextMdevalOpening(source, position + COMMENT_TAG.length);
-	}
-	if (position === -1) {
-		return;
-	}
-	for (const { start } of findComments(`${source}\n-->`)) {
-		if (!openings.has(start) && isOpeningAt(source, start)) {
-			throw new MarkdownParseError(
-				source[start + COMMENT_TAG.length] === ' '
-					? unclosedMarkerMessage(start, 'missing `-->` on the marker open')
-					: unclosedScriptMessage(start, 'missing `-->`'),
-				start,
-			);
-		}
-	}
-};
-
 // Returns the index of the rendered `<!--/mdeval-->` that closes a value marker,
 // or -1 when another opening or the end of the document comes first.
 const findMarkerClose = (source: string, comments: Comment[], from: number): number => {
@@ -135,16 +112,31 @@ export const parseMarkdown = (source: string): ParseResult => {
 	const comments = findComments(source);
 	const scriptBlocks: ScriptBlock[] = [];
 	const markers: Marker[] = [];
-	const openings = new Set<number>();
 
 	for (let index = 0; index < comments.length; index += 1) {
 		const { start, end, contentEnd } = comments[index];
 		if (!isOpeningAt(source, start)) {
 			continue;
 		}
-		openings.add(start);
 		const afterTag = start + COMMENT_TAG.length;
 		const nextChar = source[afterTag];
+
+		// A comment that GitHub never closes hides the rest of the page.
+		// Openings that GitHub shows as text, such as examples in code, are not
+		// comments, so they are not reported.
+		if (contentEnd === end) {
+			throw new MarkdownParseError(
+				nextChar === ' '
+					? unclosedMarkerMessage(start, 'missing `-->` on the marker open')
+					: unclosedScriptMessage(start, 'missing `-->`'),
+				start,
+			);
+		}
+
+		// `--!>` also closes a comment on GitHub, but only `-->` closes an opening
+		if (!source.startsWith(COMMENT_CLOSE, contentEnd)) {
+			continue;
+		}
 
 		// Script block: <!--mdeval followed by LF or CRLF. We accept CRLF so
 		// files saved on Windows (or via git autocrlf) still parse.
@@ -182,8 +174,6 @@ export const parseMarkdown = (source: string): ParseResult => {
 		});
 		index = close;
 	}
-
-	assertNoUnclosedOpening(source, openings);
 
 	return {
 		scriptBlocks,

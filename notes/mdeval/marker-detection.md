@@ -23,7 +23,9 @@ Before, `parseMarkdown` searched the text for `<!--mdeval` and dropped candidate
 
 ## Unclosed openings
 
-gfm-comments returns only comments closed by `-->`, so an unclosed `<!--mdeval` is missing from its result, like one in code. `parseMarkdown` tells them apart by scanning again with `\n-->` appended: an unclosed comment then renders, and an opening in code does not. The second scan runs only when some `<!--mdeval` opening did not render.
+gfm-comments returns every comment GitHub renders, including one that is never closed and runs to the end of the document (`contentEnd === end`). `parseMarkdown` reports that comment as an unclosed opening, because it hides the rest of the page. An opening in code, or an inline `x <!--mdeval y` with no `-->`, renders as text, so it is not a comment and mdeval ignores it, like any other literal example. An opening closed by `--!>` is skipped, because only `-->` closes an opening.
+
+This replaced a second scan with `\n-->` appended. That scan reported the inline `x <!--mdeval y` as an error, which GitHub shows as text. It also missed an unclosed opening in a blockquote, such as `> <!--mdeval\n> code\n\nrest`, because the appended `-->` landed outside the blockquote. GitHub hides the rest of the page after that opening.
 
 A script block whose rendered comment contains another `<!--mdeval` opening reports that opening, because a forgotten `-->` usually lets the comment run into the next marker.
 
