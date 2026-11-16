@@ -187,9 +187,6 @@ importers:
       mdast-util-to-hast:
         specifier: ^13.2.1
         version: 13.2.1
-      micromark:
-        specifier: ^4.0.3
-        version: 4.0.3(supports-color@7.2.0)
       micromark-extension-gfm-footnote:
         specifier: ^2.1.0
         version: 2.1.0
