@@ -102,7 +102,7 @@ describe('findRenderedLeaks', () => {
 		});
 	});
 
-	describe('attributes and URLs', () => {
+	describe('attributes, titles, and raw HTML', () => {
 		const cases = [
 			['image alt', '![<!--mdeval description-->Photo<!--/mdeval-->](photo.png)', [opening(1, 3)]],
 			['image title', '![Photo](photo.png "<!--mdeval caption-->A photo<!--/mdeval-->")', [opening(1, 21)]],
@@ -113,6 +113,8 @@ describe('findRenderedLeaks', () => {
 			['raw HTML attribute', '<img alt="<!--mdeval caption-->old<!--/mdeval-->" src="x.png">', [opening(1, 11)]],
 			// The encoded opening is text, but the closing tag is still in the attribute
 			['entity-encoded opening in an attribute', '<img alt="&lt;!--mdeval cap-->old<!--/mdeval-->" src="x.png">', [closing(1, 34)]],
+			// Inside <svg>, `<![CDATA[` starts a CDATA section, so GitHub shows its text
+			['SVG CDATA', '<svg><![CDATA[ <!--mdeval 1-->x<!--/mdeval--> ]]></svg>', [opening(1, 16)]],
 		] as const;
 		for (const [name, source, leaks] of cases) {
 			test(name, () => {
