@@ -44,7 +44,7 @@ Accepted differences, from running both checks on every input in the old test su
 - **Entity-encoded openings, such as `&lt;!--mdeval`, are not reported.** They are not mdeval syntax in the source, and writing one is how a document shows the syntax as text. A backslash-escaped `\<!--mdeval` is still reported, because its `<!--mdeval` is in the source.
 - **Markers that never run are reported even where GitHub hides them,** such as in a fence info string, an unused reference definition, or an unreferenced footnote. The old check reported only text that readers see.
 - **Warnings point at the delimiter,** not at the start of the construct, such as the `[` of a reference definition.
-- **An opening that GitHub hides in a bogus comment is reported,** such as one after `<![CDATA[` in HTML content. GitHub hides it, but a bogus comment is not a `<!--` comment, so gfm-comments does not return it. mdeval does not run that marker either way. Its closing tag renders as a comment, as gfm-comments reports since [privatenumber/gfm-comments#1](https://github.com/privatenumber/gfm-comments/issues/1).
+- **An opening that GitHub hides in a bogus comment is reported,** such as one after `<![CDATA[` in HTML content. GitHub hides it, but a bogus comment is not a `<!--` comment, so gfm-comments does not return it. mdeval does not run that marker either way. Its closing tag renders as a comment, and gfm-comments reports it ([GitHub HTML handling](https://github.com/privatenumber/gfm-comments/blob/develop/notes/gfm-comments/html-tokenizer.md#github-html-handling)).
 
 ## Unclosed openings
 
