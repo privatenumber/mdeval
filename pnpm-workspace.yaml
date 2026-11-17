@@ -6,7 +6,7 @@ skills:
 minimumReleaseAgeExclude:
   - clean-pkg-json
   - lintroll
-  - gfm-comments@1.0.0
+  - gfm-comments
 
 allowBuilds:
   esbuild: true
