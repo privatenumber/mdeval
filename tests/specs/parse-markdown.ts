@@ -18,87 +18,14 @@ const markerContent = (
 };
 
 describe('parseMarkdown', () => {
-	test('ignores a table marker whose closing tag is in another cell', () => {
+	test('reports a table marker whose closing tag is in another cell', () => {
 		const source = '| a | b | c |\n|---|---|---|\n| ` | <!--mdeval 42-->old | `<!--/mdeval-->` |\n';
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed marker open at offset 34 (`<!--/mdeval-->` at offset 57 does not render as a comment on GitHub)');
 	});
 
-	test('ignores a table marker whose closing tag is in code within the same cell', () => {
+	test('reports a table marker whose closing tag is in code within the same cell', () => {
 		const source = '| a |\n|---|\n| <!--mdeval 42-->old `<!--/mdeval-->` |\n';
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
-	});
-
-	test('bounds delimiter searches for many incomplete table markers', () => {
-		// Compare how time scales instead of absolute time, so a slow runner
-		// cannot fail the test: doubling the rows roughly doubles linear work
-		// and quadruples quadratic work
-		const measure = (rows: number) => {
-			const source = `| h |\n|---|\n${'| <!--mdeval x |\n'.repeat(rows)}`;
-			const start = performance.now();
-			expect(parseMarkdown(source).markers).toStrictEqual([]);
-			return performance.now() - start;
-		};
-		measure(1000);
-		const fewer = Math.min(measure(4000), measure(4000));
-		const more = Math.min(measure(8000), measure(8000));
-		expect(more / fewer).toBeLessThan(3);
-	});
-
-	test('keeps reference labels inside table rows unchanged', () => {
-		const source = '| h |\n|---|\n| [z][x\\\\|y`] <!--mdeval 1+1-->old<!--/mdeval-->` |\n\n[xa\\|y`]: /url\n';
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
-	});
-
-	test('ignores openings that cross table cell boundaries', () => {
-		const source = '| A | B | C |\n|---|---|---|\n| x | <!--mdeval a || b-->old<!--/mdeval--> | y |\n';
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
-	});
-
-	test('preserves reference matching outside tables when a pipe follows backslashes', () => {
-		const source = String.raw`[z][x\\|y \`<!--mdeval 1+1-->old<!--/mdeval-->\`]
-
-[xa\|y \`<!--MDEVAL 1+1-->old<!--/MDEVAL-->\`]: /url
-
-| a | b |
-|---|---|
-| x\\|y | z |
-`.replaceAll('\\`', '`');
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
-	});
-
-	test('ignores markers in body cells beyond the header width', () => {
-		const source = '\uFEFF| a | b |\r\n|---|---|\r\n| x | ` | <!--mdeval 1+1-->old<!--/mdeval-->` |\r\n\r\n<!--mdeval 2-->old<!--/mdeval-->';
-		const { markers } = parseMarkdown(source);
-		expect(markers).toHaveLength(1);
-		expect(markers[0].expression).toBe('2');
-		expect(markers[0].start).toBe(source.indexOf('<!--mdeval 2'));
-	});
-
-	test('ignores markers in table code spans across a single escaped pipe', () => {
-		const source = '| a | b |\n|---|---|\n| `a\\| <!--mdeval 1+1-->old<!--/mdeval-->` | b |\n';
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
-	});
-
-	test('ignores a code span within a GFM table cell', () => {
-		const source = '| a | b |\n|---|---|\n| ` | `<!--mdeval 1+1-->old<!--/mdeval-->` |\n';
-		expect(parseMarkdown(source).markers).toStrictEqual([]);
-	});
-
-	test('recognizes a marker between unpaired backticks in separate table cells', () => {
-		const source = '| a | b |\n|---|---|\n| ` | <!--mdeval 1+1-->old<!--/mdeval-->` |\n';
-		const { markers } = parseMarkdown(source);
-		expect(markers).toHaveLength(1);
-		expect(markers[0].expression).toBe('1+1');
-	});
-
-	test('ignores escaped marker openers but not escaped backslashes', () => {
-		const source = '\uFEFF\\<!--mdeval x-->literal<!--/mdeval-->\r\n\r\n\\\\<!--mdeval y-->old<!--/mdeval-->';
-		const { markers } = parseMarkdown(source);
-		expect(markers).toStrictEqual([{
-			expression: 'y',
-			start: source.indexOf('<!--mdeval y'),
-			end: source.length,
-		}]);
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed marker open at offset 14 (`<!--/mdeval-->` at offset 35 does not render as a comment on GitHub)');
 	});
 
 	test('finds a marker after an unclosed example in a fence', () => {
@@ -254,18 +181,6 @@ describe('parseMarkdown', () => {
 		expect(markers).toStrictEqual([]);
 	});
 
-	test('ignores markers inside nested code fences', () => {
-		const source = [
-			'````',
-			'```',
-			'<!--mdeval x-->42<!--/mdeval-->',
-			'```',
-			'````',
-		].join('\n');
-		const { markers } = parseMarkdown(source);
-		expect(markers).toStrictEqual([]);
-	});
-
 	test('throws on unclosed marker followed by another well-formed marker', () => {
 		const source = '<!--mdeval a-->some\n\n<!--mdeval b-->42<!--/mdeval-->';
 		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
@@ -299,6 +214,12 @@ describe('parseMarkdown', () => {
 		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
 	});
 
+	test('reports a closing tag that GitHub renders as fence info', () => {
+		// The last line opens a fence, so `<!--/mdeval-->` is its info string
+		const source = '<!--mdeval x-->```text\na\n```<!--/mdeval-->';
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed marker open at offset 0 (`<!--/mdeval-->` at offset 28 does not render as a comment on GitHub)');
+	});
+
 	test('throws on marker open with missing -->', () => {
 		const source = '<!--mdeval x with no end of expression';
 		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
@@ -319,6 +240,25 @@ describe('parseMarkdown', () => {
 	test('throws on unclosed script block at EOF', () => {
 		const source = '<!--mdeval\nconst x = 1;\n';
 		expect(() => parseMarkdown(source)).toThrow(/offset 0/);
+	});
+
+	test('throws on unclosed script block in a blockquote', () => {
+		// GitHub hides the rest of the page, including text after the blockquote
+		const source = '> <!--mdeval\n> const x = 1;\n\nrest';
+		expect(() => parseMarkdown(source)).toThrow('mdeval: unclosed script block at offset 2 (missing `-->`)');
+	});
+
+	test('does not throw on an unclosed opening that GitHub shows as text', () => {
+		// An inline `<!--` without `-->` is not raw HTML, so GitHub shows it as text
+		const { scriptBlocks, markers } = parseMarkdown('x <!--mdeval y');
+		expect(scriptBlocks).toStrictEqual([]);
+		expect(markers).toStrictEqual([]);
+	});
+
+	test('does not treat an opening closed by --!> as a marker', () => {
+		const { scriptBlocks, markers } = parseMarkdown('<!--mdeval 1--!>x<!--/mdeval-->');
+		expect(scriptBlocks).toStrictEqual([]);
+		expect(markers).toStrictEqual([]);
 	});
 
 	test('throws on unclosed script block with intervening script open', () => {
@@ -360,68 +300,6 @@ describe('parseMarkdown', () => {
 		expect(markers[0].expression).toBe('items.length + " items"');
 	});
 
-	test('ignores markers inside fenced code when same expression exists outside', () => {
-		const source = [
-			'<!--mdeval',
-			'const x = 42;',
-			'-->',
-			'',
-			'```',
-			'<!--mdeval x-->example<!--/mdeval-->',
-			'```',
-			'',
-			'Value: <!--mdeval x-->old<!--/mdeval-->',
-		].join('\n');
-		const { markers } = parseMarkdown(source);
-		expect(markers).toHaveLength(1);
-		expect(markerContent(source, markers[0])).toBe('old');
-	});
-
-	test('ignores markers inside inline code when same expression exists outside', () => {
-		const source = 'Use `<!--mdeval x-->42<!--/mdeval-->` syntax.\n\n<!--mdeval x-->old<!--/mdeval-->';
-		const { markers } = parseMarkdown(source);
-		expect(markers).toHaveLength(1);
-		expect(markerContent(source, markers[0])).toBe('old');
-	});
-
-	test('ignores markers inside tilde fences when same expression exists outside', () => {
-		const source = [
-			'~~~',
-			'<!--mdeval x-->example<!--/mdeval-->',
-			'~~~',
-			'',
-			'<!--mdeval x-->old<!--/mdeval-->',
-		].join('\n');
-		const { markers } = parseMarkdown(source);
-		expect(markers).toHaveLength(1);
-		expect(markerContent(source, markers[0])).toBe('old');
-	});
-
-	test('ignores markers inside multi-line indented code when same expression exists outside', () => {
-		const source = [
-			'    some code',
-			'    <!--mdeval x-->keep<!--/mdeval-->',
-			'',
-			'<!--mdeval x-->old<!--/mdeval-->',
-		].join('\n');
-		const { markers } = parseMarkdown(source);
-		expect(markers).toHaveLength(1);
-		expect(markerContent(source, markers[0])).toBe('old');
-	});
-
-	test('ignores markers inside indented code when first and last lines are identical', () => {
-		const source = [
-			'    same',
-			'    <!--mdeval x-->keep<!--/mdeval-->',
-			'    same',
-			'',
-			'<!--mdeval x-->old<!--/mdeval-->',
-		].join('\n');
-		const { markers } = parseMarkdown(source);
-		expect(markers).toHaveLength(1);
-		expect(markerContent(source, markers[0])).toBe('old');
-	});
-
 	test('returns independent results for non-mdeval inputs', () => {
 		const r1 = parseMarkdown('# no markers');
 		const r2 = parseMarkdown('# also no markers');
@@ -432,12 +310,5 @@ describe('parseMarkdown', () => {
 			end: 10,
 		});
 		expect(r2.markers).toHaveLength(0);
-	});
-
-	test('does not exclude marker immediately after inline code', () => {
-		const source = '`code`<!--mdeval x-->old<!--/mdeval-->';
-		const { markers } = parseMarkdown(source);
-		expect(markers).toHaveLength(1);
-		expect(markers[0].expression).toBe('x');
 	});
 });

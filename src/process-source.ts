@@ -1,7 +1,7 @@
 import { pathToFileURL } from 'node:url';
 import './loader.ts';
 import {
-	parseMarkdown, COMMENT_TAG, MARKER_OPEN, MARKER_CLOSE,
+	parseMarkdown, MarkdownParseError, COMMENT_TAG, MARKER_OPEN, MARKER_CLOSE,
 	COMMENT_CLOSE, EXPORT_PREFIX, buildExpressionMap, type Marker, type ParseResult,
 } from './parse-markdown.ts';
 import { coerceValue } from './coerce-value.ts';
@@ -31,6 +31,50 @@ const getLineEnding = (source: string, markers: Marker[]): string => {
 		}
 	}
 	return selected;
+};
+
+const contentRange = (marker: Marker) => {
+	const openLength = MARKER_OPEN.length + marker.expression.length + COMMENT_CLOSE.length;
+	return [marker.start + openLength, marker.end - MARKER_CLOSE.length] as const;
+};
+
+// Writes `contents[i]` into marker `i`.
+const replaceContents = (source: string, markers: Marker[], contents: string[]) => {
+	const parts: string[] = [];
+	let cursor = 0;
+	for (const [index, marker] of markers.entries()) {
+		const [contentStart, contentEnd] = contentRange(marker);
+		parts.push(source.slice(cursor, contentStart), contents[index]);
+		cursor = contentEnd;
+	}
+	parts.push(source.slice(cursor));
+	return parts.join('');
+};
+
+// Whether `output` parses to the same script blocks, and to the same markers
+// holding `contents`, so the next run finds what this run wrote.
+const roundTrips = (
+	output: string,
+	{ scriptBlocks, markers }: ParseResult,
+	contents: string[],
+) => {
+	let reparsed: ParseResult;
+	try {
+		reparsed = parseMarkdown(output);
+	} catch (error) {
+		if (error instanceof MarkdownParseError) {
+			return false;
+		}
+		throw error;
+	}
+	return reparsed.scriptBlocks.length === scriptBlocks.length
+		&& reparsed.scriptBlocks.every((block, index) => block.content === scriptBlocks[index].content)
+		&& reparsed.markers.length === markers.length
+		&& reparsed.markers.every((marker, index) => {
+			const [contentStart, contentEnd] = contentRange(marker);
+			return marker.expression === markers[index].expression
+				&& output.slice(contentStart, contentEnd) === contents[index];
+		});
 };
 
 export const processSource = async (
@@ -84,18 +128,28 @@ export const processSource = async (
 		}),
 	);
 
-	const parts: string[] = [];
-	let cursor = 0;
-
-	for (const marker of markers) {
-		const openLength = MARKER_OPEN.length + marker.expression.length + COMMENT_CLOSE.length;
-		const contentStart = marker.start + openLength;
-		const contentEnd = marker.end - MARKER_CLOSE.length;
-		const exportIndex = expressionMap.get(marker.expression)!;
-		parts.push(source.slice(cursor, contentStart), resolvedValues[exportIndex]);
-		cursor = contentEnd;
+	const values = markers.map(marker => resolvedValues[expressionMap.get(marker.expression)!]);
+	const output = replaceContents(source, markers, values);
+	if (roundTrips(output, parsed, values)) {
+		return output;
 	}
 
-	parts.push(source.slice(cursor));
-	return parts.join('');
+	// A value can make GitHub render the rest of the document differently, such
+	// as a fence that turns a closing tag into its info string. A value changes
+	// only how the text after it parses, so the first value that breaks the
+	// round trip on its own is the cause.
+	const contents = markers.map(marker => source.slice(...contentRange(marker)));
+	for (const [index, marker] of markers.entries()) {
+		contents[index] = values[index];
+		if (!roundTrips(replaceContents(source, markers, contents), parsed, contents)) {
+			const hint = values[index].startsWith(lineEnding)
+				? ''
+				: ' Wrap block-level Markdown, such as a code block, in block().';
+			throw new Error(
+				`Expression "${marker.expression}" produced a value that changes which mdeval comments GitHub renders, so the next run would not find the same markers.${hint}`,
+			);
+		}
+	}
+	// The last pass checks every value, which is `output`, so the loop throws
+	throw new Error('mdeval: the round-trip check failed without a cause');
 };

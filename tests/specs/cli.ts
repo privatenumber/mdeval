@@ -76,7 +76,7 @@ describe('cli', () => {
 			stderr: string;
 		};
 		expect(error.exitCode).toBe(1);
-		expect(error.stderr).toContain('a.md:5:2 mdeval marker leaks into rendered inline code');
+		expect(error.stderr).toContain('a.md:5:2 `<!--mdeval` does not render as a comment on GitHub');
 		expect(await fixture.readFile('a.md', 'utf8')).toBe(markdown);
 	});
 
@@ -103,7 +103,7 @@ describe('cli', () => {
 		await using fixture = await createFixture({ 'a.md': '# Test\n\n`<!--mdeval x-->old<!--/mdeval-->`' });
 		const result = await mdeval(['--check', 'a.md'], { cwd: fixture.path });
 		expect(result.stdout).toBe('');
-		expect(result.stderr).toContain('a.md:3:2 mdeval marker leaks into rendered inline code');
+		expect(result.stderr).toContain('a.md:3:2 `<!--mdeval` does not render as a comment on GitHub');
 	});
 
 	test('reports original errors when the stack is not a string', async () => {
@@ -694,14 +694,14 @@ describe('cli', () => {
 		// A README that only documents mdeval syntax (no real markers
 		// outside code blocks) should not trigger the "no markdown content"
 		// warning, since the code-block prose is the content. It should
-		// still trigger leak warnings, one per opening marker visible in
-		// the rendered output.
+		// still warn about each opening in the code block, because none of them
+		// run.
 		await using fixture = await createFixture({
 			'test.md': '```\n<!--mdeval\nconst x = 1;\n-->\n\n<!--mdeval x-->1<!--/mdeval-->\n```',
 		});
 		const result = await mdeval([fixture.getPath('test.md')]);
 		expect(result.stderr).not.toContain('no markdown content');
-		expect(result.stderr).toContain('leaks into rendered code block');
+		expect(result.stderr).toContain('`<!--mdeval` does not render as a comment on GitHub');
 	});
 
 	test('does not warn when markers are outside any code construct', async () => {
@@ -709,7 +709,7 @@ describe('cli', () => {
 			'test.md': '# Title\n\n<!--mdeval\nconst x = 42;\n-->\n\nValue: <!--mdeval x-->old<!--/mdeval-->',
 		});
 		const result = await mdeval([fixture.getPath('test.md')]);
-		expect(result.stderr).not.toContain('leaks');
+		expect(result.stderr).not.toContain('does not render');
 	});
 
 	test('leak warning includes file path and line:column', async () => {
@@ -718,6 +718,6 @@ describe('cli', () => {
 		});
 		const filePath = fixture.getPath('test.md');
 		const result = await mdeval([filePath]);
-		expect(result.stderr).toMatch(/test\.md:2:12 mdeval marker leaks into rendered inline code/);
+		expect(result.stderr).toMatch(/test\.md:2:12 `<!--mdeval` does not render as a comment on GitHub/);
 	});
 });

@@ -8,7 +8,7 @@ import { formatErrorLocation } from './cli/error-location.ts';
 import { resolveFiles } from './cli/resolve-files.ts';
 import { parseMarkdown, isOnlyMdeval } from './parse-markdown.ts';
 import { processSource } from './process-source.ts';
-import { findRenderedLeaks } from './validate-rendering/index.ts';
+import { findRenderedLeaks } from './find-rendered-leaks.ts';
 
 // Warnings go to stderr, so color depends on stderr, not stdout
 const WARNING_PREFIX = styleText('yellow', 'Warning:', { stream: process.stderr });
@@ -76,7 +76,7 @@ await Promise.all(files.map(async (file) => {
 		// Validate the content on disk, including in check mode where it is not rewritten.
 		for (const leak of findRenderedLeaks(argv.flags.check ? source : output)) {
 			console.warn(
-				`${WARNING_PREFIX} ${file}:${leak.line}:${leak.column} mdeval marker leaks into rendered ${leak.kind}`,
+				`${WARNING_PREFIX} ${file}:${leak.line}:${leak.column} \`${leak.delimiter}\` does not render as a comment on GitHub`,
 			);
 		}
 	} catch (error) {

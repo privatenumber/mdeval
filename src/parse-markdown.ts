@@ -1,5 +1,4 @@
-import { parse, preprocess, postprocess } from 'micromark';
-import { gfmTable } from 'micromark-extension-gfm-table';
+import { findComments, type Comment } from 'gfm-comments';
 
 export type Marker = {
 	expression: string;
@@ -42,153 +41,28 @@ export type ScriptBlock = {
 	end: number;
 };
 
-type CodeRange = [number, number];
-
-const codeTokenTypes = new Set(['codeFenced', 'codeIndented', 'codeText']);
-
-// Collect source ranges for code constructs and escaped opening angle brackets.
-// GFM tables constrain inline code spans to individual cells.
-//
-// micromark emits events in document order, so the ranges come out sorted.
-// micromark's preprocess() strips a leading BOM; we shift offsets back so the
-// ranges align with positions in the original source that our mdeval scanners
-// also operate on.
-const findCodeRanges = (source: string) => {
-	const bomOffset = source.codePointAt(0) === 0xFE_FF ? 1 : 0;
-	// The table extension differs from GitHub for escaped backslashes before a
-	// pipe: https://github.com/github/cmark-gfm/issues/277. Parse the original
-	// source so this scanner agrees with rendering validation.
-	const events = postprocess(
-		parse({ extensions: [gfmTable()] }).document()
-			.write(preprocess()(source, undefined, true)),
-	);
-	const ranges: CodeRange[] = [];
-	const cells: CodeRange[] = [];
-	let headerWidth = 0;
-	let column = 0;
-	let discardedCell = false;
-	for (const [phase, token] of events) {
-		if (discardedCell) {
-			if (phase === 'exit' && token.type === 'tableData') {
-				discardedCell = false;
-			}
-			continue;
-		}
-		if (phase !== 'enter') {
-			continue;
-		}
-		if (token.type === 'tableHeader' || token.type === 'tableData') {
-			cells.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
-		}
-		switch (token.type) {
-			case 'table': {
-				headerWidth = 0;
-				break;
-			}
-			case 'tableRow': {
-				column = 0;
-				break;
-			}
-			case 'tableHeader': {
-				headerWidth += 1;
-				break;
-			}
-			case 'tableData': {
-				column += 1;
-				if (column > headerWidth) {
-					ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
-					discardedCell = true;
-					continue;
-				}
-				break;
-			}
-			default: {
-				break;
-			}
-		}
-		if (codeTokenTypes.has(token.type) || (
-			token.type === 'characterEscape'
-			&& source[token.end.offset + bomOffset - 1] === '<'
-		)) {
-			ranges.push([token.start.offset + bomOffset, token.end.offset + bomOffset]);
-		}
-	}
-	return {
-		ranges,
-		cells,
-	};
-};
-
 export type ParseResult = {
 	scriptBlocks: ScriptBlock[];
 	markers: Marker[];
 };
 
-// Lazy, forward-only membership test for literal source ranges.
-const createIsInCode = (source: string) => {
-	let parsed: ReturnType<typeof findCodeRanges> | null = null;
-	let rangeIndex = 0;
-	let cellIndex = 0;
-	const context = (position: number) => {
-		if (parsed === null) {
-			parsed = findCodeRanges(source);
-		}
-		const { ranges, cells } = parsed;
-		while (rangeIndex < ranges.length && ranges[rangeIndex][1] <= position) {
-			rangeIndex += 1;
-		}
-		if (rangeIndex < ranges.length && position >= ranges[rangeIndex][0]) {
-			return {
-				literal: true,
-				cellEnd: undefined,
-			};
-		}
-		while (cellIndex < cells.length && cells[cellIndex][1] <= position) {
-			cellIndex += 1;
-		}
-		return {
-			literal: false,
-			cellEnd: cellIndex < cells.length && position >= cells[cellIndex][0]
-				? cells[cellIndex][1]
-				: undefined,
-		};
-	};
-	const isInCode = (position: number) => {
-		const { ranges } = parsed!;
-		let left = 0;
-		let right = ranges.length;
-		while (left < right) {
-			const middle = Math.floor((left + right) / 2);
-			if (ranges[middle][1] <= position) {
-				left = middle + 1;
-			} else {
-				right = middle;
-			}
-		}
-		return left < ranges.length && ranges[left][0] <= position;
-	};
-	return {
-		context,
-		isInCode,
-	};
+// `<!--mdeval` followed by a space, LF, or CRLF opens a marker or script block.
+// Strings like `<!--mdevalfoo` are not openings.
+export const isOpeningAt = (source: string, position: number): boolean => {
+	if (!source.startsWith(COMMENT_TAG, position)) {
+		return false;
+	}
+	const after = source[position + COMMENT_TAG.length];
+	return after === ' '
+		|| after === '\n'
+		|| (after === '\r' && source[position + COMMENT_TAG.length + 1] === '\n');
 };
 
-// Locate the next real mdeval opening — a `<!--mdeval` followed by space, LF,
-// or CRLF. Skips false matches like `<!--mdevalfoo` so they don't get mistaken
-// for a stray opening when reasoning about an unclosed marker.
 const findNextMdevalOpening = (source: string, from: number): number => {
 	let cursor = from;
 	while (cursor < source.length) {
 		const candidate = source.indexOf(COMMENT_TAG, cursor);
-		if (candidate === -1) {
-			return -1;
-		}
-		const after = source[candidate + COMMENT_TAG.length];
-		if (
-			after === ' '
-			|| after === '\n'
-			|| (after === '\r' && source[candidate + COMMENT_TAG.length + 1] === '\n')
-		) {
+		if (candidate === -1 || isOpeningAt(source, candidate)) {
 			return candidate;
 		}
 		cursor = candidate + COMMENT_TAG.length;
@@ -196,10 +70,27 @@ const findNextMdevalOpening = (source: string, from: number): number => {
 	return -1;
 };
 
-// Single-pass scan of `source` for both script blocks (`<!--mdeval\n…-->`) and
-// value markers (`<!--mdeval expr-->value<!--/mdeval-->`). Candidates whose
-// opening offset falls inside a code range are dropped — those are literal
-// syntax examples in the document, not active mdeval markers.
+const unclosedScriptMessage = (start: number, detail: string) => `mdeval: unclosed script block at offset ${start} (${detail})`;
+const unclosedMarkerMessage = (start: number, detail: string) => `mdeval: unclosed marker open at offset ${start} (${detail})`;
+
+// Returns the index of the first rendered comment that is an mdeval opening or
+// a `<!--/mdeval-->`, or `comments.length` when there is none.
+const findMarkerBoundary = (source: string, comments: Comment[], from: number): number => {
+	for (let index = from; index < comments.length; index += 1) {
+		const { start, end } = comments[index];
+		if (
+			isOpeningAt(source, start)
+			|| (end - start === MARKER_CLOSE.length && source.startsWith(MARKER_CLOSE, start))
+		) {
+			return index;
+		}
+	}
+	return comments.length;
+};
+
+// Script blocks (`<!--mdeval\n…-->`) and value markers
+// (`<!--mdeval expr-->value<!--/mdeval-->`) are found among the comments that
+// GitHub renders, so literal syntax examples in code are not active markers.
 export const parseMarkdown = (source: string): ParseResult => {
 	if (!source.includes(COMMENT_TAG)) {
 		return {
@@ -208,113 +99,80 @@ export const parseMarkdown = (source: string): ParseResult => {
 		};
 	}
 
-	const { context, isInCode } = createIsInCode(source);
-
+	const comments = findComments(source);
 	const scriptBlocks: ScriptBlock[] = [];
 	const markers: Marker[] = [];
-	let searchFrom = 0;
 
-	while (searchFrom < source.length) {
-		const start = findNextMdevalOpening(source, searchFrom);
-		if (start === -1) {
-			break;
-		}
-
-		const afterTag = start + COMMENT_TAG.length;
-		const nextChar = source[afterTag];
-		const { literal, cellEnd } = context(start);
-		if (literal) {
-			searchFrom = afterTag;
+	for (let index = 0; index < comments.length; index += 1) {
+		const { start, end, contentEnd } = comments[index];
+		if (!isOpeningAt(source, start)) {
 			continue;
 		}
-		if (cellEnd !== undefined) {
-			const cell = source.slice(start, cellEnd);
-			const exprEnd = cell.indexOf(COMMENT_CLOSE, COMMENT_TAG.length);
-			const closeStart = exprEnd === -1
-				? -1
-				: cell.indexOf(MARKER_CLOSE, exprEnd + COMMENT_CLOSE.length);
-			if (nextChar !== ' ' || closeStart === -1 || isInCode(start + closeStart)) {
-				searchFrom = afterTag;
-				continue;
-			}
-			const nextOpening = findNextMdevalOpening(cell, exprEnd + COMMENT_CLOSE.length);
-			if (nextOpening !== -1 && nextOpening < closeStart) {
-				throw new MarkdownParseError(
-					`mdeval: unclosed marker open at offset ${start} (missing \`<!--/mdeval-->\`)`,
-					start,
-				);
-			}
-			const markerEnd = start + closeStart + MARKER_CLOSE.length;
-			markers.push({
-				expression: cell.slice(COMMENT_TAG.length + 1, exprEnd),
+		const afterTag = start + COMMENT_TAG.length;
+		const nextChar = source[afterTag];
+
+		// A comment that GitHub never closes hides the rest of the page or footnote.
+		// Openings that GitHub shows as text, such as examples in code, are not
+		// comments, so they are not reported.
+		if (contentEnd === end) {
+			throw new MarkdownParseError(
+				nextChar === ' '
+					? unclosedMarkerMessage(start, 'missing `-->` on the marker open')
+					: unclosedScriptMessage(start, 'missing `-->`'),
 				start,
-				end: markerEnd,
-			});
-			searchFrom = markerEnd;
+			);
+		}
+
+		// `--!>` also closes a comment on GitHub, but only `-->` closes an opening
+		if (!source.startsWith(COMMENT_CLOSE, contentEnd)) {
 			continue;
 		}
 
 		// Script block: <!--mdeval followed by LF or CRLF. We accept CRLF so
 		// files saved on Windows (or via git autocrlf) still parse.
-		if (nextChar === '\n' || (nextChar === '\r' && source[afterTag + 1] === '\n')) {
+		if (nextChar !== ' ') {
 			const contentStart = nextChar === '\n' ? afterTag + 1 : afterTag + 2;
-			const closeStart = source.indexOf(COMMENT_CLOSE, contentStart);
 			const nextOpening = findNextMdevalOpening(source, contentStart);
-			const interveningOpen = (
-				nextOpening !== -1
-				&& (closeStart === -1 || nextOpening < closeStart)
-			);
-			if (closeStart === -1 || interveningOpen) {
+			if (nextOpening !== -1 && nextOpening < contentEnd) {
 				throw new MarkdownParseError(
-					interveningOpen
-						? `mdeval: unclosed script block at offset ${start} (another mdeval opening found before \`-->\`)`
-						: `mdeval: unclosed script block at offset ${start} (missing \`-->\`)`,
+					unclosedScriptMessage(start, 'another mdeval opening found before `-->`'),
 					start,
 				);
 			}
-			const end = closeStart + COMMENT_CLOSE.length;
 			scriptBlocks.push({
-				content: source.slice(contentStart, closeStart),
+				content: source.slice(contentStart, contentEnd),
 				contentStart,
 				start,
 				end,
 			});
-			searchFrom = end;
 			continue;
 		}
 
-		// Value marker: <!--mdeval followed by a space.
-		if (nextChar === ' ') {
-			const exprStart = afterTag + 1;
-			const exprEnd = source.indexOf(COMMENT_CLOSE, exprStart);
-			if (exprEnd === -1) {
-				throw new MarkdownParseError(
-					`mdeval: unclosed marker open at offset ${start} (missing \`-->\` on the marker open)`,
+		// Value marker: <!--mdeval followed by a space. Its value runs to the
+		// next rendered closing comment, and comments in the value are skipped.
+		const close = findMarkerBoundary(source, comments, index + 1);
+		const closing = comments[close];
+		if (!closing || isOpeningAt(source, closing.start)) {
+			// A `<!--/mdeval-->` that GitHub shows as text or code does not close a
+			// marker, such as one after a fence on the same line, which becomes the
+			// fence's info string.
+			const literal = source.indexOf(MARKER_CLOSE, end);
+			throw new MarkdownParseError(
+				unclosedMarkerMessage(
 					start,
-				);
-			}
-			const contentStart = exprEnd + COMMENT_CLOSE.length;
-			const closeStart = source.indexOf(MARKER_CLOSE, contentStart);
-			const nextOpening = findNextMdevalOpening(source, contentStart);
-			const isUnclosed = (
-				closeStart === -1
-				|| (nextOpening !== -1 && nextOpening < closeStart)
-			);
-			if (isUnclosed) {
-				throw new MarkdownParseError(
-					`mdeval: unclosed marker open at offset ${start} (missing \`<!--/mdeval-->\`)`,
-					start,
-				);
-			}
-			const markerEnd = closeStart + MARKER_CLOSE.length;
-			markers.push({
-				expression: source.slice(exprStart, exprEnd),
+					literal !== -1 && literal < (closing?.start ?? source.length)
+						? `\`<!--/mdeval-->\` at offset ${literal} does not render as a comment on GitHub`
+						: 'missing `<!--/mdeval-->`',
+				),
 				start,
-				end: markerEnd,
-			});
-			searchFrom = markerEnd;
-			continue;
+			);
 		}
+		markers.push({
+			expression: source.slice(afterTag + 1, contentEnd),
+			start,
+			end: closing.end,
+		});
+		index = close;
 	}
 
 	return {

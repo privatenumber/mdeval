@@ -2,7 +2,7 @@
 
 ## Parsing an active file
 
-The CLI parses each input with [`parseMarkdown`](../../src/parse-markdown.ts) and passes the result to [`processSource`](../../src/process-source.ts). When that processing loads the file, the loader reuses the result only if its strict UTF-8 read matches the original source; it parses again if the file changed. An earlier import from another Markdown file can still parse the target separately. [`findRenderedLeaks`](../../src/validate-rendering/index.ts) separately parses the text the CLI holds in memory with `fromMarkdown`: the rewritten output, or the original source with `--check`. It does not reread the file. Files without markers can take fast paths and skip some of these parses.
+The CLI parses each input with [`parseMarkdown`](../../src/parse-markdown.ts) and passes the result to [`processSource`](../../src/process-source.ts). When that processing loads the file, the loader reuses the result only if its strict UTF-8 read matches the original source; it parses again if the file changed. An earlier import from another Markdown file can still parse the target separately. [`findRenderedLeaks`](../../src/find-rendered-leaks.ts) separately scans the text the CLI holds in memory with gfm-comments: the rewritten output, or the original source with `--check`. It does not reread the file. Files without markers can take fast paths and skip some of these parses.
 
 ### Hand-off design
 

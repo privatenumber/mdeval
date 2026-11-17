@@ -149,11 +149,11 @@ import { code } from 'md-pen';
 
 Markers inside headings, or after other text on a line, render inline Markdown normally.
 
-**Markers do not work in link URLs or image alt text.** GitHub shows or encodes the comment there instead of hiding it. mdeval warns about markers in alt text.
+**Markers do not work in code, link URLs, link or image titles, or image alt text.** GitHub shows or encodes the comment there instead of hiding it, and mdeval does not run it. mdeval warns about each one.
 
 **`<details>` needs blank lines around `</summary>`.** Without them, block Markdown inside it renders as text. md-pen's `details(summary, content)` writes the correct shape.
 
-**Examples in code are safe.** mdeval ignores markers in fenced, indented, and inline code, so Markdown can document mdeval syntax.
+**Examples in code are safe.** mdeval does not run markers in fenced, indented, and inline code, so Markdown can document mdeval syntax. mdeval still warns about each one.
 
 **Do not create a `.md` file that only holds code.** mdeval warns about it. Put shared logic in a `.js` or `.ts` file and import it.
 
@@ -167,7 +167,7 @@ mdeval README.md "docs/**/*.md"
 - For CI, run `npx mdeval --check "**/*.md"` to report outdated files and exit 1 without rewriting; evaluation can still have side effects.
 - For a Lefthook pre-commit hook, use a job with `run: npx mdeval --check "**/*.md"` and no `glob`, so changes to non-Markdown inputs are checked too. When it fails, run `npx mdeval "**/*.md"`, review and stage the updates, and commit again. Do not rewrite files in the hook (with `stage_fixed` or `fail_on_changes`) or parse mdeval's stdout to stage files: Lefthook's rollback can discard unstaged edits, `stage_fixed` misses dependent files, and scripts can print to stdout.
 - Globs skip `node_modules` and hidden directories unless the pattern names them, such as `"node_modules/pkg/*.md"`.
-- Warnings go to stderr. A `marker leaks into rendered ...` warning means a marker will show as text on GitHub. Fix it unless the marker is an intentional example.
+- Warnings go to stderr. A warning that a delimiter `does not render as a comment on GitHub` means GitHub shows or encodes it, and mdeval does not run it. Fix it unless the marker is an intentional example.
 - After editing mdeval code, run `mdeval` on the file and check the written values.
 
 ## References
