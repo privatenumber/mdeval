@@ -199,7 +199,7 @@ importers:
         version: 2.16.0
       gfm-comments:
         specifier: github:privatenumber/mdeval#npm/gfm-comments
-        version: https://codeload.github.com/privatenumber/mdeval/tar.gz/d1ac32e868734a818134e9ca8cccf874c70fadd8
+        version: https://codeload.github.com/privatenumber/mdeval/tar.gz/78b76f26196e3bd3b3719512ee8e00e03779389c
       lintroll:
         specifier: ^1.34.1
         version: 1.34.1(@typescript-eslint/utils@8.72.1(eslint@9.39.5(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(jiti@2.6.1)(supports-color@7.2.0)(ts-declaration-location@1.0.7(typescript@6.0.3))(typescript@6.0.3)
@@ -1816,8 +1816,8 @@ packages:
     resolution: {integrity: sha512-X6fBC0pmImC70gvX2zm56go9hx0MyoGVdG0tUCkg/D+Xnh5TJsOZ7iDbOdI3PvmtrDxnu1YdDufpK2QJX1Meqw==}
     engines: {node: '>=20.20.0'}
 
-  gfm-comments@https://codeload.github.com/privatenumber/mdeval/tar.gz/d1ac32e868734a818134e9ca8cccf874c70fadd8:
-    resolution: {gitHosted: true, integrity: sha512-AOmw//RagPveDVqAJKBXcI8ntXtDL9kyyhQpw6lWhGuXVUhTGoIq5O08HMZTUD4Y9IrOHiadRavDcmmwaVVmSQ==, tarball: https://codeload.github.com/privatenumber/mdeval/tar.gz/d1ac32e868734a818134e9ca8cccf874c70fadd8}
+  gfm-comments@https://codeload.github.com/privatenumber/mdeval/tar.gz/78b76f26196e3bd3b3719512ee8e00e03779389c:
+    resolution: {gitHosted: true, integrity: sha512-8yxu0bYbBrZ5ojcfuynVCfbIfyuJAQrSXrW/RG2eEXMW03Mozp4cJjCnwkVMStmRdXi/6Ow20toctNldt0bFSw==, tarball: https://codeload.github.com/privatenumber/mdeval/tar.gz/78b76f26196e3bd3b3719512ee8e00e03779389c}
     version: 0.0.0-semantic-release
     engines: {node: '>=22'}
 
@@ -4521,7 +4521,7 @@ snapshots:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
-  gfm-comments@https://codeload.github.com/privatenumber/mdeval/tar.gz/d1ac32e868734a818134e9ca8cccf874c70fadd8: {}
+  gfm-comments@https://codeload.github.com/privatenumber/mdeval/tar.gz/78b76f26196e3bd3b3719512ee8e00e03779389c: {}
 
   git-hooks-list@4.2.1: {}
 
